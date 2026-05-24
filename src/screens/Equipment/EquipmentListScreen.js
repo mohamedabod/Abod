@@ -1,361 +1,113 @@
-import React, { useState, useMemo } from 'react';
-import {
-  View,
-  Text,
-  FlatList,
-  StyleSheet,
-  TouchableOpacity,
-  TextInput,
-} from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import React, { useState, useCallback } from 'react';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, RefreshControl, ActivityIndicator, TextInput } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
-import { useApp } from '../../context/AppContext';
-import StatusBadge from '../../components/StatusBadge';
-import EmptyState from '../../components/EmptyState';
-import {
-  getEquipmentStatusColor,
-  formatDate,
-  getRequestsForEquipment,
-} from '../../utils/helpers';
+import { assetsAPI } from '../../services/api';
 
-const COLORS = {
-  primary: '#1565C0',
-  accent: '#FF6F00',
-  background: '#F5F7FA',
-  card: '#FFFFFF',
-  text: '#212121',
-  textSecondary: '#616161',
-  border: '#E0E0E0',
-  success: '#2E7D32',
-  warning: '#FF6F00',
-  danger: '#D32F2F',
-};
+const C = { primary: '#1565C0', bg: '#F5F7FA', white: '#fff', text: '#1a1a1a', sub: '#666' };
+const healthColor = (h) => h >= 80 ? '#2E7D32' : h >= 60 ? '#FF6F00' : '#C62828';
+const CAT_AR = { electrical: 'كهربي', mechanical: 'ميكانيكي', hvac: 'تكييف', civil: 'مدني', other: 'أخرى' };
+const FILTERS = [null, 'electrical', 'mechanical', 'hvac', 'civil'];
+const FILTER_AR = { null: 'الكل', electrical: 'كهربي', mechanical: 'ميكانيكي', hvac: 'تكييف', civil: 'مدني' };
 
-const STATUS_FILTERS = [
-  { label: 'الكل', value: 'all' },
-  { label: 'يعمل', value: 'working' },
-  { label: 'يحتاج صيانة', value: 'needs-maintenance' },
-  { label: 'معطل', value: 'broken' },
-];
+export default function EquipmentListScreen({ navigation }) {
+  const [items, setItems] = useState([]);
+  const [filter, setFilter] = useState(null);
+  const [search, setSearch] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState(null);
 
-const EquipmentListScreen = ({ navigation }) => {
-  const { state } = useApp();
-  const { equipment, requests } = state;
-  const [searchQuery, setSearchQuery] = useState('');
-  const [activeFilter, setActiveFilter] = useState('all');
-
-  const filteredEquipment = useMemo(() => {
-    let result = [...equipment];
-
-    if (activeFilter !== 'all') {
-      result = result.filter((e) => e.status === activeFilter);
-    }
-
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
-      result = result.filter(
-        (e) =>
-          e.name.toLowerCase().includes(q) ||
-          e.model.toLowerCase().includes(q) ||
-          e.serialNumber.toLowerCase().includes(q) ||
-          e.location.toLowerCase().includes(q)
-      );
-    }
-
-    return result;
-  }, [equipment, activeFilter, searchQuery]);
-
-  const getActiveRequestCount = (equipId) => {
-    return getRequestsForEquipment(requests, equipId).filter(
-      (r) => r.status === 'pending' || r.status === 'in-progress'
-    ).length;
+  const load = async () => {
+    try {
+      setError(null);
+      const params = filter ? { category: filter } : {};
+      const res = await assetsAPI.getAll(params);
+      setItems(res.data);
+    } catch (e) {
+      setError(e.response?.data?.error || e.message);
+    } finally { setLoading(false); setRefreshing(false); }
   };
 
+  useFocusEffect(useCallback(() => { load(); }, [filter]));
+
+  const filtered = search ? items.filter(i => i.name?.includes(search) || i.serial?.includes(search) || i.location?.includes(search)) : items;
+
   const renderItem = ({ item }) => {
-    const activeRequests = getActiveRequestCount(item.id);
-    const statusColor = getEquipmentStatusColor(item.status);
-
+    const h = item.health ?? 100;
+    const hc = healthColor(h);
     return (
-      <TouchableOpacity
-        style={[styles.card, { borderLeftColor: statusColor }]}
-        onPress={() => navigation.navigate('EquipmentDetail', { equipmentId: item.id })}
-        activeOpacity={0.8}
-      >
-        <View style={styles.cardHeader}>
-          <View style={styles.cardHeaderRight}>
-            <StatusBadge status={item.status} type="equipment" size="small" />
+      <TouchableOpacity style={styles.item} onPress={() => navigation.navigate('EquipmentDetail', { id: item.id })}>
+        <View style={styles.itemHeader}>
+          <View style={[styles.badge, { backgroundColor: '#E3F2FD' }]}>
+            <Text style={[styles.badgeTxt, { color: C.primary }]}>{CAT_AR[item.category] || item.category || '—'}</Text>
           </View>
-          <View style={styles.equipIcon}>
-            <Ionicons name="cog-outline" size={28} color={statusColor} />
+          <Text style={styles.itemName}>{item.name}</Text>
+        </View>
+        {item.serial ? <Text style={styles.meta}>S/N: {item.serial}</Text> : null}
+        {item.location ? <Text style={styles.meta}>📍 {item.location}</Text> : null}
+        {item.dept ? <Text style={styles.meta}>🏭 {item.dept}</Text> : null}
+        <View style={styles.healthRow}>
+          <Text style={[styles.healthPct, { color: hc }]}>{h}%</Text>
+          <View style={styles.healthBar}>
+            <View style={[styles.healthFill, { width: `${h}%`, backgroundColor: hc }]} />
           </View>
         </View>
-
-        <Text style={styles.equipName}>{item.name}</Text>
-        <Text style={styles.equipModel}>{item.model}</Text>
-
-        <View style={styles.details}>
-          <View style={styles.detailRow}>
-            <Text style={styles.detailValue} numberOfLines={1}>
-              {item.location}
-            </Text>
-            <View style={styles.detailLabel}>
-              <Ionicons name="location-outline" size={13} color={COLORS.textSecondary} />
-              <Text style={styles.detailLabelText}>الموقع</Text>
-            </View>
-          </View>
-          <View style={styles.detailRow}>
-            <Text style={styles.detailValue}>{item.serialNumber}</Text>
-            <View style={styles.detailLabel}>
-              <Ionicons name="barcode-outline" size={13} color={COLORS.textSecondary} />
-              <Text style={styles.detailLabelText}>الرقم التسلسلي</Text>
-            </View>
-          </View>
-          {item.lastMaintenanceDate && (
-            <View style={styles.detailRow}>
-              <Text style={styles.detailValue}>{formatDate(item.lastMaintenanceDate)}</Text>
-              <View style={styles.detailLabel}>
-                <Ionicons name="time-outline" size={13} color={COLORS.textSecondary} />
-                <Text style={styles.detailLabelText}>آخر صيانة</Text>
-              </View>
-            </View>
-          )}
-        </View>
-
-        {activeRequests > 0 && (
-          <View style={styles.requestsBanner}>
-            <Text style={styles.requestsBannerText}>
-              {activeRequests} طلب صيانة نشط
-            </Text>
-            <Ionicons name="alert-circle" size={14} color={COLORS.accent} />
-          </View>
-        )}
       </TouchableOpacity>
     );
   };
 
-  const stats = useMemo(() => ({
-    working: equipment.filter((e) => e.status === 'working').length,
-    needs: equipment.filter((e) => e.status === 'needs-maintenance').length,
-    broken: equipment.filter((e) => e.status === 'broken').length,
-  }), [equipment]);
-
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
-      <View style={styles.header}>
-        <TouchableOpacity
-          style={styles.addButton}
-          onPress={() => navigation.navigate('NewEquipment')}
-        >
-          <Ionicons name="add" size={24} color="#FFF" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>المعدات والأصول</Text>
-      </View>
-
-      {/* Stats summary */}
-      <View style={styles.summary}>
-        <View style={styles.summaryItem}>
-          <Text style={[styles.summaryCount, { color: COLORS.danger }]}>{stats.broken}</Text>
-          <Text style={styles.summaryLabel}>معطل</Text>
-        </View>
-        <View style={styles.summarySep} />
-        <View style={styles.summaryItem}>
-          <Text style={[styles.summaryCount, { color: COLORS.warning }]}>{stats.needs}</Text>
-          <Text style={styles.summaryLabel}>يحتاج صيانة</Text>
-        </View>
-        <View style={styles.summarySep} />
-        <View style={styles.summaryItem}>
-          <Text style={[styles.summaryCount, { color: COLORS.success }]}>{stats.working}</Text>
-          <Text style={styles.summaryLabel}>يعمل</Text>
-        </View>
-        <View style={styles.summarySep} />
-        <View style={styles.summaryItem}>
-          <Text style={[styles.summaryCount, { color: COLORS.text }]}>{equipment.length}</Text>
-          <Text style={styles.summaryLabel}>الإجمالي</Text>
-        </View>
-      </View>
-
-      {/* Search */}
-      <View style={styles.searchContainer}>
-        <Ionicons name="search-outline" size={18} color={COLORS.textSecondary} />
-        <TextInput
-          style={styles.searchInput}
-          placeholder="بحث بالاسم أو الموقع..."
-          placeholderTextColor={COLORS.textSecondary}
-          value={searchQuery}
-          onChangeText={setSearchQuery}
-          textAlign="right"
-        />
-        {searchQuery ? (
-          <TouchableOpacity onPress={() => setSearchQuery('')}>
-            <Ionicons name="close-circle" size={18} color={COLORS.textSecondary} />
-          </TouchableOpacity>
-        ) : null}
-      </View>
-
-      {/* Filters */}
-      <View style={styles.filterContainer}>
-        {STATUS_FILTERS.map((f) => (
-          <TouchableOpacity
-            key={f.value}
-            style={[styles.filterTab, activeFilter === f.value && styles.filterTabActive]}
-            onPress={() => setActiveFilter(f.value)}
-          >
-            <Text
-              style={[styles.filterText, activeFilter === f.value && styles.filterTextActive]}
-            >
-              {f.label}
-            </Text>
+    <View style={styles.container}>
+      <TextInput style={styles.search} placeholder="بحث..." value={search} onChangeText={setSearch} textAlign="right" />
+      <View style={styles.filters}>
+        {FILTERS.map(f => (
+          <TouchableOpacity key={String(f)} style={[styles.filterBtn, filter === f && styles.filterActive]} onPress={() => setFilter(f)}>
+            <Text style={[styles.filterTxt, filter === f && styles.filterTxtActive]}>{FILTER_AR[f] || 'الكل'}</Text>
           </TouchableOpacity>
         ))}
       </View>
-
-      <FlatList
-        data={filteredEquipment}
-        keyExtractor={(item) => item.id}
-        renderItem={renderItem}
-        contentContainerStyle={styles.listContent}
-        showsVerticalScrollIndicator={false}
-        ListEmptyComponent={
-          <EmptyState
-            icon="cog-outline"
-            title="لا توجد معدات"
-            subtitle="اضغط + لإضافة معدة جديدة"
-          />
-        }
-      />
-    </SafeAreaView>
+      {loading ? <ActivityIndicator style={{ margin: 40 }} color={C.primary} size="large" /> :
+        error ? (
+          <View style={styles.center}>
+            <Text style={styles.errorText}>⚠️ {error}</Text>
+            <TouchableOpacity onPress={load} style={styles.retryBtn}><Text style={{ color: '#fff' }}>إعادة</Text></TouchableOpacity>
+          </View>
+        ) : (
+          <FlatList data={filtered} keyExtractor={i => String(i.id)} renderItem={renderItem}
+            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} />}
+            ListEmptyComponent={<View style={styles.center}><Ionicons name="construct-outline" size={48} color="#ccc" /><Text style={styles.emptyTxt}>لا توجد معدات</Text></View>}
+            contentContainerStyle={{ paddingBottom: 100 }} />
+        )
+      }
+      <TouchableOpacity style={styles.fab} onPress={() => navigation.navigate('NewEquipment')}>
+        <Ionicons name="add" size={28} color="#fff" />
+      </TouchableOpacity>
+    </View>
   );
-};
+}
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.background },
-  header: {
-    backgroundColor: COLORS.card,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.border,
-    elevation: 2,
-  },
-  headerTitle: { fontSize: 20, fontWeight: 'bold', color: COLORS.text },
-  addButton: {
-    backgroundColor: COLORS.primary,
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  summary: {
-    backgroundColor: COLORS.card,
-    flexDirection: 'row',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.border,
-  },
-  summaryItem: { flex: 1, alignItems: 'center' },
-  summaryCount: { fontSize: 22, fontWeight: 'bold' },
-  summaryLabel: { fontSize: 10, color: COLORS.textSecondary, marginTop: 2, textAlign: 'center' },
-  summarySep: { width: 1, backgroundColor: COLORS.border, marginVertical: 4 },
-  searchContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: COLORS.card,
-    margin: 12,
-    marginBottom: 6,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 10,
-    gap: 8,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-  },
-  searchInput: { flex: 1, fontSize: 14, color: COLORS.text, padding: 0 },
-  filterContainer: {
-    flexDirection: 'row',
-    paddingHorizontal: 12,
-    paddingBottom: 10,
-    gap: 6,
-  },
-  filterTab: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 20,
-    backgroundColor: COLORS.card,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-  },
-  filterTabActive: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
-  filterText: { fontSize: 11, color: COLORS.textSecondary, fontWeight: '500' },
-  filterTextActive: { color: '#FFF' },
-  listContent: { padding: 12, paddingBottom: 24 },
-  card: {
-    backgroundColor: COLORS.card,
-    borderRadius: 12,
-    padding: 14,
-    marginBottom: 10,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.06,
-    shadowRadius: 4,
-    borderLeftWidth: 4,
-    overflow: 'hidden',
-  },
-  cardHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  cardHeaderRight: { flex: 1, alignItems: 'flex-end' },
-  equipIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: '#F5F7FA',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginLeft: 10,
-  },
-  equipName: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: COLORS.text,
-    textAlign: 'right',
-    marginBottom: 3,
-  },
-  equipModel: {
-    fontSize: 12,
-    color: COLORS.textSecondary,
-    textAlign: 'right',
-    marginBottom: 10,
-  },
-  details: {
-    backgroundColor: '#F8F9FB',
-    borderRadius: 8,
-    padding: 10,
-    gap: 6,
-    marginBottom: 8,
-  },
-  detailRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  detailLabel: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  detailLabelText: { fontSize: 11, color: COLORS.textSecondary },
-  detailValue: { fontSize: 11, color: COLORS.text, flex: 1, textAlign: 'left' },
-  requestsBanner: {
-    backgroundColor: COLORS.accent + '15',
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    alignItems: 'center',
-    gap: 6,
-    padding: 8,
-    borderRadius: 6,
-  },
-  requestsBannerText: { fontSize: 12, color: COLORS.accent, fontWeight: '500' },
+  container: { flex: 1, backgroundColor: C.bg },
+  search: { margin: 10, padding: 10, backgroundColor: C.white, borderRadius: 10, borderWidth: 1, borderColor: '#ddd', fontSize: 14 },
+  filters: { flexDirection: 'row', paddingHorizontal: 10, marginBottom: 6, gap: 6, flexWrap: 'wrap' },
+  filterBtn: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20, backgroundColor: C.white, borderWidth: 1, borderColor: '#ddd' },
+  filterActive: { backgroundColor: C.primary, borderColor: C.primary },
+  filterTxt: { fontSize: 12, color: C.sub },
+  filterTxtActive: { color: '#fff', fontWeight: 'bold' },
+  item: { backgroundColor: C.white, marginHorizontal: 10, marginBottom: 8, borderRadius: 12, padding: 14, elevation: 2 },
+  itemHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
+  itemName: { fontSize: 15, fontWeight: 'bold', color: C.text, flex: 1, textAlign: 'right', marginRight: 8 },
+  badge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
+  badgeTxt: { fontSize: 11, fontWeight: '600' },
+  meta: { fontSize: 12, color: C.sub, textAlign: 'right', marginBottom: 2 },
+  healthRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8 },
+  healthPct: { fontSize: 13, fontWeight: 'bold', width: 38, textAlign: 'right' },
+  healthBar: { flex: 1, height: 8, backgroundColor: '#eee', borderRadius: 4, overflow: 'hidden' },
+  healthFill: { height: '100%', borderRadius: 4 },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 30 },
+  errorText: { color: '#C62828', textAlign: 'center', marginBottom: 12 },
+  retryBtn: { backgroundColor: C.primary, paddingHorizontal: 20, paddingVertical: 10, borderRadius: 8 },
+  emptyTxt: { color: '#ccc', marginTop: 10 },
+  fab: { position: 'absolute', bottom: 24, left: 24, backgroundColor: C.primary, width: 56, height: 56, borderRadius: 28, justifyContent: 'center', alignItems: 'center', elevation: 6 },
 });
-
-export default EquipmentListScreen;

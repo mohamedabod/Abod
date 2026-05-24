@@ -1,356 +1,73 @@
 import React, { useState } from 'react';
-import {
-  View,
-  Text,
-  ScrollView,
-  StyleSheet,
-  TouchableOpacity,
-  TextInput,
-  Alert,
-} from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
-import { useApp } from '../../context/AppContext';
+import { View, Text, TextInput, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator, Alert } from 'react-native';
+import { assetsAPI } from '../../services/api';
 
-const COLORS = {
-  primary: '#1565C0',
-  accent: '#FF6F00',
-  background: '#F5F7FA',
-  card: '#FFFFFF',
-  text: '#212121',
-  textSecondary: '#616161',
-  border: '#E0E0E0',
-  danger: '#D32F2F',
-  success: '#2E7D32',
-  warning: '#FF6F00',
-};
+const C = { primary: '#1565C0', bg: '#F5F7FA', white: '#fff', text: '#1a1a1a', sub: '#666' };
+const CATEGORIES = ['mechanical', 'electrical', 'hvac', 'plumbing', 'it', 'vehicle', 'other'];
+const CAT_AR = { mechanical: 'ميكانيكي', electrical: 'كهربائي', hvac: 'تكييف', plumbing: 'سباكة', it: 'تقنية معلومات', vehicle: 'مركبة', other: 'أخرى' };
 
-const STATUS_OPTIONS = [
-  { label: 'يعمل', value: 'working', color: COLORS.success, icon: 'checkmark-circle-outline' },
-  { label: 'يحتاج صيانة', value: 'needs-maintenance', color: COLORS.warning, icon: 'warning-outline' },
-  { label: 'معطل', value: 'broken', color: COLORS.danger, icon: 'close-circle-outline' },
-];
+export default function NewEquipmentScreen({ navigation }) {
+  const [form, setForm] = useState({ name: '', category: 'mechanical', location: '', model: '', serial_number: '', manufacturer: '', notes: '' });
+  const [loading, setLoading] = useState(false);
 
-const COMMON_LOCATIONS = [
-  'المبنى الرئيسي - الطابق الأرضي',
-  'المبنى الرئيسي - الطابق الأول',
-  'المبنى الرئيسي - الطابق الثاني',
-  'المستودع الرئيسي',
-  'ورشة الإنتاج',
-  'غرفة الكهرباء',
-  'غرفة المولدات',
-  'غرفة الضخ',
-  'الساحة الخارجية',
-];
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
-const NewEquipmentScreen = ({ navigation }) => {
-  const { actions } = useApp();
-
-  const [name, setName] = useState('');
-  const [model, setModel] = useState('');
-  const [serialNumber, setSerialNumber] = useState('');
-  const [location, setLocation] = useState('');
-  const [status, setStatus] = useState('working');
-  const [showLocationSuggestions, setShowLocationSuggestions] = useState(false);
-
-  const isFormValid = name.trim() && model.trim() && serialNumber.trim() && location.trim();
-
-  const handleSubmit = () => {
-    if (!isFormValid) {
-      Alert.alert('بيانات ناقصة', 'يرجى ملء جميع الحقول المطلوبة');
-      return;
-    }
-
-    actions.addEquipment({
-      name: name.trim(),
-      model: model.trim(),
-      serialNumber: serialNumber.trim(),
-      location: location.trim(),
-      status,
-      lastMaintenanceDate: null,
-      purchaseDate: null,
-    });
-
-    Alert.alert('تم الحفظ', 'تم إضافة المعدة بنجاح', [
-      { text: 'حسناً', onPress: () => navigation.goBack() },
-    ]);
+  const submit = async () => {
+    if (!form.name.trim()) return Alert.alert('تنبيه', 'اسم المعدة مطلوب');
+    setLoading(true);
+    try {
+      await assetsAPI.create(form);
+      Alert.alert('تم', 'تمت إضافة المعدة بنجاح', [{ text: 'حسناً', onPress: () => navigation.goBack() }]);
+    } catch (e) {
+      Alert.alert('خطأ', e.response?.data?.error || e.message);
+    } finally { setLoading(false); }
   };
 
   return (
-    <SafeAreaView style={styles.container} edges={['bottom']}>
-      <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={styles.content}
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
-      >
-        {/* Status selection first */}
-        <View style={styles.field}>
-          <Text style={styles.label}>حالة المعدة</Text>
-          <View style={styles.statusRow}>
-            {STATUS_OPTIONS.map((opt) => (
-              <TouchableOpacity
-                key={opt.value}
-                style={[
-                  styles.statusBtn,
-                  status === opt.value && {
-                    backgroundColor: opt.color,
-                    borderColor: opt.color,
-                  },
-                ]}
-                onPress={() => setStatus(opt.value)}
-              >
-                <Ionicons
-                  name={opt.icon}
-                  size={16}
-                  color={status === opt.value ? '#FFF' : opt.color}
-                />
-                <Text
-                  style={[
-                    styles.statusBtnText,
-                    { color: status === opt.value ? '#FFF' : opt.color },
-                  ]}
-                >
-                  {opt.label}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        </View>
+    <ScrollView style={styles.container} contentContainerStyle={{ padding: 16, paddingBottom: 40 }} keyboardShouldPersistTaps="handled">
+      <Text style={styles.label}>اسم المعدة *</Text>
+      <TextInput style={styles.input} value={form.name} onChangeText={v => set('name', v)} placeholder="مثال: مضخة الحريق" textAlign="right" />
 
-        {/* Equipment Name */}
-        <View style={styles.field}>
-          <Text style={styles.label}>
-            اسم المعدة <Text style={styles.required}>*</Text>
-          </Text>
-          <TextInput
-            style={styles.input}
-            placeholder="مثال: مكيف مركزي - المبنى الرئيسي"
-            placeholderTextColor={COLORS.textSecondary}
-            value={name}
-            onChangeText={setName}
-            textAlign="right"
-            maxLength={100}
-          />
-        </View>
-
-        {/* Model */}
-        <View style={styles.field}>
-          <Text style={styles.label}>
-            الموديل / الماركة <Text style={styles.required}>*</Text>
-          </Text>
-          <TextInput
-            style={styles.input}
-            placeholder="مثال: Carrier 50XC"
-            placeholderTextColor={COLORS.textSecondary}
-            value={model}
-            onChangeText={setModel}
-            textAlign="right"
-            maxLength={80}
-          />
-        </View>
-
-        {/* Serial Number */}
-        <View style={styles.field}>
-          <Text style={styles.label}>
-            الرقم التسلسلي <Text style={styles.required}>*</Text>
-          </Text>
-          <TextInput
-            style={styles.input}
-            placeholder="مثال: CAR-2021-001"
-            placeholderTextColor={COLORS.textSecondary}
-            value={serialNumber}
-            onChangeText={setSerialNumber}
-            textAlign="right"
-            maxLength={50}
-            autoCapitalize="characters"
-          />
-        </View>
-
-        {/* Location */}
-        <View style={styles.field}>
-          <Text style={styles.label}>
-            الموقع <Text style={styles.required}>*</Text>
-          </Text>
-          <TextInput
-            style={styles.input}
-            placeholder="أدخل موقع المعدة"
-            placeholderTextColor={COLORS.textSecondary}
-            value={location}
-            onChangeText={setLocation}
-            textAlign="right"
-            maxLength={100}
-          />
-          <TouchableOpacity
-            style={styles.showMore}
-            onPress={() => setShowLocationSuggestions(!showLocationSuggestions)}
-          >
-            <Ionicons
-              name={showLocationSuggestions ? 'chevron-up' : 'chevron-down'}
-              size={16}
-              color={COLORS.primary}
-            />
-            <Text style={styles.showMoreText}>اختر من المواقع الشائعة</Text>
+      <Text style={styles.label}>الفئة</Text>
+      <View style={styles.chips}>
+        {CATEGORIES.map(c => (
+          <TouchableOpacity key={c} style={[styles.chip, form.category === c && styles.chipActive]} onPress={() => set('category', c)}>
+            <Text style={[styles.chipTxt, form.category === c && styles.chipTxtActive]}>{CAT_AR[c]}</Text>
           </TouchableOpacity>
+        ))}
+      </View>
 
-          {showLocationSuggestions && (
-            <View style={styles.suggestionsList}>
-              {COMMON_LOCATIONS.map((loc) => (
-                <TouchableOpacity
-                  key={loc}
-                  style={[
-                    styles.suggestionItem,
-                    location === loc && styles.suggestionItemActive,
-                  ]}
-                  onPress={() => {
-                    setLocation(loc);
-                    setShowLocationSuggestions(false);
-                  }}
-                >
-                  <Ionicons
-                    name="location-outline"
-                    size={14}
-                    color={location === loc ? COLORS.primary : COLORS.textSecondary}
-                  />
-                  <Text
-                    style={[
-                      styles.suggestionText,
-                      location === loc && styles.suggestionTextActive,
-                    ]}
-                  >
-                    {loc}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          )}
-        </View>
+      <Text style={styles.label}>الموقع</Text>
+      <TextInput style={styles.input} value={form.location} onChangeText={v => set('location', v)} placeholder="القسم / المبنى" textAlign="right" />
 
-        {/* Info Banner */}
-        <View style={styles.infoBanner}>
-          <Text style={styles.infoBannerText}>
-            يمكنك تحديث تاريخ الشراء وتاريخ آخر صيانة من صفحة تفاصيل المعدة بعد الإضافة.
-          </Text>
-          <Ionicons name="information-circle-outline" size={20} color={COLORS.primary} />
-        </View>
+      <Text style={styles.label}>الموديل</Text>
+      <TextInput style={styles.input} value={form.model} onChangeText={v => set('model', v)} placeholder="Model number" textAlign="right" />
 
-        {/* Submit */}
-        <TouchableOpacity
-          style={[styles.submitBtn, !isFormValid && styles.submitBtnDisabled]}
-          onPress={handleSubmit}
-          disabled={!isFormValid}
-        >
-          <Ionicons name="add-circle-outline" size={22} color="#FFF" />
-          <Text style={styles.submitBtnText}>إضافة المعدة</Text>
-        </TouchableOpacity>
-      </ScrollView>
-    </SafeAreaView>
+      <Text style={styles.label}>الرقم التسلسلي</Text>
+      <TextInput style={styles.input} value={form.serial_number} onChangeText={v => set('serial_number', v)} placeholder="Serial number" textAlign="right" />
+
+      <Text style={styles.label}>الشركة المصنعة</Text>
+      <TextInput style={styles.input} value={form.manufacturer} onChangeText={v => set('manufacturer', v)} placeholder="Manufacturer" textAlign="right" />
+
+      <Text style={styles.label}>ملاحظات</Text>
+      <TextInput style={[styles.input, { height: 80, textAlignVertical: 'top' }]} value={form.notes} onChangeText={v => set('notes', v)} multiline placeholder="ملاحظات إضافية..." textAlign="right" />
+
+      <TouchableOpacity style={styles.btn} onPress={submit} disabled={loading}>
+        {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.btnTxt}>إضافة المعدة</Text>}
+      </TouchableOpacity>
+    </ScrollView>
   );
-};
+}
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.background },
-  scrollView: { flex: 1 },
-  content: { padding: 16, paddingBottom: 40 },
-
-  field: { marginBottom: 18 },
-  label: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: COLORS.text,
-    textAlign: 'right',
-    marginBottom: 8,
-  },
-  required: { color: COLORS.danger },
-
-  input: {
-    backgroundColor: COLORS.card,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    fontSize: 14,
-    color: COLORS.text,
-  },
-
-  statusRow: { flexDirection: 'row', gap: 8 },
-  statusBtn: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 4,
-    paddingVertical: 10,
-    borderRadius: 10,
-    borderWidth: 1.5,
-    backgroundColor: COLORS.card,
-    borderColor: COLORS.border,
-  },
-  statusBtnText: { fontSize: 11, fontWeight: '600' },
-
-  showMore: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    marginTop: 6,
-    alignSelf: 'flex-end',
-  },
-  showMoreText: { fontSize: 12, color: COLORS.primary },
-
-  suggestionsList: {
-    backgroundColor: COLORS.card,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    marginTop: 6,
-    overflow: 'hidden',
-  },
-  suggestionItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    paddingHorizontal: 14,
-    paddingVertical: 11,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F0F0F0',
-  },
-  suggestionItemActive: { backgroundColor: '#E8F0FE' },
-  suggestionText: { fontSize: 13, color: COLORS.text, flex: 1, textAlign: 'right' },
-  suggestionTextActive: { color: COLORS.primary, fontWeight: '600' },
-
-  infoBanner: {
-    backgroundColor: COLORS.primary + '10',
-    borderRadius: 10,
-    padding: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    marginBottom: 8,
-    borderWidth: 1,
-    borderColor: COLORS.primary + '30',
-  },
-  infoBannerText: {
-    flex: 1,
-    fontSize: 12,
-    color: COLORS.primary,
-    textAlign: 'right',
-    lineHeight: 18,
-  },
-
-  submitBtn: {
-    backgroundColor: COLORS.primary,
-    borderRadius: 12,
-    paddingVertical: 15,
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: 8,
-    marginTop: 8,
-    elevation: 3,
-  },
-  submitBtnDisabled: { backgroundColor: '#B0BEC5' },
-  submitBtnText: { color: '#FFF', fontSize: 16, fontWeight: '700' },
+  container: { flex: 1, backgroundColor: C.bg },
+  label: { fontSize: 13, fontWeight: '600', color: C.sub, textAlign: 'right', marginBottom: 6, marginTop: 14 },
+  input: { backgroundColor: C.white, borderWidth: 1.5, borderColor: '#e0e0e0', borderRadius: 10, padding: 12, fontSize: 14, color: C.text },
+  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  chip: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20, backgroundColor: C.white, borderWidth: 1, borderColor: '#ddd' },
+  chipActive: { backgroundColor: C.primary, borderColor: C.primary },
+  chipTxt: { fontSize: 12, color: C.sub },
+  chipTxtActive: { color: '#fff', fontWeight: 'bold' },
+  btn: { backgroundColor: C.primary, borderRadius: 12, padding: 16, alignItems: 'center', marginTop: 24 },
+  btnTxt: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
 });
-
-export default NewEquipmentScreen;

@@ -1,345 +1,113 @@
-import React, { useState, useMemo } from 'react';
-import {
-  View,
-  Text,
-  FlatList,
-  StyleSheet,
-  TouchableOpacity,
-  TextInput,
-} from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import React, { useState, useCallback } from 'react';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, RefreshControl, ActivityIndicator, TextInput } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
-import { useApp } from '../../context/AppContext';
-import StatusBadge from '../../components/StatusBadge';
-import EmptyState from '../../components/EmptyState';
-import { getTechnicianStatusColor, getRequestsForTechnician } from '../../utils/helpers';
+import { hrAPI } from '../../services/api';
 
-const COLORS = {
-  primary: '#1565C0',
-  accent: '#FF6F00',
-  background: '#F5F7FA',
-  card: '#FFFFFF',
-  text: '#212121',
-  textSecondary: '#616161',
-  border: '#E0E0E0',
-};
+const C = { primary: '#1565C0', bg: '#F5F7FA', white: '#fff', text: '#1a1a1a', sub: '#666' };
+const ROLE_AR = { admin: 'مدير', manager: 'مشرف', technician: 'فني', viewer: 'مراقب' };
+const ROLE_COLOR = { admin: '#C62828', manager: '#1565C0', technician: '#2E7D32', viewer: '#666' };
 
-const STATUS_FILTERS = [
-  { label: 'الكل', value: 'all' },
-  { label: 'متاح', value: 'available' },
-  { label: 'مشغول', value: 'busy' },
-  { label: 'غير متصل', value: 'offline' },
-];
+export default function TechniciansListScreen({ navigation }) {
+  const [items, setItems] = useState([]);
+  const [summary, setSummary] = useState(null);
+  const [search, setSearch] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState(null);
 
-const TechniciansListScreen = ({ navigation }) => {
-  const { state } = useApp();
-  const { technicians, requests } = state;
-  const [searchQuery, setSearchQuery] = useState('');
-  const [activeFilter, setActiveFilter] = useState('all');
-
-  const filteredTechnicians = useMemo(() => {
-    let result = [...technicians];
-
-    if (activeFilter !== 'all') {
-      result = result.filter((t) => t.status === activeFilter);
-    }
-
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
-      result = result.filter(
-        (t) =>
-          t.name.toLowerCase().includes(q) ||
-          t.specialty.toLowerCase().includes(q) ||
-          t.phone.includes(q)
-      );
-    }
-
-    return result;
-  }, [technicians, activeFilter, searchQuery]);
-
-  const getActiveTasks = (techId) => {
-    return getRequestsForTechnician(requests, techId).filter(
-      (r) => r.status === 'in-progress' || r.status === 'pending'
-    ).length;
+  const load = async () => {
+    try {
+      setError(null);
+      const [s, sum] = await Promise.all([hrAPI.getStaff(), hrAPI.getSummary()]);
+      setItems(s.data);
+      setSummary(sum.data);
+    } catch (e) {
+      setError(e.response?.data?.error || e.message);
+    } finally { setLoading(false); setRefreshing(false); }
   };
 
-  const getTotalTasks = (techId) => {
-    return getRequestsForTechnician(requests, techId).length;
-  };
+  useFocusEffect(useCallback(() => { load(); }, []));
 
-  const renderItem = ({ item }) => {
-    const activeTasks = getActiveTasks(item.id);
-    const totalTasks = getTotalTasks(item.id);
+  const filtered = search
+    ? items.filter(i => i.name?.includes(search) || i.email?.includes(search) || i.department?.includes(search))
+    : items;
 
-    return (
-      <TouchableOpacity
-        style={styles.card}
-        onPress={() => navigation.navigate('TechnicianDetail', { technicianId: item.id })}
-        activeOpacity={0.8}
-      >
-        <View style={styles.cardContent}>
-          <View style={styles.cardInfo}>
-            <View style={styles.nameRow}>
-              <StatusBadge status={item.status} type="technician" size="small" />
-              <Text style={styles.name}>{item.name}</Text>
-            </View>
-            <Text style={styles.specialty}>{item.specialty}</Text>
-            <View style={styles.metaRow}>
-              <View style={styles.metaItem}>
-                <Text style={styles.metaValue}>{activeTasks}</Text>
-                <Text style={styles.metaLabel}>مهمة نشطة</Text>
-              </View>
-              <View style={styles.metaSeparator} />
-              <View style={styles.metaItem}>
-                <Text style={styles.metaValue}>{totalTasks}</Text>
-                <Text style={styles.metaLabel}>إجمالي</Text>
-              </View>
-              <View style={styles.metaSeparator} />
-              <View style={styles.metaItem}>
-                <Ionicons name="call-outline" size={14} color={COLORS.textSecondary} />
-                <Text style={styles.metaLabel}>{item.phone}</Text>
-              </View>
-            </View>
+  const renderItem = ({ item }) => (
+    <TouchableOpacity style={styles.item} onPress={() => navigation.navigate('TechnicianDetail', { staff: item })}>
+      <View style={styles.avatar}>
+        <Text style={styles.avatarTxt}>{item.name?.charAt(0) || '?'}</Text>
+      </View>
+      <View style={{ flex: 1, marginRight: 12 }}>
+        <View style={styles.row}>
+          <View style={[styles.badge, { backgroundColor: (ROLE_COLOR[item.role] || '#666') + '22' }]}>
+            <Text style={[styles.badgeTxt, { color: ROLE_COLOR[item.role] || '#666' }]}>{ROLE_AR[item.role] || item.role}</Text>
           </View>
-          <View
-            style={[
-              styles.avatar,
-              { backgroundColor: getTechnicianStatusColor(item.status) },
-            ]}
-          >
-            <Text style={styles.avatarText}>{item.avatar}</Text>
-          </View>
+          <Text style={styles.name}>{item.name}</Text>
         </View>
-
-        {activeTasks > 0 && (
-          <View style={styles.activeTaskBanner}>
-            <Text style={styles.activeTaskText}>
-              {activeTasks} مهمة جارية حالياً
-            </Text>
-            <Ionicons name="alert-circle" size={14} color={COLORS.primary} />
-          </View>
-        )}
-      </TouchableOpacity>
-    );
-  };
-
-  const stats = useMemo(() => ({
-    available: technicians.filter((t) => t.status === 'available').length,
-    busy: technicians.filter((t) => t.status === 'busy').length,
-    offline: technicians.filter((t) => t.status === 'offline').length,
-  }), [technicians]);
+        {item.department ? <Text style={styles.dept}>📍 {item.department}</Text> : null}
+        {item.phone ? <Text style={styles.dept}>📞 {item.phone}</Text> : null}
+      </View>
+    </TouchableOpacity>
+  );
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
-      <View style={styles.header}>
-        <TouchableOpacity
-          style={styles.addButton}
-          onPress={() => navigation.navigate('NewTechnician')}
-        >
-          <Ionicons name="add" size={24} color="#FFF" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>الفنيون والموظفون</Text>
-      </View>
-
-      {/* Summary */}
-      <View style={styles.summary}>
-        <View style={styles.summaryItem}>
-          <Text style={[styles.summaryCount, { color: '#757575' }]}>{stats.offline}</Text>
-          <Text style={styles.summaryLabel}>غير متصل</Text>
+    <View style={styles.container}>
+      {summary && (
+        <View style={styles.summaryRow}>
+          {[
+            { label: 'إجمالي', value: summary.total },
+            { label: 'نشط', value: summary.active },
+            { label: 'فنيون', value: summary.technicians },
+          ].map((s, i) => (
+            <View key={i} style={styles.summaryItem}>
+              <Text style={styles.summaryVal}>{s.value ?? '—'}</Text>
+              <Text style={styles.summaryLbl}>{s.label}</Text>
+            </View>
+          ))}
         </View>
-        <View style={styles.summarySep} />
-        <View style={styles.summaryItem}>
-          <Text style={[styles.summaryCount, { color: COLORS.primary }]}>{stats.busy}</Text>
-          <Text style={styles.summaryLabel}>مشغول</Text>
-        </View>
-        <View style={styles.summarySep} />
-        <View style={styles.summaryItem}>
-          <Text style={[styles.summaryCount, { color: '#2E7D32' }]}>{stats.available}</Text>
-          <Text style={styles.summaryLabel}>متاح</Text>
-        </View>
-        <View style={styles.summarySep} />
-        <View style={styles.summaryItem}>
-          <Text style={[styles.summaryCount, { color: COLORS.text }]}>{technicians.length}</Text>
-          <Text style={styles.summaryLabel}>الإجمالي</Text>
-        </View>
-      </View>
-
-      {/* Search */}
-      <View style={styles.searchContainer}>
-        <Ionicons name="search-outline" size={18} color={COLORS.textSecondary} />
-        <TextInput
-          style={styles.searchInput}
-          placeholder="بحث بالاسم أو التخصص..."
-          placeholderTextColor={COLORS.textSecondary}
-          value={searchQuery}
-          onChangeText={setSearchQuery}
-          textAlign="right"
-        />
-        {searchQuery ? (
-          <TouchableOpacity onPress={() => setSearchQuery('')}>
-            <Ionicons name="close-circle" size={18} color={COLORS.textSecondary} />
-          </TouchableOpacity>
-        ) : null}
-      </View>
-
-      {/* Filter Tabs */}
-      <View style={styles.filterContainer}>
-        {STATUS_FILTERS.map((f) => (
-          <TouchableOpacity
-            key={f.value}
-            style={[styles.filterTab, activeFilter === f.value && styles.filterTabActive]}
-            onPress={() => setActiveFilter(f.value)}
-          >
-            <Text
-              style={[styles.filterText, activeFilter === f.value && styles.filterTextActive]}
-            >
-              {f.label}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </View>
-
-      <FlatList
-        data={filteredTechnicians}
-        keyExtractor={(item) => item.id}
-        renderItem={renderItem}
-        contentContainerStyle={styles.listContent}
-        showsVerticalScrollIndicator={false}
-        ListEmptyComponent={
-          <EmptyState
-            icon="people-outline"
-            title="لا يوجد فنيون"
-            subtitle="اضغط + لإضافة فني جديد"
+      )}
+      <TextInput style={styles.search} placeholder="بحث..." value={search} onChangeText={setSearch} textAlign="right" />
+      {loading ? <ActivityIndicator style={{ margin: 40 }} color={C.primary} size="large" /> :
+        error ? (
+          <View style={styles.center}>
+            <Text style={{ color: '#C62828', marginBottom: 12 }}>⚠️ {error}</Text>
+            <TouchableOpacity onPress={load} style={styles.retryBtn}><Text style={{ color: '#fff' }}>إعادة المحاولة</Text></TouchableOpacity>
+          </View>
+        ) : (
+          <FlatList
+            data={filtered}
+            keyExtractor={i => String(i.id)}
+            renderItem={renderItem}
+            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} />}
+            ListEmptyComponent={<View style={styles.center}><Ionicons name="people-outline" size={48} color="#ccc" /><Text style={{ color: '#ccc', marginTop: 10 }}>لا يوجد موظفون</Text></View>}
+            contentContainerStyle={{ paddingBottom: 100 }}
           />
-        }
-      />
-    </SafeAreaView>
+        )
+      }
+      <TouchableOpacity style={styles.fab} onPress={() => navigation.navigate('NewTechnician')}>
+        <Ionicons name="add" size={28} color="#fff" />
+      </TouchableOpacity>
+    </View>
   );
-};
+}
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.background },
-  header: {
-    backgroundColor: COLORS.card,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.border,
-    elevation: 2,
-  },
-  headerTitle: { fontSize: 20, fontWeight: 'bold', color: COLORS.text },
-  addButton: {
-    backgroundColor: COLORS.primary,
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-
-  summary: {
-    backgroundColor: COLORS.card,
-    flexDirection: 'row',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.border,
-  },
+  container: { flex: 1, backgroundColor: C.bg },
+  summaryRow: { flexDirection: 'row', backgroundColor: C.primary, padding: 14 },
   summaryItem: { flex: 1, alignItems: 'center' },
-  summaryCount: { fontSize: 22, fontWeight: 'bold' },
-  summaryLabel: { fontSize: 11, color: COLORS.textSecondary, marginTop: 2 },
-  summarySep: { width: 1, backgroundColor: COLORS.border, marginVertical: 4 },
-
-  searchContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: COLORS.card,
-    margin: 12,
-    marginBottom: 6,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 10,
-    gap: 8,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-  },
-  searchInput: { flex: 1, fontSize: 14, color: COLORS.text, padding: 0 },
-
-  filterContainer: {
-    flexDirection: 'row',
-    paddingHorizontal: 12,
-    paddingBottom: 10,
-    gap: 6,
-  },
-  filterTab: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
-    backgroundColor: COLORS.card,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-  },
-  filterTabActive: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
-  filterText: { fontSize: 12, color: COLORS.textSecondary, fontWeight: '500' },
-  filterTextActive: { color: '#FFF' },
-
-  listContent: { padding: 12, paddingBottom: 24 },
-  card: {
-    backgroundColor: COLORS.card,
-    borderRadius: 12,
-    marginBottom: 10,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.06,
-    shadowRadius: 4,
-    overflow: 'hidden',
-  },
-  cardContent: { flexDirection: 'row', padding: 14, alignItems: 'center' },
-  cardInfo: { flex: 1 },
-  nameRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'flex-end',
-    gap: 8,
-    marginBottom: 4,
-  },
-  name: { fontSize: 16, fontWeight: '700', color: COLORS.text },
-  specialty: { fontSize: 13, color: COLORS.textSecondary, textAlign: 'right', marginBottom: 8 },
-  metaRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'flex-end',
-    gap: 8,
-  },
-  metaItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  metaValue: { fontSize: 14, fontWeight: '700', color: COLORS.primary },
-  metaLabel: { fontSize: 11, color: COLORS.textSecondary },
-  metaSeparator: { width: 1, height: 12, backgroundColor: COLORS.border },
-  avatar: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginLeft: 14,
-  },
-  avatarText: { color: '#FFF', fontSize: 16, fontWeight: 'bold' },
-  activeTaskBanner: {
-    backgroundColor: COLORS.primary + '12',
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    borderTopWidth: 1,
-    borderTopColor: COLORS.primary + '20',
-  },
-  activeTaskText: { fontSize: 12, color: COLORS.primary, fontWeight: '500' },
+  summaryVal: { fontSize: 22, fontWeight: 'bold', color: '#fff' },
+  summaryLbl: { fontSize: 11, color: 'rgba(255,255,255,0.8)', marginTop: 2 },
+  search: { margin: 10, padding: 10, backgroundColor: C.white, borderRadius: 10, borderWidth: 1, borderColor: '#ddd', fontSize: 14 },
+  item: { backgroundColor: C.white, marginHorizontal: 10, marginBottom: 8, borderRadius: 12, padding: 14, flexDirection: 'row', alignItems: 'center', elevation: 2 },
+  avatar: { width: 46, height: 46, borderRadius: 23, backgroundColor: C.primary + '22', justifyContent: 'center', alignItems: 'center' },
+  avatarTxt: { fontSize: 18, fontWeight: 'bold', color: C.primary },
+  row: { flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center', gap: 8, marginBottom: 4 },
+  name: { fontSize: 15, fontWeight: '600', color: C.text },
+  dept: { fontSize: 12, color: C.sub, textAlign: 'right', marginTop: 2 },
+  badge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
+  badgeTxt: { fontSize: 11, fontWeight: '600' },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 30 },
+  retryBtn: { backgroundColor: C.primary, paddingHorizontal: 20, paddingVertical: 10, borderRadius: 8 },
+  fab: { position: 'absolute', bottom: 24, left: 24, backgroundColor: C.primary, width: 56, height: 56, borderRadius: 28, justifyContent: 'center', alignItems: 'center', elevation: 6 },
 });
-
-export default TechniciansListScreen;

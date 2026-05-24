@@ -1,489 +1,127 @@
-import React, { useMemo, useState } from 'react';
-import {
-  View,
-  Text,
-  ScrollView,
-  StyleSheet,
-  TouchableOpacity,
-  Alert,
-  Modal,
-} from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import React, { useState, useCallback } from 'react';
+import { View, Text, StyleSheet, ScrollView, ActivityIndicator, TouchableOpacity, RefreshControl } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
-import { useApp } from '../../context/AppContext';
-import StatusBadge from '../../components/StatusBadge';
-import EmptyState from '../../components/EmptyState';
-import {
-  getEquipmentStatusColor,
-  getRequestsForEquipment,
-  formatDate,
-  getRelativeTime,
-} from '../../utils/helpers';
+import { assetsAPI } from '../../services/api';
 
-const COLORS = {
-  primary: '#1565C0',
-  accent: '#FF6F00',
-  success: '#2E7D32',
-  danger: '#D32F2F',
-  background: '#F5F7FA',
-  card: '#FFFFFF',
-  text: '#212121',
-  textSecondary: '#616161',
-  border: '#E0E0E0',
-};
+const C = { primary: '#1565C0', bg: '#F5F7FA', white: '#fff', text: '#1a1a1a', sub: '#666' };
+const hColor = h => h >= 80 ? '#2E7D32' : h >= 60 ? '#FF6F00' : '#C62828';
+const CAT_AR = { electrical: 'كهربي', mechanical: 'ميكانيكي', hvac: 'تكييف', civil: 'مدني', other: 'أخرى' };
 
-const EQUIPMENT_STATUS_OPTIONS = [
-  { label: 'يعمل', value: 'working', color: '#2E7D32' },
-  { label: 'يحتاج صيانة', value: 'needs-maintenance', color: '#FF6F00' },
-  { label: 'معطل', value: 'broken', color: '#D32F2F' },
-];
+export default function EquipmentDetailScreen({ route }) {
+  const { id } = route.params;
+  const [asset, setAsset] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState(null);
 
-const EquipmentDetailScreen = ({ route, navigation }) => {
-  const { equipmentId } = route.params;
-  const { state, actions } = useApp();
-  const { equipment, requests, technicians } = state;
-  const [showStatusModal, setShowStatusModal] = useState(false);
-
-  const item = useMemo(
-    () => equipment.find((e) => e.id === equipmentId),
-    [equipment, equipmentId]
-  );
-
-  const equipRequests = useMemo(
-    () =>
-      getRequestsForEquipment(requests, equipmentId).sort(
-        (a, b) => new Date(b.createdAt) - new Date(a.createdAt)
-      ),
-    [requests, equipmentId]
-  );
-
-  const activeRequests = useMemo(
-    () => equipRequests.filter((r) => r.status === 'pending' || r.status === 'in-progress'),
-    [equipRequests]
-  );
-
-  const completedRequests = useMemo(
-    () => equipRequests.filter((r) => r.status === 'completed'),
-    [equipRequests]
-  );
-
-  const getTechName = (techId) => {
-    if (!techId) return 'غير مُسند';
-    const tech = technicians.find((t) => t.id === techId);
-    return tech ? tech.name : 'غير محدد';
+  const load = async () => {
+    try {
+      setError(null);
+      const res = await assetsAPI.getOne(id);
+      setAsset(res.data);
+    } catch (e) { setError(e.response?.data?.error || e.message); }
+    finally { setLoading(false); setRefreshing(false); }
   };
 
-  if (!item) {
-    return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.notFound}>
-          <Ionicons name="alert-circle-outline" size={60} color="#9E9E9E" />
-          <Text style={styles.notFoundText}>المعدة غير موجودة</Text>
-          <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
-            <Text style={styles.backBtnText}>العودة</Text>
-          </TouchableOpacity>
-        </View>
-      </SafeAreaView>
-    );
-  }
+  useFocusEffect(useCallback(() => { load(); }, [id]));
 
-  const statusColor = getEquipmentStatusColor(item.status);
+  if (loading) return <View style={styles.center}><ActivityIndicator size="large" color={C.primary} /></View>;
+  if (error) return <View style={styles.center}><Text style={styles.errorText}>⚠️ {error}</Text><TouchableOpacity onPress={load} style={styles.retryBtn}><Text style={{ color: '#fff' }}>إعادة</Text></TouchableOpacity></View>;
+  if (!asset) return null;
 
-  const handleStatusChange = (newStatus) => {
-    setShowStatusModal(false);
-    if (newStatus === item.status) return;
-    actions.updateEquipment(equipmentId, { status: newStatus });
-  };
-
-  const handleDelete = () => {
-    if (activeRequests.length > 0) {
-      Alert.alert(
-        'لا يمكن الحذف',
-        'لا يمكن حذف المعدة لأن لها طلبات صيانة نشطة. أكمل أو ألغِ الطلبات أولاً.'
-      );
-      return;
-    }
-
-    Alert.alert(
-      'حذف المعدة',
-      `هل أنت متأكد من حذف "${item.name}"؟`,
-      [
-        { text: 'إلغاء', style: 'cancel' },
-        {
-          text: 'حذف',
-          style: 'destructive',
-          onPress: () => {
-            actions.deleteEquipment(equipmentId);
-            navigation.goBack();
-          },
-        },
-      ]
-    );
-  };
+  const h = asset.health ?? 100;
+  const hc = hColor(h);
+  let subsystems = [];
+  try { subsystems = typeof asset.subsystems === 'string' ? JSON.parse(asset.subsystems || '[]') : (asset.subsystems || []); } catch (_) {}
 
   return (
-    <SafeAreaView style={styles.container} edges={['bottom']}>
-      <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={styles.content}
-        showsVerticalScrollIndicator={false}
-      >
-        {/* Header Card */}
-        <View style={[styles.headerCard, { borderTopColor: statusColor }]}>
-          <View style={styles.headerTop}>
-            <TouchableOpacity onPress={handleDelete}>
-              <Ionicons name="trash-outline" size={22} color={COLORS.danger} />
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.statusButton}
-              onPress={() => setShowStatusModal(true)}
-            >
-              <StatusBadge status={item.status} type="equipment" size="medium" />
-              <Ionicons name="chevron-down" size={14} color={COLORS.textSecondary} />
-            </TouchableOpacity>
+    <ScrollView style={styles.container} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} />}>
+      {/* Health + Name */}
+      <View style={styles.card}>
+        <Text style={styles.assetName}>{asset.name}</Text>
+        {asset.category ? <Text style={styles.category}>{CAT_AR[asset.category] || asset.category}</Text> : null}
+        <View style={styles.healthRow}>
+          <Text style={[styles.healthPct, { color: hc }]}>{h}%</Text>
+          <View style={styles.healthBarBg}>
+            <View style={[styles.healthBarFill, { width: `${h}%`, backgroundColor: hc }]} />
           </View>
+          <Text style={[styles.healthLabel, { color: hc }]}>{h >= 80 ? 'جيد' : h >= 60 ? 'تحذير' : 'حرج'}</Text>
+        </View>
+      </View>
 
-          <View style={styles.equipIcon}>
-            <Ionicons name="cog" size={40} color={statusColor} />
+      {/* WO Summary */}
+      <View style={styles.statsRow}>
+        <View style={styles.statBox}>
+          <Text style={styles.statVal}>{asset.total_wo ?? '—'}</Text>
+          <Text style={styles.statLbl}>إجمالي الطلبات</Text>
+        </View>
+        <View style={styles.statBox}>
+          <Text style={[styles.statVal, { color: (asset.open_wo || 0) > 0 ? '#FF6F00' : '#2E7D32' }]}>{asset.open_wo ?? '—'}</Text>
+          <Text style={styles.statLbl}>طلبات مفتوحة</Text>
+        </View>
+      </View>
+
+      {/* Details */}
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>بيانات المعدة</Text>
+        {[
+          { label: 'الرقم التسلسلي', value: asset.serial },
+          { label: 'القسم', value: asset.dept },
+          { label: 'الموقع', value: asset.location },
+          { label: 'الشركة المصنعة', value: asset.manufacturer },
+          { label: 'الموديل', value: asset.model },
+          { label: 'سنة الصنع', value: asset.year },
+          { label: 'آخر صيانة', value: asset.last_maintenance },
+          { label: 'تاريخ الشراء', value: asset.purchase_year },
+        ].filter(f => f.value).map(f => (
+          <View key={f.label} style={styles.field}>
+            <Text style={styles.fieldVal}>{f.value}</Text>
+            <Text style={styles.fieldLbl}>{f.label}</Text>
           </View>
+        ))}
+        {asset.notes ? <View style={{ marginTop: 10 }}><Text style={styles.fieldLbl}>ملاحظات</Text><Text style={styles.notes}>{asset.notes}</Text></View> : null}
+      </View>
 
-          <Text style={styles.equipName}>{item.name}</Text>
-          <Text style={styles.equipModel}>{item.model}</Text>
-
-          <View style={styles.statsRow}>
-            <View style={styles.statItem}>
-              <Text style={[styles.statValue, { color: COLORS.primary }]}>
-                {activeRequests.length}
-              </Text>
-              <Text style={styles.statLabel}>طلب نشط</Text>
+      {/* Subsystems */}
+      {subsystems.length > 0 && (
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>الأنظمة الفرعية</Text>
+          {subsystems.map((s, i) => (
+            <View key={i} style={styles.subItem}>
+              <Ionicons name="chevron-back" size={14} color={C.primary} />
+              <Text style={styles.subText}>{typeof s === 'string' ? s : JSON.stringify(s)}</Text>
             </View>
-            <View style={styles.statSep} />
-            <View style={styles.statItem}>
-              <Text style={[styles.statValue, { color: COLORS.success }]}>
-                {completedRequests.length}
-              </Text>
-              <Text style={styles.statLabel}>صيانة مكتملة</Text>
-            </View>
-            <View style={styles.statSep} />
-            <View style={styles.statItem}>
-              <Text style={styles.statValue}>{equipRequests.length}</Text>
-              <Text style={styles.statLabel}>إجمالي</Text>
-            </View>
-          </View>
+          ))}
         </View>
-
-        {/* Details */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>تفاصيل المعدة</Text>
-          <View style={styles.detailsCard}>
-            <DetailRow
-              icon="barcode-outline"
-              label="الرقم التسلسلي"
-              value={item.serialNumber}
-            />
-            <DetailRow
-              icon="location-outline"
-              label="الموقع"
-              value={item.location}
-            />
-            {item.purchaseDate && (
-              <DetailRow
-                icon="bag-outline"
-                label="تاريخ الشراء"
-                value={formatDate(item.purchaseDate)}
-              />
-            )}
-            {item.lastMaintenanceDate && (
-              <DetailRow
-                icon="time-outline"
-                label="آخر صيانة"
-                value={formatDate(item.lastMaintenanceDate)}
-                valueColor={COLORS.success}
-              />
-            )}
-          </View>
-        </View>
-
-        {/* Active Requests */}
-        {activeRequests.length > 0 && (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>طلبات الصيانة النشطة ({activeRequests.length})</Text>
-            {activeRequests.map((req) => (
-              <TouchableOpacity
-                key={req.id}
-                style={styles.reqCard}
-                onPress={() =>
-                  navigation.navigate('RequestsTab', {
-                    screen: 'RequestDetail',
-                    params: { requestId: req.id },
-                  })
-                }
-              >
-                <View style={styles.reqHeader}>
-                  <StatusBadge status={req.status} size="small" />
-                  <Text style={styles.reqTitle} numberOfLines={1}>
-                    {req.title}
-                  </Text>
-                </View>
-                <Text style={styles.reqTech}>الفني: {getTechName(req.technicianId)}</Text>
-                <Text style={styles.reqDate}>{getRelativeTime(req.createdAt)}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        )}
-
-        {/* Maintenance History */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>
-            سجل الصيانة ({completedRequests.length})
-          </Text>
-          {completedRequests.length === 0 ? (
-            <EmptyState
-              icon="time-outline"
-              title="لا يوجد سجل صيانة"
-              subtitle="لم تُكمل أي صيانة لهذه المعدة بعد"
-              color="#BDBDBD"
-            />
-          ) : (
-            completedRequests.map((req) => (
-              <TouchableOpacity
-                key={req.id}
-                style={[styles.reqCard, styles.reqCardCompleted]}
-                onPress={() =>
-                  navigation.navigate('RequestsTab', {
-                    screen: 'RequestDetail',
-                    params: { requestId: req.id },
-                  })
-                }
-              >
-                <View style={styles.reqHeader}>
-                  <StatusBadge status={req.status} size="small" />
-                  <Text style={styles.reqTitle} numberOfLines={1}>
-                    {req.title}
-                  </Text>
-                </View>
-                <Text style={styles.reqTech}>الفني: {getTechName(req.technicianId)}</Text>
-                {req.completedAt && (
-                  <Text style={styles.reqDate}>
-                    اكتمل: {formatDate(req.completedAt)}
-                  </Text>
-                )}
-              </TouchableOpacity>
-            ))
-          )}
-        </View>
-
-        {/* Quick Action */}
-        <TouchableOpacity
-          style={styles.newRequestBtn}
-          onPress={() =>
-            navigation.navigate('RequestsTab', { screen: 'NewRequest' })
-          }
-        >
-          <Ionicons name="add-circle-outline" size={20} color="#FFF" />
-          <Text style={styles.newRequestBtnText}>إنشاء طلب صيانة جديد</Text>
-        </TouchableOpacity>
-      </ScrollView>
-
-      {/* Status Modal */}
-      <Modal
-        visible={showStatusModal}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setShowStatusModal(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>تغيير حالة المعدة</Text>
-            {EQUIPMENT_STATUS_OPTIONS.map((opt) => (
-              <TouchableOpacity
-                key={opt.value}
-                style={[
-                  styles.statusOpt,
-                  item.status === opt.value && styles.statusOptActive,
-                ]}
-                onPress={() => handleStatusChange(opt.value)}
-              >
-                <View style={styles.optLeft}>
-                  {item.status === opt.value && (
-                    <Ionicons name="checkmark" size={18} color={opt.color} />
-                  )}
-                </View>
-                <Text style={[styles.optText, { color: opt.color }]}>{opt.label}</Text>
-                <View style={[styles.optDot, { backgroundColor: opt.color }]} />
-              </TouchableOpacity>
-            ))}
-            <TouchableOpacity
-              style={styles.cancelBtn}
-              onPress={() => setShowStatusModal(false)}
-            >
-              <Text style={styles.cancelBtnText}>إلغاء</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
-    </SafeAreaView>
+      )}
+      <View style={{ height: 30 }} />
+    </ScrollView>
   );
-};
-
-const DetailRow = ({ icon, label, value, valueColor }) => (
-  <View style={styles.detailRow}>
-    <Text style={[styles.detailValue, valueColor && { color: valueColor }]}>
-      {value || 'غير محدد'}
-    </Text>
-    <View style={styles.detailLabel}>
-      <Text style={styles.detailLabelText}>{label}</Text>
-      <Ionicons name={icon} size={15} color="#9E9E9E" />
-    </View>
-  </View>
-);
+}
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.background },
-  scrollView: { flex: 1 },
-  content: { padding: 16, paddingBottom: 32 },
-  notFound: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 16 },
-  notFoundText: { fontSize: 18, color: '#9E9E9E' },
-  backBtn: {
-    backgroundColor: COLORS.primary,
-    paddingHorizontal: 24,
-    paddingVertical: 10,
-    borderRadius: 8,
-  },
-  backBtnText: { color: '#FFF', fontWeight: '600' },
-
-  headerCard: {
-    backgroundColor: COLORS.card,
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 16,
-    elevation: 3,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 6,
-    borderTopWidth: 4,
-    alignItems: 'center',
-  },
-  headerTop: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    width: '100%',
-    marginBottom: 16,
-  },
-  statusButton: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  equipIcon: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    backgroundColor: '#F5F7FA',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  equipName: { fontSize: 18, fontWeight: 'bold', color: COLORS.text, textAlign: 'center', marginBottom: 4 },
-  equipModel: { fontSize: 13, color: COLORS.textSecondary, textAlign: 'center', marginBottom: 16 },
-  statsRow: {
-    flexDirection: 'row',
-    width: '100%',
-    borderTopWidth: 1,
-    borderTopColor: COLORS.border,
-    paddingTop: 14,
-  },
-  statItem: { flex: 1, alignItems: 'center' },
-  statValue: { fontSize: 22, fontWeight: 'bold', color: COLORS.text },
-  statLabel: { fontSize: 11, color: COLORS.textSecondary, marginTop: 2 },
-  statSep: { width: 1, backgroundColor: COLORS.border, marginVertical: 4 },
-
-  section: { marginBottom: 16 },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: COLORS.text,
-    textAlign: 'right',
-    marginBottom: 10,
-  },
-  detailsCard: {
-    backgroundColor: COLORS.card,
-    borderRadius: 12,
-    padding: 14,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 3,
-    gap: 14,
-  },
-  detailRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  detailLabel: { flexDirection: 'row', alignItems: 'center', gap: 5 },
-  detailLabelText: { fontSize: 13, color: COLORS.textSecondary },
-  detailValue: { fontSize: 13, color: COLORS.text, fontWeight: '500', flex: 1, textAlign: 'left' },
-
-  reqCard: {
-    backgroundColor: COLORS.card,
-    borderRadius: 10,
-    padding: 12,
-    marginBottom: 8,
-    elevation: 1,
-    borderLeftWidth: 3,
-    borderLeftColor: COLORS.primary,
-  },
-  reqCardCompleted: { borderLeftColor: COLORS.success },
-  reqHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4, gap: 8 },
-  reqTitle: { flex: 1, fontSize: 13, fontWeight: '600', color: COLORS.text, textAlign: 'right' },
-  reqTech: { fontSize: 12, color: COLORS.primary, textAlign: 'right', marginBottom: 2 },
-  reqDate: { fontSize: 11, color: COLORS.textSecondary },
-
-  newRequestBtn: {
-    backgroundColor: COLORS.accent,
-    borderRadius: 12,
-    paddingVertical: 14,
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: 8,
-    marginTop: 8,
-    elevation: 3,
-  },
-  newRequestBtnText: { color: '#FFF', fontSize: 15, fontWeight: '700' },
-
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
-  modalContent: {
-    backgroundColor: COLORS.card,
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    padding: 20,
-    paddingBottom: 32,
-  },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: COLORS.text,
-    textAlign: 'center',
-    marginBottom: 16,
-  },
-  statusOpt: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 14,
-    borderRadius: 10,
-    marginBottom: 8,
-    backgroundColor: '#F5F7FA',
-    gap: 10,
-  },
-  statusOptActive: { backgroundColor: '#E8F0FE' },
-  optLeft: { width: 24 },
-  optText: { flex: 1, fontSize: 15, fontWeight: '600', textAlign: 'right' },
-  optDot: { width: 12, height: 12, borderRadius: 6 },
-  cancelBtn: {
-    marginTop: 8,
-    padding: 14,
-    borderRadius: 10,
-    backgroundColor: '#F5F5F5',
-    alignItems: 'center',
-  },
-  cancelBtnText: { fontSize: 15, color: COLORS.textSecondary, fontWeight: '600' },
+  container: { flex: 1, backgroundColor: C.bg },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 30 },
+  errorText: { color: '#C62828', textAlign: 'center', marginBottom: 12 },
+  retryBtn: { backgroundColor: C.primary, paddingHorizontal: 20, paddingVertical: 10, borderRadius: 8 },
+  card: { backgroundColor: C.white, margin: 12, marginBottom: 0, borderRadius: 14, padding: 16, elevation: 2 },
+  cardTitle: { fontSize: 14, fontWeight: 'bold', color: C.text, textAlign: 'right', marginBottom: 12 },
+  assetName: { fontSize: 20, fontWeight: 'bold', color: C.text, textAlign: 'right', marginBottom: 4 },
+  category: { fontSize: 13, color: C.sub, textAlign: 'right', marginBottom: 12 },
+  healthRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  healthPct: { fontSize: 18, fontWeight: 'bold', width: 45, textAlign: 'right' },
+  healthBarBg: { flex: 1, height: 10, backgroundColor: '#eee', borderRadius: 5, overflow: 'hidden' },
+  healthBarFill: { height: '100%', borderRadius: 5 },
+  healthLabel: { fontSize: 13, fontWeight: '600', width: 40, textAlign: 'right' },
+  statsRow: { flexDirection: 'row', margin: 12, marginBottom: 0, gap: 8 },
+  statBox: { flex: 1, backgroundColor: C.white, borderRadius: 12, padding: 16, alignItems: 'center', elevation: 2 },
+  statVal: { fontSize: 26, fontWeight: 'bold', color: C.text },
+  statLbl: { fontSize: 12, color: C.sub, marginTop: 4, textAlign: 'center' },
+  field: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#f0f0f0' },
+  fieldLbl: { fontSize: 12, color: C.sub },
+  fieldVal: { fontSize: 14, color: C.text, fontWeight: '500', flex: 1, textAlign: 'right', marginRight: 8 },
+  notes: { fontSize: 13, color: C.text, textAlign: 'right', marginTop: 4, lineHeight: 20 },
+  subItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 6, gap: 6 },
+  subText: { fontSize: 13, color: C.text, flex: 1, textAlign: 'right' },
 });
-
-export default EquipmentDetailScreen;

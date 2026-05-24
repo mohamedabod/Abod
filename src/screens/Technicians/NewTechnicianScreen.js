@@ -1,346 +1,78 @@
 import React, { useState } from 'react';
-import {
-  View,
-  Text,
-  ScrollView,
-  StyleSheet,
-  TouchableOpacity,
-  TextInput,
-  Alert,
-} from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
-import { useApp } from '../../context/AppContext';
+import { View, Text, TextInput, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator, Alert } from 'react-native';
+import { hrAPI } from '../../services/api';
 
-const COLORS = {
-  primary: '#1565C0',
-  accent: '#FF6F00',
-  background: '#F5F7FA',
-  card: '#FFFFFF',
-  text: '#212121',
-  textSecondary: '#616161',
-  border: '#E0E0E0',
-  danger: '#D32F2F',
-  success: '#2E7D32',
-};
+const C = { primary: '#1565C0', bg: '#F5F7FA', white: '#fff', text: '#1a1a1a', sub: '#666' };
+const ROLES = ['technician', 'manager', 'viewer', 'admin'];
+const ROLE_AR = { technician: 'فني صيانة', manager: 'مشرف', viewer: 'مراقب', admin: 'مدير' };
 
-const STATUS_OPTIONS = [
-  { label: 'متاح', value: 'available', color: COLORS.success },
-  { label: 'مشغول', value: 'busy', color: COLORS.primary },
-  { label: 'غير متصل', value: 'offline', color: '#757575' },
-];
+export default function NewTechnicianScreen({ navigation }) {
+  const [form, setForm] = useState({ name: '', email: '', password: '', role: 'technician', phone: '', department: '', specialization: '', employee_id: '' });
+  const [loading, setLoading] = useState(false);
 
-const SPECIALTIES = [
-  'كهرباء وأنظمة التبريد',
-  'ميكانيكا وصيانة المحركات',
-  'سباكة وأنظمة المياه',
-  'أجهزة إلكترونية وحاسوب',
-  'تكييف وتهوية',
-  'نجارة وأعمال مدنية',
-  'صيانة عامة',
-  'أتمتة وتحكم صناعي',
-];
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
-const NewTechnicianScreen = ({ navigation }) => {
-  const { actions } = useApp();
-
-  const [name, setName] = useState('');
-  const [phone, setPhone] = useState('');
-  const [specialty, setSpecialty] = useState('');
-  const [status, setStatus] = useState('available');
-  const [showSpecialties, setShowSpecialties] = useState(false);
-
-  const isFormValid = name.trim() && phone.trim() && specialty.trim();
-
-  const handleSubmit = () => {
-    if (!isFormValid) {
-      Alert.alert('بيانات ناقصة', 'يرجى ملء جميع الحقول المطلوبة');
-      return;
-    }
-
-    if (phone.trim().length < 9) {
-      Alert.alert('رقم هاتف غير صحيح', 'يرجى إدخال رقم هاتف صحيح');
-      return;
-    }
-
-    actions.addTechnician({
-      name: name.trim(),
-      phone: phone.trim(),
-      specialty: specialty.trim(),
-      status,
-    });
-
-    Alert.alert('تم الحفظ', 'تم إضافة الفني بنجاح', [
-      { text: 'حسناً', onPress: () => navigation.goBack() },
-    ]);
+  const submit = async () => {
+    if (!form.name.trim()) return Alert.alert('تنبيه', 'الاسم مطلوب');
+    if (!form.email.trim()) return Alert.alert('تنبيه', 'البريد الإلكتروني مطلوب');
+    if (!form.password.trim() || form.password.length < 6) return Alert.alert('تنبيه', 'كلمة المرور يجب أن تكون 6 أحرف على الأقل');
+    setLoading(true);
+    try {
+      await hrAPI.createStaff(form);
+      Alert.alert('تم', 'تمت إضافة الموظف بنجاح', [{ text: 'حسناً', onPress: () => navigation.goBack() }]);
+    } catch (e) {
+      Alert.alert('خطأ', e.response?.data?.error || e.message);
+    } finally { setLoading(false); }
   };
 
   return (
-    <SafeAreaView style={styles.container} edges={['bottom']}>
-      <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={styles.content}
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
-      >
-        {/* Avatar Preview */}
-        <View style={styles.avatarPreview}>
-          <View style={styles.avatar}>
-            <Text style={styles.avatarText}>
-              {name.trim()
-                ? name.trim().split(' ').slice(0, 2).map((w) => w[0]).join('')
-                : '؟'}
-            </Text>
-          </View>
-          <Text style={styles.avatarHint}>صورة الفني (أحرف الاسم)</Text>
-        </View>
+    <ScrollView style={styles.container} contentContainerStyle={{ padding: 16, paddingBottom: 40 }} keyboardShouldPersistTaps="handled">
+      <Text style={styles.label}>الاسم الكامل *</Text>
+      <TextInput style={styles.input} value={form.name} onChangeText={v => set('name', v)} placeholder="اسم الموظف" textAlign="right" />
 
-        {/* Name */}
-        <View style={styles.field}>
-          <Text style={styles.label}>
-            اسم الفني <Text style={styles.required}>*</Text>
-          </Text>
-          <TextInput
-            style={styles.input}
-            placeholder="أدخل الاسم الكامل"
-            placeholderTextColor={COLORS.textSecondary}
-            value={name}
-            onChangeText={setName}
-            textAlign="right"
-            maxLength={60}
-          />
-        </View>
+      <Text style={styles.label}>البريد الإلكتروني *</Text>
+      <TextInput style={styles.input} value={form.email} onChangeText={v => set('email', v)} placeholder="example@company.com" keyboardType="email-address" autoCapitalize="none" textAlign="right" />
 
-        {/* Phone */}
-        <View style={styles.field}>
-          <Text style={styles.label}>
-            رقم الهاتف <Text style={styles.required}>*</Text>
-          </Text>
-          <TextInput
-            style={styles.input}
-            placeholder="05XXXXXXXX"
-            placeholderTextColor={COLORS.textSecondary}
-            value={phone}
-            onChangeText={setPhone}
-            textAlign="right"
-            keyboardType="phone-pad"
-            maxLength={15}
-          />
-        </View>
+      <Text style={styles.label}>كلمة المرور *</Text>
+      <TextInput style={styles.input} value={form.password} onChangeText={v => set('password', v)} placeholder="6 أحرف على الأقل" secureTextEntry textAlign="right" />
 
-        {/* Specialty */}
-        <View style={styles.field}>
-          <Text style={styles.label}>
-            التخصص <Text style={styles.required}>*</Text>
-          </Text>
-          <TextInput
-            style={styles.input}
-            placeholder="أدخل تخصص الفني"
-            placeholderTextColor={COLORS.textSecondary}
-            value={specialty}
-            onChangeText={setSpecialty}
-            textAlign="right"
-          />
-          {/* Quick Specialty Select */}
-          <TouchableOpacity
-            style={styles.showMore}
-            onPress={() => setShowSpecialties(!showSpecialties)}
-          >
-            <Ionicons
-              name={showSpecialties ? 'chevron-up' : 'chevron-down'}
-              size={16}
-              color={COLORS.primary}
-            />
-            <Text style={styles.showMoreText}>اختر من القائمة</Text>
+      <Text style={styles.label}>الصلاحية</Text>
+      <View style={styles.chips}>
+        {ROLES.map(r => (
+          <TouchableOpacity key={r} style={[styles.chip, form.role === r && styles.chipActive]} onPress={() => set('role', r)}>
+            <Text style={[styles.chipTxt, form.role === r && styles.chipTxtActive]}>{ROLE_AR[r]}</Text>
           </TouchableOpacity>
+        ))}
+      </View>
 
-          {showSpecialties && (
-            <View style={styles.specialtiesList}>
-              {SPECIALTIES.map((sp) => (
-                <TouchableOpacity
-                  key={sp}
-                  style={[
-                    styles.specialtyItem,
-                    specialty === sp && styles.specialtyItemActive,
-                  ]}
-                  onPress={() => {
-                    setSpecialty(sp);
-                    setShowSpecialties(false);
-                  }}
-                >
-                  <Text
-                    style={[
-                      styles.specialtyItemText,
-                      specialty === sp && styles.specialtyItemTextActive,
-                    ]}
-                  >
-                    {sp}
-                  </Text>
-                  {specialty === sp && (
-                    <Ionicons name="checkmark" size={16} color={COLORS.primary} />
-                  )}
-                </TouchableOpacity>
-              ))}
-            </View>
-          )}
-        </View>
+      <Text style={styles.label}>الهاتف</Text>
+      <TextInput style={styles.input} value={form.phone} onChangeText={v => set('phone', v)} placeholder="رقم الهاتف" keyboardType="phone-pad" textAlign="right" />
 
-        {/* Status */}
-        <View style={styles.field}>
-          <Text style={styles.label}>الحالة الابتدائية</Text>
-          <View style={styles.statusRow}>
-            {STATUS_OPTIONS.map((opt) => (
-              <TouchableOpacity
-                key={opt.value}
-                style={[
-                  styles.statusBtn,
-                  status === opt.value && {
-                    backgroundColor: opt.color,
-                    borderColor: opt.color,
-                  },
-                ]}
-                onPress={() => setStatus(opt.value)}
-              >
-                <View
-                  style={[
-                    styles.statusDot,
-                    { backgroundColor: status === opt.value ? '#FFF' : opt.color },
-                  ]}
-                />
-                <Text
-                  style={[
-                    styles.statusBtnText,
-                    { color: status === opt.value ? '#FFF' : opt.color },
-                  ]}
-                >
-                  {opt.label}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        </View>
+      <Text style={styles.label}>القسم</Text>
+      <TextInput style={styles.input} value={form.department} onChangeText={v => set('department', v)} placeholder="قسم الصيانة" textAlign="right" />
 
-        {/* Submit */}
-        <TouchableOpacity
-          style={[styles.submitBtn, !isFormValid && styles.submitBtnDisabled]}
-          onPress={handleSubmit}
-          disabled={!isFormValid}
-        >
-          <Ionicons name="person-add-outline" size={22} color="#FFF" />
-          <Text style={styles.submitBtnText}>إضافة الفني</Text>
-        </TouchableOpacity>
-      </ScrollView>
-    </SafeAreaView>
+      <Text style={styles.label}>التخصص</Text>
+      <TextInput style={styles.input} value={form.specialization} onChangeText={v => set('specialization', v)} placeholder="كهرباء / ميكانيكا / ..." textAlign="right" />
+
+      <Text style={styles.label}>الرقم الوظيفي</Text>
+      <TextInput style={styles.input} value={form.employee_id} onChangeText={v => set('employee_id', v)} placeholder="EMP-001" textAlign="right" />
+
+      <TouchableOpacity style={styles.btn} onPress={submit} disabled={loading}>
+        {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.btnTxt}>إضافة الموظف</Text>}
+      </TouchableOpacity>
+    </ScrollView>
   );
-};
+}
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.background },
-  scrollView: { flex: 1 },
-  content: { padding: 16, paddingBottom: 40 },
-
-  avatarPreview: {
-    alignItems: 'center',
-    marginBottom: 24,
-    marginTop: 8,
-  },
-  avatar: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: COLORS.primary,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 8,
-    elevation: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-  },
-  avatarText: { color: '#FFF', fontSize: 26, fontWeight: 'bold' },
-  avatarHint: { fontSize: 12, color: COLORS.textSecondary },
-
-  field: { marginBottom: 18 },
-  label: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: COLORS.text,
-    textAlign: 'right',
-    marginBottom: 8,
-  },
-  required: { color: COLORS.danger },
-
-  input: {
-    backgroundColor: COLORS.card,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    fontSize: 14,
-    color: COLORS.text,
-  },
-
-  showMore: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    marginTop: 6,
-    alignSelf: 'flex-end',
-  },
-  showMoreText: { fontSize: 12, color: COLORS.primary },
-
-  specialtiesList: {
-    backgroundColor: COLORS.card,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    marginTop: 6,
-    overflow: 'hidden',
-  },
-  specialtyItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 14,
-    paddingVertical: 11,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F0F0F0',
-  },
-  specialtyItemActive: { backgroundColor: '#E8F0FE' },
-  specialtyItemText: { fontSize: 13, color: COLORS.text, textAlign: 'right', flex: 1 },
-  specialtyItemTextActive: { color: COLORS.primary, fontWeight: '600' },
-
-  statusRow: { flexDirection: 'row', gap: 10 },
-  statusBtn: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    paddingVertical: 10,
-    borderRadius: 10,
-    borderWidth: 1.5,
-    backgroundColor: COLORS.card,
-    borderColor: COLORS.border,
-  },
-  statusDot: { width: 8, height: 8, borderRadius: 4 },
-  statusBtnText: { fontSize: 12, fontWeight: '600' },
-
-  submitBtn: {
-    backgroundColor: COLORS.primary,
-    borderRadius: 12,
-    paddingVertical: 15,
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: 8,
-    marginTop: 8,
-    elevation: 3,
-  },
-  submitBtnDisabled: { backgroundColor: '#B0BEC5' },
-  submitBtnText: { color: '#FFF', fontSize: 16, fontWeight: '700' },
+  container: { flex: 1, backgroundColor: C.bg },
+  label: { fontSize: 13, fontWeight: '600', color: C.sub, textAlign: 'right', marginBottom: 6, marginTop: 14 },
+  input: { backgroundColor: C.white, borderWidth: 1.5, borderColor: '#e0e0e0', borderRadius: 10, padding: 12, fontSize: 14, color: C.text },
+  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  chip: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20, backgroundColor: C.white, borderWidth: 1, borderColor: '#ddd' },
+  chipActive: { backgroundColor: C.primary, borderColor: C.primary },
+  chipTxt: { fontSize: 12, color: C.sub },
+  chipTxtActive: { color: '#fff', fontWeight: 'bold' },
+  btn: { backgroundColor: C.primary, borderRadius: 12, padding: 16, alignItems: 'center', marginTop: 24 },
+  btnTxt: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
 });
-
-export default NewTechnicianScreen;

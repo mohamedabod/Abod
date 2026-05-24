@@ -1,643 +1,184 @@
-import React, { useState, useMemo } from 'react';
-import {
-  View,
-  Text,
-  ScrollView,
-  StyleSheet,
-  TouchableOpacity,
-  Alert,
-  Modal,
-} from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import React, { useState, useCallback } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Modal, Alert, RefreshControl } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
-import { useApp } from '../../context/AppContext';
-import StatusBadge from '../../components/StatusBadge';
-import {
-  formatDate,
-  formatDateTime,
-  getPriorityColor,
-  getPriorityText,
-  getStatusText,
-} from '../../utils/helpers';
+import { workordersAPI } from '../../services/api';
 
-const COLORS = {
-  primary: '#1565C0',
-  accent: '#FF6F00',
-  success: '#2E7D32',
-  danger: '#D32F2F',
-  background: '#F5F7FA',
-  card: '#FFFFFF',
-  text: '#212121',
-  textSecondary: '#616161',
-  border: '#E0E0E0',
-};
+const C = { primary: '#1565C0', bg: '#F5F7FA', white: '#fff', text: '#1a1a1a', sub: '#666' };
+const STATUS_AR = { open: 'مفتوح', inprogress: 'جاري', done: 'منتهي', closed: 'مغلق', overdue: 'متأخر', cancelled: 'ملغي' };
+const STATUS_COLOR = { open: '#FF6F00', inprogress: '#1565C0', done: '#2E7D32', closed: '#555', overdue: '#C62828', cancelled: '#999' };
+const PRIORITY_AR = { high: 'عالي', medium: 'متوسط', low: 'منخفض' };
+const PRIORITY_COLOR = { high: '#C62828', medium: '#FF6F00', low: '#2E7D32' };
+const TYPE_AR = { corrective: 'تصحيحي', preventive: 'وقائي', inspection: 'فحص' };
 
 const STATUS_OPTIONS = [
-  { label: 'معلق', value: 'pending', icon: 'time-outline', color: '#FF6F00' },
-  { label: 'قيد التنفيذ', value: 'in-progress', icon: 'construct-outline', color: '#1565C0' },
-  { label: 'مكتمل', value: 'completed', icon: 'checkmark-circle-outline', color: '#2E7D32' },
-  { label: 'ملغى', value: 'cancelled', icon: 'close-circle-outline', color: '#757575' },
+  { key: 'open', label: 'مفتوح', color: '#FF6F00' },
+  { key: 'inprogress', label: 'جاري', color: '#1565C0' },
+  { key: 'done', label: 'منتهي', color: '#2E7D32' },
+  { key: 'closed', label: 'مغلق', color: '#555' },
+  { key: 'cancelled', label: 'ملغي', color: '#999' },
 ];
 
-const RequestDetailScreen = ({ route, navigation }) => {
-  const { requestId } = route.params;
-  const { state, actions } = useApp();
-  const { requests, equipment, technicians } = state;
-
+export default function RequestDetailScreen({ route }) {
+  const { id } = route.params;
+  const [wo, setWo] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState(null);
   const [showStatusModal, setShowStatusModal] = useState(false);
-  const [showAssignModal, setShowAssignModal] = useState(false);
+  const [updating, setUpdating] = useState(false);
 
-  const request = useMemo(
-    () => requests.find((r) => r.id === requestId),
-    [requests, requestId]
-  );
+  const load = async () => {
+    try {
+      setError(null);
+      const res = await workordersAPI.getOne(id);
+      setWo(res.data);
+    } catch (e) {
+      setError(e.response?.data?.error || e.message);
+    } finally { setLoading(false); setRefreshing(false); }
+  };
 
-  const relatedEquipment = useMemo(
-    () => equipment.find((e) => e.id === request?.equipmentId),
-    [equipment, request]
-  );
+  useFocusEffect(useCallback(() => { load(); }, [id]));
 
-  const assignedTechnician = useMemo(
-    () => technicians.find((t) => t.id === request?.technicianId),
-    [technicians, request]
-  );
-
-  const availableTechnicians = useMemo(
-    () => technicians.filter((t) => t.status !== 'offline'),
-    [technicians]
-  );
-
-  if (!request) {
-    return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.notFound}>
-          <Ionicons name="alert-circle-outline" size={60} color="#9E9E9E" />
-          <Text style={styles.notFoundText}>الطلب غير موجود</Text>
-          <TouchableOpacity
-            style={styles.backBtn}
-            onPress={() => navigation.goBack()}
-          >
-            <Text style={styles.backBtnText}>العودة</Text>
-          </TouchableOpacity>
-        </View>
-      </SafeAreaView>
-    );
-  }
-
-  const handleStatusChange = (newStatus) => {
+  const updateStatus = async (status) => {
     setShowStatusModal(false);
-    if (newStatus === request.status) return;
-
-    Alert.alert(
-      'تغيير الحالة',
-      `هل تريد تغيير حالة الطلب إلى "${getStatusText(newStatus)}"؟`,
-      [
-        { text: 'إلغاء', style: 'cancel' },
-        {
-          text: 'تأكيد',
-          onPress: () => {
-            actions.updateRequest(request.id, { status: newStatus });
-          },
-        },
-      ]
-    );
+    setUpdating(true);
+    try {
+      await workordersAPI.updateStatus(id, status);
+      await load();
+    } catch (e) {
+      Alert.alert('خطأ', e.response?.data?.error || e.message);
+    } finally { setUpdating(false); }
   };
 
-  const handleAssignTechnician = (techId) => {
-    setShowAssignModal(false);
-    const tech = technicians.find((t) => t.id === techId);
-    if (!tech) return;
+  if (loading) return <View style={styles.center}><ActivityIndicator size="large" color={C.primary} /></View>;
+  if (error) return <View style={styles.center}><Text style={styles.errorText}>⚠️ {error}</Text><TouchableOpacity onPress={load} style={styles.retryBtn}><Text style={{ color: '#fff' }}>إعادة</Text></TouchableOpacity></View>;
+  if (!wo) return null;
 
-    actions.updateRequest(request.id, {
-      technicianId: techId,
-      status: request.status === 'pending' ? 'in-progress' : request.status,
-    });
-    actions.updateTechnician(techId, { status: 'busy' });
-  };
-
-  const handleDeleteRequest = () => {
-    Alert.alert(
-      'حذف الطلب',
-      'هل أنت متأكد من حذف هذا الطلب؟ لا يمكن التراجع عن هذا الإجراء.',
-      [
-        { text: 'إلغاء', style: 'cancel' },
-        {
-          text: 'حذف',
-          style: 'destructive',
-          onPress: () => {
-            actions.deleteRequest(request.id);
-            navigation.goBack();
-          },
-        },
-      ]
-    );
-  };
+  let timeline = [];
+  try { timeline = typeof wo.timeline === 'string' ? JSON.parse(wo.timeline || '[]') : (wo.timeline || []); } catch (_) {}
 
   return (
-    <SafeAreaView style={styles.container} edges={['bottom']}>
-      <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-      >
-        {/* Header Card */}
-        <View style={styles.headerCard}>
-          <View style={styles.headerTop}>
-            <TouchableOpacity onPress={handleDeleteRequest}>
-              <Ionicons name="trash-outline" size={22} color={COLORS.danger} />
-            </TouchableOpacity>
-            <StatusBadge status={request.status} size="medium" />
+    <ScrollView style={styles.container} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} />}>
+      {/* ID + Status */}
+      <View style={styles.card}>
+        <View style={styles.row}>
+          <View style={[styles.badge, { backgroundColor: STATUS_COLOR[wo.status] + '22' }]}>
+            <Text style={[styles.badgeTxt, { color: STATUS_COLOR[wo.status] }]}>{STATUS_AR[wo.status]}</Text>
           </View>
+          <Text style={styles.woId}>{wo.id}</Text>
+        </View>
+        <Text style={styles.desc}>{wo.description}</Text>
+        <View style={[styles.row, { marginTop: 8 }]}>
+          <View style={[styles.badge, { backgroundColor: PRIORITY_COLOR[wo.priority] + '22' }]}>
+            <Text style={[styles.badgeTxt, { color: PRIORITY_COLOR[wo.priority] }]}>أولوية {PRIORITY_AR[wo.priority]}</Text>
+          </View>
+          <View style={[styles.badge, { backgroundColor: '#E3F2FD' }]}>
+            <Text style={[styles.badgeTxt, { color: C.primary }]}>{TYPE_AR[wo.type] || wo.type}</Text>
+          </View>
+        </View>
+      </View>
 
-          <Text style={styles.requestTitle}>{request.title}</Text>
+      {/* Details */}
+      <View style={styles.card}>
+        {[
+          { label: 'المعدة', value: wo.asset_name },
+          { label: 'الفني المسؤول', value: wo.tech_name },
+          { label: 'القسم', value: wo.dept },
+          { label: 'تاريخ الاستحقاق', value: wo.due_date },
+          { label: 'تاريخ الإغلاق', value: wo.closed_date },
+          { label: 'منشئ الطلب', value: wo.created_by_name },
+        ].filter(f => f.value).map(f => (
+          <View key={f.label} style={styles.field}>
+            <Text style={styles.fieldVal}>{f.value}</Text>
+            <Text style={styles.fieldLbl}>{f.label}</Text>
+          </View>
+        ))}
+        {wo.notes ? (
+          <View style={styles.notesBox}>
+            <Text style={styles.fieldLbl}>ملاحظات</Text>
+            <Text style={styles.notesText}>{wo.notes}</Text>
+          </View>
+        ) : null}
+      </View>
 
-          <View style={styles.priorityRow}>
-            <View
-              style={[
-                styles.priorityBadge,
-                { backgroundColor: getPriorityColor(request.priority) + '20' },
-              ]}
-            >
-              <View
-                style={[
-                  styles.priorityDot,
-                  { backgroundColor: getPriorityColor(request.priority) },
-                ]}
-              />
-              <Text
-                style={[
-                  styles.priorityText,
-                  { color: getPriorityColor(request.priority) },
-                ]}
-              >
-                أولوية {getPriorityText(request.priority)}
-              </Text>
+      {/* Timeline */}
+      {timeline.length > 0 && (
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>سجل الأحداث</Text>
+          {[...timeline].reverse().map((t, i) => (
+            <View key={i} style={styles.timelineItem}>
+              <View style={styles.timelineDot} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.timelineMsg}>{t.msg}</Text>
+                <Text style={styles.timelineMeta}>{t.user} · {t.t}</Text>
+              </View>
             </View>
-          </View>
-
-          <Text style={styles.description}>{request.description}</Text>
+          ))}
         </View>
+      )}
 
-        {/* Request Details */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>تفاصيل الطلب</Text>
-          <View style={styles.detailsCard}>
-            <DetailRow
-              icon="person-outline"
-              label="طلب بواسطة"
-              value={request.requestedBy}
-            />
-            <DetailRow
-              icon="calendar-outline"
-              label="تاريخ الإنشاء"
-              value={formatDateTime(request.createdAt)}
-            />
-            <DetailRow
-              icon="time-outline"
-              label="آخر تحديث"
-              value={formatDateTime(request.updatedAt)}
-            />
-            {request.completedAt && (
-              <DetailRow
-                icon="checkmark-circle-outline"
-                label="تاريخ الإكمال"
-                value={formatDateTime(request.completedAt)}
-                valueColor={COLORS.success}
-              />
-            )}
-          </View>
-        </View>
-
-        {/* Equipment Info */}
-        {relatedEquipment && (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>المعدة المعنية</Text>
-            <TouchableOpacity
-              style={styles.linkedCard}
-              onPress={() =>
-                navigation.navigate('EquipmentTab', {
-                  screen: 'EquipmentDetail',
-                  params: { equipmentId: relatedEquipment.id },
-                })
-              }
-            >
-              <View style={styles.linkedContent}>
-                <Text style={styles.linkedSubtext}>{relatedEquipment.location}</Text>
-                <Text style={styles.linkedTitle}>{relatedEquipment.name}</Text>
-              </View>
-              <View style={styles.linkedIcon}>
-                <Ionicons name="construct-outline" size={24} color={COLORS.primary} />
-              </View>
-            </TouchableOpacity>
-          </View>
+      {/* Update status button */}
+      <TouchableOpacity style={styles.statusBtn} onPress={() => setShowStatusModal(true)} disabled={updating}>
+        {updating ? <ActivityIndicator color="#fff" /> : (
+          <>
+            <Ionicons name="swap-horizontal" size={20} color="#fff" />
+            <Text style={styles.statusBtnTxt}>تحديث الحالة</Text>
+          </>
         )}
+      </TouchableOpacity>
 
-        {/* Technician Info */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <TouchableOpacity
-              style={styles.assignBtn}
-              onPress={() => setShowAssignModal(true)}
-            >
-              <Text style={styles.assignBtnText}>
-                {assignedTechnician ? 'تغيير' : 'إسناد'}
-              </Text>
-            </TouchableOpacity>
-            <Text style={styles.sectionTitle}>الفني المعين</Text>
-          </View>
-
-          {assignedTechnician ? (
-            <TouchableOpacity
-              style={styles.techCard}
-              onPress={() =>
-                navigation.navigate('TechniciansTab', {
-                  screen: 'TechnicianDetail',
-                  params: { technicianId: assignedTechnician.id },
-                })
-              }
-            >
-              <View style={styles.techContent}>
-                <StatusBadge
-                  status={assignedTechnician.status}
-                  type="technician"
-                  size="small"
-                />
-                <Text style={styles.techSpecialty}>{assignedTechnician.specialty}</Text>
-                <Text style={styles.techName}>{assignedTechnician.name}</Text>
-              </View>
-              <View style={styles.avatar}>
-                <Text style={styles.avatarText}>{assignedTechnician.avatar}</Text>
-              </View>
-            </TouchableOpacity>
-          ) : (
-            <TouchableOpacity
-              style={styles.unassignedCard}
-              onPress={() => setShowAssignModal(true)}
-            >
-              <Ionicons name="person-add-outline" size={24} color={COLORS.textSecondary} />
-              <Text style={styles.unassignedText}>لم يتم إسناد فني بعد</Text>
-              <Text style={styles.tapToAssign}>اضغط لإسناد فني</Text>
-            </TouchableOpacity>
-          )}
-        </View>
-
-        {/* Action Buttons */}
-        <View style={styles.actions}>
-          <TouchableOpacity
-            style={[styles.actionBtn, { backgroundColor: COLORS.primary }]}
-            onPress={() => setShowStatusModal(true)}
-          >
-            <Ionicons name="sync-outline" size={20} color="#FFF" />
-            <Text style={styles.actionBtnText}>تحديث الحالة</Text>
-          </TouchableOpacity>
-        </View>
-      </ScrollView>
+      <View style={{ height: 30 }} />
 
       {/* Status Modal */}
-      <Modal
-        visible={showStatusModal}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setShowStatusModal(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>تغيير حالة الطلب</Text>
-            {STATUS_OPTIONS.map((option) => (
-              <TouchableOpacity
-                key={option.value}
-                style={[
-                  styles.statusOption,
-                  request.status === option.value && styles.statusOptionActive,
-                ]}
-                onPress={() => handleStatusChange(option.value)}
-              >
-                <View style={styles.statusOptionLeft}>
-                  {request.status === option.value && (
-                    <Ionicons name="checkmark" size={18} color={option.color} />
-                  )}
-                </View>
-                <Text style={[styles.statusOptionText, { color: option.color }]}>
-                  {option.label}
-                </Text>
-                <Ionicons name={option.icon} size={22} color={option.color} />
-              </TouchableOpacity>
-            ))}
-            <TouchableOpacity
-              style={styles.cancelBtn}
-              onPress={() => setShowStatusModal(false)}
-            >
-              <Text style={styles.cancelBtnText}>إلغاء</Text>
+      <Modal visible={showStatusModal} transparent animationType="slide" onRequestClose={() => setShowStatusModal(false)}>
+        <TouchableOpacity style={styles.overlay} activeOpacity={1} onPress={() => setShowStatusModal(false)} />
+        <View style={styles.modal}>
+          <Text style={styles.modalTitle}>اختر الحالة الجديدة</Text>
+          {STATUS_OPTIONS.map(s => (
+            <TouchableOpacity key={s.key} style={[styles.statusOption, wo.status === s.key && { backgroundColor: s.color + '22' }]} onPress={() => updateStatus(s.key)}>
+              <View style={[styles.dot, { backgroundColor: s.color }]} />
+              <Text style={[styles.statusOptionTxt, wo.status === s.key && { color: s.color, fontWeight: 'bold' }]}>{s.label}</Text>
+              {wo.status === s.key && <Ionicons name="checkmark" size={18} color={s.color} />}
             </TouchableOpacity>
-          </View>
+          ))}
+          <TouchableOpacity style={styles.cancelBtn} onPress={() => setShowStatusModal(false)}>
+            <Text style={{ color: C.sub }}>إلغاء</Text>
+          </TouchableOpacity>
         </View>
       </Modal>
-
-      {/* Assign Technician Modal */}
-      <Modal
-        visible={showAssignModal}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setShowAssignModal(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>إسناد فني</Text>
-            {availableTechnicians.map((tech) => (
-              <TouchableOpacity
-                key={tech.id}
-                style={[
-                  styles.techOption,
-                  request.technicianId === tech.id && styles.techOptionActive,
-                ]}
-                onPress={() => handleAssignTechnician(tech.id)}
-              >
-                <View style={styles.techOptionLeft}>
-                  {request.technicianId === tech.id && (
-                    <Ionicons name="checkmark" size={18} color={COLORS.primary} />
-                  )}
-                </View>
-                <View style={styles.techOptionInfo}>
-                  <Text style={styles.techOptionSpecialty}>{tech.specialty}</Text>
-                  <Text style={styles.techOptionName}>{tech.name}</Text>
-                </View>
-                <View style={styles.smallAvatar}>
-                  <Text style={styles.smallAvatarText}>{tech.avatar}</Text>
-                </View>
-              </TouchableOpacity>
-            ))}
-            <TouchableOpacity
-              style={styles.cancelBtn}
-              onPress={() => setShowAssignModal(false)}
-            >
-              <Text style={styles.cancelBtnText}>إلغاء</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
-    </SafeAreaView>
+    </ScrollView>
   );
-};
-
-const DetailRow = ({ icon, label, value, valueColor }) => (
-  <View style={styles.detailRow}>
-    <Text style={[styles.detailValue, valueColor && { color: valueColor }]}>
-      {value}
-    </Text>
-    <View style={styles.detailLabel}>
-      <Text style={styles.detailLabelText}>{label}</Text>
-      <Ionicons name={icon} size={15} color="#9E9E9E" />
-    </View>
-  </View>
-);
+}
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.background },
-  scrollView: { flex: 1 },
-  scrollContent: { padding: 16, paddingBottom: 32 },
-  notFound: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 16 },
-  notFoundText: { fontSize: 18, color: '#9E9E9E' },
-  backBtn: {
-    backgroundColor: COLORS.primary,
-    paddingHorizontal: 24,
-    paddingVertical: 10,
-    borderRadius: 8,
-  },
-  backBtnText: { color: '#FFF', fontWeight: '600' },
-
-  headerCard: {
-    backgroundColor: COLORS.card,
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 16,
-    elevation: 3,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 6,
-  },
-  headerTop: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  requestTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: COLORS.text,
-    textAlign: 'right',
-    lineHeight: 26,
-    marginBottom: 10,
-  },
-  priorityRow: { alignItems: 'flex-end', marginBottom: 12 },
-  priorityBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 20,
-  },
-  priorityDot: { width: 8, height: 8, borderRadius: 4 },
-  priorityText: { fontSize: 13, fontWeight: '600' },
-  description: {
-    fontSize: 14,
-    color: COLORS.textSecondary,
-    textAlign: 'right',
-    lineHeight: 22,
-    borderTopWidth: 1,
-    borderTopColor: '#F0F0F0',
-    paddingTop: 12,
-    marginTop: 4,
-  },
-
-  section: { marginBottom: 16 },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: COLORS.text,
-    textAlign: 'right',
-    marginBottom: 10,
-  },
-  sectionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 10,
-  },
-  assignBtn: {
-    backgroundColor: COLORS.primary + '15',
-    paddingHorizontal: 12,
-    paddingVertical: 5,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: COLORS.primary,
-  },
-  assignBtnText: { color: COLORS.primary, fontSize: 13, fontWeight: '600' },
-
-  detailsCard: {
-    backgroundColor: COLORS.card,
-    borderRadius: 12,
-    padding: 14,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 3,
-    gap: 14,
-  },
-  detailRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  detailLabel: { flexDirection: 'row', alignItems: 'center', gap: 5 },
-  detailLabelText: { fontSize: 13, color: COLORS.textSecondary },
-  detailValue: { fontSize: 13, color: COLORS.text, fontWeight: '500', flex: 1, textAlign: 'left' },
-
-  linkedCard: {
-    backgroundColor: COLORS.card,
-    borderRadius: 12,
-    padding: 14,
-    flexDirection: 'row',
-    alignItems: 'center',
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 3,
-    borderWidth: 1,
-    borderColor: COLORS.primary + '30',
-  },
-  linkedContent: { flex: 1 },
-  linkedTitle: { fontSize: 14, fontWeight: '700', color: COLORS.text, textAlign: 'right' },
-  linkedSubtext: { fontSize: 12, color: COLORS.textSecondary, textAlign: 'right', marginBottom: 2 },
-  linkedIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: COLORS.primary + '15',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginLeft: 12,
-  },
-
-  techCard: {
-    backgroundColor: COLORS.card,
-    borderRadius: 12,
-    padding: 14,
-    flexDirection: 'row',
-    alignItems: 'center',
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 3,
-  },
-  techContent: { flex: 1, alignItems: 'flex-end', gap: 4 },
-  techName: { fontSize: 15, fontWeight: '700', color: COLORS.text },
-  techSpecialty: { fontSize: 12, color: COLORS.textSecondary },
-  avatar: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: COLORS.primary,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginLeft: 12,
-  },
-  avatarText: { color: '#FFF', fontSize: 16, fontWeight: 'bold' },
-
-  unassignedCard: {
-    backgroundColor: COLORS.card,
-    borderRadius: 12,
-    padding: 20,
-    alignItems: 'center',
-    gap: 8,
-    borderWidth: 1.5,
-    borderColor: COLORS.border,
-    borderStyle: 'dashed',
-  },
-  unassignedText: { fontSize: 14, color: COLORS.textSecondary, fontWeight: '500' },
-  tapToAssign: { fontSize: 12, color: COLORS.primary },
-
-  actions: { marginTop: 8, gap: 10 },
-  actionBtn: {
-    borderRadius: 12,
-    paddingVertical: 14,
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: 8,
-    elevation: 3,
-  },
-  actionBtnText: { color: '#FFF', fontSize: 16, fontWeight: '700' },
-
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'flex-end',
-  },
-  modalContent: {
-    backgroundColor: COLORS.card,
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    padding: 20,
-    paddingBottom: 32,
-  },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: COLORS.text,
-    textAlign: 'center',
-    marginBottom: 16,
-  },
-  statusOption: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 14,
-    borderRadius: 10,
-    marginBottom: 8,
-    backgroundColor: '#F5F7FA',
-    gap: 10,
-  },
-  statusOptionActive: { backgroundColor: '#E8F0FE' },
-  statusOptionLeft: { width: 24 },
-  statusOptionText: { flex: 1, fontSize: 15, fontWeight: '600', textAlign: 'right' },
-
-  techOption: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 12,
-    borderRadius: 10,
-    marginBottom: 8,
-    backgroundColor: '#F5F7FA',
-    gap: 10,
-  },
-  techOptionActive: { backgroundColor: '#E8F0FE' },
-  techOptionLeft: { width: 24 },
-  techOptionInfo: { flex: 1, alignItems: 'flex-end' },
-  techOptionName: { fontSize: 14, fontWeight: '600', color: COLORS.text },
-  techOptionSpecialty: { fontSize: 12, color: COLORS.textSecondary },
-  smallAvatar: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: COLORS.primary,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  smallAvatarText: { color: '#FFF', fontSize: 12, fontWeight: 'bold' },
-
-  cancelBtn: {
-    marginTop: 8,
-    padding: 14,
-    borderRadius: 10,
-    backgroundColor: '#F5F5F5',
-    alignItems: 'center',
-  },
-  cancelBtnText: { fontSize: 15, color: COLORS.textSecondary, fontWeight: '600' },
+  container: { flex: 1, backgroundColor: C.bg },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 30 },
+  errorText: { color: '#C62828', textAlign: 'center', marginBottom: 12 },
+  retryBtn: { backgroundColor: C.primary, paddingHorizontal: 20, paddingVertical: 10, borderRadius: 8 },
+  card: { backgroundColor: C.white, margin: 12, marginBottom: 0, borderRadius: 14, padding: 16, elevation: 2 },
+  cardTitle: { fontSize: 14, fontWeight: 'bold', color: C.text, textAlign: 'right', marginBottom: 12 },
+  row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, gap: 8 },
+  woId: { fontSize: 18, fontWeight: 'bold', color: C.primary },
+  badge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 },
+  badgeTxt: { fontSize: 12, fontWeight: '600' },
+  desc: { fontSize: 15, color: C.text, textAlign: 'right', lineHeight: 22 },
+  field: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#f0f0f0' },
+  fieldLbl: { fontSize: 12, color: C.sub },
+  fieldVal: { fontSize: 14, color: C.text, fontWeight: '500', flex: 1, textAlign: 'right', marginRight: 8 },
+  notesBox: { marginTop: 10 },
+  notesText: { fontSize: 13, color: C.text, textAlign: 'right', lineHeight: 20, marginTop: 4 },
+  timelineItem: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 12, gap: 10 },
+  timelineDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: C.primary, marginTop: 4 },
+  timelineMsg: { fontSize: 13, color: C.text, textAlign: 'right' },
+  timelineMeta: { fontSize: 11, color: C.sub, textAlign: 'right', marginTop: 2 },
+  statusBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: C.primary, margin: 14, borderRadius: 12, padding: 15 },
+  statusBtnTxt: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
+  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)' },
+  modal: { backgroundColor: C.white, borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20 },
+  modalTitle: { fontSize: 16, fontWeight: 'bold', color: C.text, textAlign: 'center', marginBottom: 16 },
+  statusOption: { flexDirection: 'row', alignItems: 'center', padding: 14, borderRadius: 10, marginBottom: 6, gap: 10 },
+  dot: { width: 12, height: 12, borderRadius: 6 },
+  statusOptionTxt: { flex: 1, fontSize: 15, color: C.text, textAlign: 'right' },
+  cancelBtn: { alignItems: 'center', padding: 14, marginTop: 4 },
 });
-
-export default RequestDetailScreen;
