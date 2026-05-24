@@ -1,11 +1,15 @@
 import React from 'react';
-import { View, Text, Platform } from 'react-native';
+import { View, ActivityIndicator } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createStackNavigator } from '@react-navigation/stack';
 import { Ionicons } from '@expo/vector-icons';
 
-// Screens
+import { useAuth } from '../context/AuthContext';
+
+import LoginScreen from '../screens/Auth/LoginScreen';
+import ServerConfigScreen from '../screens/Auth/ServerConfigScreen';
+
 import DashboardScreen from '../screens/Dashboard/DashboardScreen';
 import RequestsListScreen from '../screens/Requests/RequestsListScreen';
 import RequestDetailScreen from '../screens/Requests/RequestDetailScreen';
@@ -21,179 +25,94 @@ import ReportsScreen from '../screens/Reports/ReportsScreen';
 const Tab = createBottomTabNavigator();
 const Stack = createStackNavigator();
 
-const COLORS = {
-  primary: '#1565C0',
-  accent: '#FF6F00',
-  background: '#FFFFFF',
-  inactive: '#9E9E9E',
-  text: '#212121',
-};
-
-const screenOptions = (title) => ({
-  headerStyle: {
-    backgroundColor: COLORS.primary,
-    elevation: 4,
-    shadowOpacity: 0.3,
-  },
-  headerTintColor: '#FFFFFF',
-  headerTitleStyle: {
-    fontWeight: '700',
-    fontSize: 17,
-  },
-  headerTitle: title,
-  headerBackTitle: 'رجوع',
-  cardStyle: { backgroundColor: '#F5F7FA' },
-});
-
-// ==================== STACK NAVIGATORS ====================
+const PRIMARY = '#1565C0';
+const HEADER = { headerStyle: { backgroundColor: PRIMARY }, headerTintColor: '#fff', headerTitleAlign: 'center' };
 
 function RequestsStack() {
   return (
-    <Stack.Navigator>
-      <Stack.Screen
-        name="RequestsList"
-        component={RequestsListScreen}
-        options={{ headerShown: false }}
-      />
-      <Stack.Screen
-        name="RequestDetail"
-        component={RequestDetailScreen}
-        options={screenOptions('تفاصيل الطلب')}
-      />
-      <Stack.Screen
-        name="NewRequest"
-        component={NewRequestScreen}
-        options={screenOptions('طلب صيانة جديد')}
-      />
+    <Stack.Navigator screenOptions={HEADER}>
+      <Stack.Screen name="RequestsList" component={RequestsListScreen} options={{ title: 'طلبات الصيانة' }} />
+      <Stack.Screen name="RequestDetail" component={RequestDetailScreen} options={{ title: 'تفاصيل الطلب' }} />
+      <Stack.Screen name="NewRequest" component={NewRequestScreen} options={{ title: 'طلب جديد' }} />
     </Stack.Navigator>
   );
 }
 
 function TechniciansStack() {
   return (
-    <Stack.Navigator>
-      <Stack.Screen
-        name="TechniciansList"
-        component={TechniciansListScreen}
-        options={{ headerShown: false }}
-      />
-      <Stack.Screen
-        name="TechnicianDetail"
-        component={TechnicianDetailScreen}
-        options={screenOptions('بيانات الفني')}
-      />
-      <Stack.Screen
-        name="NewTechnician"
-        component={NewTechnicianScreen}
-        options={screenOptions('إضافة فني جديد')}
-      />
+    <Stack.Navigator screenOptions={HEADER}>
+      <Stack.Screen name="TechniciansList" component={TechniciansListScreen} options={{ title: 'الفنيون والموظفون' }} />
+      <Stack.Screen name="TechnicianDetail" component={TechnicianDetailScreen} options={{ title: 'بيانات الموظف' }} />
+      <Stack.Screen name="NewTechnician" component={NewTechnicianScreen} options={{ title: 'موظف جديد' }} />
     </Stack.Navigator>
   );
 }
 
 function EquipmentStack() {
   return (
-    <Stack.Navigator>
-      <Stack.Screen
-        name="EquipmentList"
-        component={EquipmentListScreen}
-        options={{ headerShown: false }}
-      />
-      <Stack.Screen
-        name="EquipmentDetail"
-        component={EquipmentDetailScreen}
-        options={screenOptions('تفاصيل المعدة')}
-      />
-      <Stack.Screen
-        name="NewEquipment"
-        component={NewEquipmentScreen}
-        options={screenOptions('إضافة معدة جديدة')}
-      />
+    <Stack.Navigator screenOptions={HEADER}>
+      <Stack.Screen name="EquipmentList" component={EquipmentListScreen} options={{ title: 'الأصول والمعدات' }} />
+      <Stack.Screen name="EquipmentDetail" component={EquipmentDetailScreen} options={{ title: 'تفاصيل المعدة' }} />
+      <Stack.Screen name="NewEquipment" component={NewEquipmentScreen} options={{ title: 'معدة جديدة' }} />
     </Stack.Navigator>
   );
 }
 
-// ==================== TAB NAVIGATOR ====================
-
-function TabNavigator() {
+function MainTabs() {
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
         headerShown: false,
-        tabBarActiveTintColor: COLORS.primary,
-        tabBarInactiveTintColor: COLORS.inactive,
-        tabBarStyle: {
-          backgroundColor: COLORS.background,
-          borderTopWidth: 1,
-          borderTopColor: '#E0E0E0',
-          height: Platform.OS === 'ios' ? 85 : 65,
-          paddingBottom: Platform.OS === 'ios' ? 20 : 8,
-          paddingTop: 8,
-          elevation: 8,
-          shadowColor: '#000',
-          shadowOffset: { width: 0, height: -2 },
-          shadowOpacity: 0.08,
-          shadowRadius: 4,
-        },
-        tabBarLabelStyle: {
-          fontSize: 11,
-          fontWeight: '600',
-          marginTop: 2,
-        },
+        tabBarActiveTintColor: PRIMARY,
+        tabBarInactiveTintColor: '#999',
+        tabBarStyle: { paddingBottom: 4, height: 60 },
+        tabBarLabelStyle: { fontSize: 11 },
         tabBarIcon: ({ focused, color, size }) => {
-          let iconName;
-          if (route.name === 'DashboardTab') {
-            iconName = focused ? 'home' : 'home-outline';
-          } else if (route.name === 'RequestsTab') {
-            iconName = focused ? 'clipboard' : 'clipboard-outline';
-          } else if (route.name === 'TechniciansTab') {
-            iconName = focused ? 'people' : 'people-outline';
-          } else if (route.name === 'EquipmentTab') {
-            iconName = focused ? 'cog' : 'cog-outline';
-          } else if (route.name === 'ReportsTab') {
-            iconName = focused ? 'bar-chart' : 'bar-chart-outline';
-          }
-          return <Ionicons name={iconName} size={22} color={color} />;
+          const icons = {
+            Dashboard: focused ? 'home' : 'home-outline',
+            Requests: focused ? 'clipboard' : 'clipboard-outline',
+            Technicians: focused ? 'people' : 'people-outline',
+            Equipment: focused ? 'construct' : 'construct-outline',
+            Reports: focused ? 'bar-chart' : 'bar-chart-outline',
+          };
+          return <Ionicons name={icons[route.name]} size={size} color={color} />;
         },
       })}
     >
-      <Tab.Screen
-        name="DashboardTab"
-        component={DashboardScreen}
-        options={{ tabBarLabel: 'الرئيسية' }}
-      />
-      <Tab.Screen
-        name="RequestsTab"
-        component={RequestsStack}
-        options={{ tabBarLabel: 'الطلبات' }}
-      />
-      <Tab.Screen
-        name="TechniciansTab"
-        component={TechniciansStack}
-        options={{ tabBarLabel: 'الفنيون' }}
-      />
-      <Tab.Screen
-        name="EquipmentTab"
-        component={EquipmentStack}
-        options={{ tabBarLabel: 'المعدات' }}
-      />
-      <Tab.Screen
-        name="ReportsTab"
-        component={ReportsScreen}
-        options={{ tabBarLabel: 'التقارير' }}
-      />
+      <Tab.Screen name="Dashboard" component={DashboardScreen} options={{ title: 'الرئيسية' }} />
+      <Tab.Screen name="Requests" component={RequestsStack} options={{ title: 'الطلبات' }} />
+      <Tab.Screen name="Technicians" component={TechniciansStack} options={{ title: 'الفنيون' }} />
+      <Tab.Screen name="Equipment" component={EquipmentStack} options={{ title: 'المعدات' }} />
+      <Tab.Screen name="Reports" component={ReportsScreen}
+        options={{ title: 'التقارير', headerShown: true, ...HEADER, headerTitle: 'التقارير والإحصائيات' }} />
     </Tab.Navigator>
   );
 }
 
-// ==================== MAIN NAVIGATOR ====================
+function AuthStack() {
+  return (
+    <Stack.Navigator screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="Login" component={LoginScreen} />
+      <Stack.Screen name="ServerConfig" component={ServerConfigScreen}
+        options={{ headerShown: true, title: 'إعداد السيرفر', ...HEADER }} />
+    </Stack.Navigator>
+  );
+}
 
-const AppNavigator = () => {
+export default function AppNavigator() {
+  const { user, loading } = useAuth();
+
+  if (loading) {
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: PRIMARY }}>
+        <ActivityIndicator size="large" color="#fff" />
+      </View>
+    );
+  }
+
   return (
     <NavigationContainer>
-      <TabNavigator />
+      {user ? <MainTabs /> : <AuthStack />}
     </NavigationContainer>
   );
-};
-
-export default AppNavigator;
+}

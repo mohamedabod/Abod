@@ -1,287 +1,236 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
   FlatList,
   StyleSheet,
   TouchableOpacity,
-  TextInput,
+  ActivityIndicator,
+  RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
-import { useApp } from '../../context/AppContext';
-import StatusBadge from '../../components/StatusBadge';
-import EmptyState from '../../components/EmptyState';
-import { getPriorityColor, getPriorityText, getRelativeTime } from '../../utils/helpers';
+import { workordersAPI } from '../../services/api';
 
-const COLORS = {
+const C = {
   primary: '#1565C0',
   accent: '#FF6F00',
-  background: '#F5F7FA',
+  bg: '#F5F7FA',
   card: '#FFFFFF',
   text: '#212121',
-  textSecondary: '#616161',
+  sub: '#616161',
   border: '#E0E0E0',
+  danger: '#D32F2F',
+  success: '#2E7D32',
+  warning: '#FF6F00',
 };
 
-const FILTER_OPTIONS = [
+const FILTERS = [
   { label: 'الكل', value: 'all' },
-  { label: 'معلق', value: 'pending' },
-  { label: 'قيد التنفيذ', value: 'in-progress' },
-  { label: 'مكتمل', value: 'completed' },
-  { label: 'ملغى', value: 'cancelled' },
+  { label: 'مفتوح', value: 'open' },
+  { label: 'جاري', value: 'inprogress' },
+  { label: 'منتهي', value: 'done' },
+  { label: 'متأخر', value: 'overdue' },
 ];
 
+const STATUS_AR = {
+  open: 'مفتوح',
+  inprogress: 'جاري',
+  done: 'منتهي',
+  closed: 'مغلق',
+  overdue: 'متأخر',
+  cancelled: 'ملغي',
+};
+
+const STATUS_COLOR = {
+  open: C.primary,
+  inprogress: C.accent,
+  done: C.success,
+  closed: '#757575',
+  overdue: C.danger,
+  cancelled: '#9E9E9E',
+};
+
+const PRIORITY_COLOR = { high: C.danger, medium: C.warning, low: C.success };
+const PRIORITY_AR = { high: 'عالي', medium: 'متوسط', low: 'منخفض' };
+
 const RequestsListScreen = ({ navigation }) => {
-  const { state } = useApp();
-  const { requests, equipment, technicians } = state;
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState(null);
   const [activeFilter, setActiveFilter] = useState('all');
-  const [searchQuery, setSearchQuery] = useState('');
 
-  const filteredRequests = useMemo(() => {
-    let result = [...requests];
-
-    if (activeFilter !== 'all') {
-      result = result.filter((r) => r.status === activeFilter);
+  const fetchData = useCallback(async (filter) => {
+    try {
+      setError(null);
+      const params = { limit: 50 };
+      if (filter && filter !== 'all') params.status = filter;
+      const res = await workordersAPI.getAll(params);
+      setItems(res.data || []);
+    } catch (e) {
+      setError('فشل تحميل أوامر العمل.');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
     }
+  }, []);
 
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
-      result = result.filter(
-        (r) =>
-          r.title.toLowerCase().includes(q) ||
-          r.description.toLowerCase().includes(q) ||
-          r.requestedBy.toLowerCase().includes(q)
-      );
-    }
-
-    return result.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-  }, [requests, activeFilter, searchQuery]);
-
-  const getEquipmentName = (equipmentId) => {
-    const eq = equipment.find((e) => e.id === equipmentId);
-    return eq ? eq.name : 'غير محدد';
-  };
-
-  const getTechnicianName = (techId) => {
-    if (!techId) return 'غير مُسند';
-    const tech = technicians.find((t) => t.id === techId);
-    return tech ? tech.name : 'غير محدد';
-  };
-
-  const renderItem = ({ item }) => (
-    <TouchableOpacity
-      style={styles.card}
-      onPress={() => navigation.navigate('RequestDetail', { requestId: item.id })}
-      activeOpacity={0.8}
-    >
-      <View style={styles.cardHeader}>
-        <StatusBadge status={item.status} size="small" />
-        <View style={styles.priorityContainer}>
-          <Text style={[styles.priorityText, { color: getPriorityColor(item.priority) }]}>
-            {getPriorityText(item.priority)}
-          </Text>
-          <View
-            style={[
-              styles.priorityDot,
-              { backgroundColor: getPriorityColor(item.priority) },
-            ]}
-          />
-        </View>
-      </View>
-
-      <Text style={styles.cardTitle} numberOfLines={2}>
-        {item.title}
-      </Text>
-
-      <View style={styles.cardInfo}>
-        <View style={styles.infoRow}>
-          <Text style={styles.infoValue} numberOfLines={1}>
-            {getEquipmentName(item.equipmentId)}
-          </Text>
-          <View style={styles.infoLabel}>
-            <Ionicons name="construct-outline" size={14} color={COLORS.textSecondary} />
-            <Text style={styles.infoLabelText}>المعدة:</Text>
-          </View>
-        </View>
-        <View style={styles.infoRow}>
-          <Text style={styles.infoValue} numberOfLines={1}>
-            {getTechnicianName(item.technicianId)}
-          </Text>
-          <View style={styles.infoLabel}>
-            <Ionicons name="person-outline" size={14} color={COLORS.textSecondary} />
-            <Text style={styles.infoLabelText}>الفني:</Text>
-          </View>
-        </View>
-      </View>
-
-      <View style={styles.cardFooter}>
-        <Text style={styles.footerDate}>{getRelativeTime(item.createdAt)}</Text>
-        <Text style={styles.footerRequester} numberOfLines={1}>
-          {item.requestedBy}
-        </Text>
-      </View>
-    </TouchableOpacity>
+  useFocusEffect(
+    useCallback(() => {
+      setLoading(true);
+      fetchData(activeFilter);
+    }, [fetchData, activeFilter])
   );
+
+  const handleFilterChange = (val) => {
+    setActiveFilter(val);
+    setLoading(true);
+    fetchData(val);
+  };
+
+  const handleRefresh = () => {
+    setRefreshing(true);
+    fetchData(activeFilter);
+  };
+
+  const renderItem = ({ item }) => {
+    const pColor = PRIORITY_COLOR[item.priority] || C.sub;
+    const sColor = STATUS_COLOR[item.status] || C.sub;
+    return (
+      <TouchableOpacity
+        style={styles.card}
+        onPress={() => navigation.navigate('RequestDetail', { id: item.id })}
+        activeOpacity={0.8}
+      >
+        <View style={styles.cardHeader}>
+          <View style={[styles.badge, { backgroundColor: sColor + '20', borderColor: sColor }]}>
+            <Text style={[styles.badgeText, { color: sColor }]}>{STATUS_AR[item.status] || item.status}</Text>
+          </View>
+          <Text style={styles.woId}>WO-{String(item.id).padStart(4, '0')}</Text>
+        </View>
+        <Text style={styles.cardTitle} numberOfLines={2}>{item.description}</Text>
+        <View style={styles.metaBox}>
+          <View style={styles.metaRow}>
+            <Text style={styles.metaVal} numberOfLines={1}>{item.asset_name || 'غير محدد'}</Text>
+            <Text style={styles.metaLbl}>الأصل:</Text>
+          </View>
+          <View style={styles.metaRow}>
+            <Text style={styles.metaVal} numberOfLines={1}>{item.tech_name || 'غير مُسند'}</Text>
+            <Text style={styles.metaLbl}>الفني:</Text>
+          </View>
+        </View>
+        <View style={styles.cardFooter}>
+          <Text style={styles.footerDate}>{item.date_created ? item.date_created.slice(0, 10) : ''}</Text>
+          <View style={[styles.priorityBadge, { backgroundColor: pColor + '20' }]}>
+            <View style={[styles.priorityDot, { backgroundColor: pColor }]} />
+            <Text style={[styles.priorityText, { color: pColor }]}>{PRIORITY_AR[item.priority] || item.priority}</Text>
+          </View>
+        </View>
+      </TouchableOpacity>
+    );
+  };
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <View style={styles.header}>
-        <TouchableOpacity
-          style={styles.addButton}
-          onPress={() => navigation.navigate('NewRequest')}
-        >
-          <Ionicons name="add" size={24} color="#FFF" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>طلبات الصيانة</Text>
-      </View>
-
-      {/* Search */}
-      <View style={styles.searchContainer}>
-        <Ionicons name="search-outline" size={18} color={COLORS.textSecondary} />
-        <TextInput
-          style={styles.searchInput}
-          placeholder="بحث في الطلبات..."
-          placeholderTextColor={COLORS.textSecondary}
-          value={searchQuery}
-          onChangeText={setSearchQuery}
-          textAlign="right"
-        />
-        {searchQuery ? (
-          <TouchableOpacity onPress={() => setSearchQuery('')}>
-            <Ionicons name="close-circle" size={18} color={COLORS.textSecondary} />
-          </TouchableOpacity>
-        ) : null}
+        <Text style={styles.headerTitle}>أوامر العمل</Text>
       </View>
 
       {/* Filter Tabs */}
-      <View style={styles.filterContainer}>
-        {FILTER_OPTIONS.map((option) => (
-          <TouchableOpacity
-            key={option.value}
-            style={[
-              styles.filterTab,
-              activeFilter === option.value && styles.filterTabActive,
-            ]}
-            onPress={() => setActiveFilter(option.value)}
-          >
-            <Text
-              style={[
-                styles.filterText,
-                activeFilter === option.value && styles.filterTextActive,
-              ]}
+      <View style={styles.filterWrap}>
+        <FlatList
+          data={FILTERS}
+          keyExtractor={(f) => f.value}
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.filterList}
+          renderItem={({ item: f }) => (
+            <TouchableOpacity
+              style={[styles.filterTab, activeFilter === f.value && styles.filterTabActive]}
+              onPress={() => handleFilterChange(f.value)}
             >
-              {option.label}
-            </Text>
-          </TouchableOpacity>
-        ))}
+              <Text style={[styles.filterText, activeFilter === f.value && styles.filterTextActive]}>
+                {f.label}
+              </Text>
+            </TouchableOpacity>
+          )}
+        />
       </View>
 
-      <FlatList
-        data={filteredRequests}
-        keyExtractor={(item) => item.id}
-        renderItem={renderItem}
-        contentContainerStyle={styles.listContent}
-        showsVerticalScrollIndicator={false}
-        ListEmptyComponent={
-          <EmptyState
-            icon="clipboard-outline"
-            title="لا توجد طلبات"
-            subtitle={
-              activeFilter !== 'all'
-                ? 'لا توجد طلبات بهذا التصفية'
-                : 'اضغط + لإضافة طلب صيانة جديد'
-            }
-          />
-        }
-      />
+      {loading ? (
+        <View style={styles.centered}>
+          <ActivityIndicator size="large" color={C.primary} />
+        </View>
+      ) : error ? (
+        <View style={styles.centered}>
+          <Ionicons name="cloud-offline-outline" size={48} color={C.sub} />
+          <Text style={styles.errorText}>{error}</Text>
+          <TouchableOpacity style={styles.retryBtn} onPress={() => { setLoading(true); fetchData(activeFilter); }}>
+            <Text style={styles.retryBtnText}>إعادة المحاولة</Text>
+          </TouchableOpacity>
+        </View>
+      ) : (
+        <FlatList
+          data={items}
+          keyExtractor={(item) => String(item.id)}
+          renderItem={renderItem}
+          contentContainerStyle={styles.listContent}
+          showsVerticalScrollIndicator={false}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} colors={[C.primary]} />}
+          ListEmptyComponent={
+            <View style={styles.centered}>
+              <Ionicons name="clipboard-outline" size={48} color={C.sub} />
+              <Text style={styles.emptyText}>لا توجد أوامر عمل</Text>
+            </View>
+          }
+        />
+      )}
+
+      {/* FAB */}
+      <TouchableOpacity
+        style={styles.fab}
+        onPress={() => navigation.navigate('NewRequest')}
+      >
+        <Ionicons name="add" size={28} color="#FFF" />
+      </TouchableOpacity>
     </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: COLORS.background,
-  },
+  container: { flex: 1, backgroundColor: C.bg },
   header: {
-    backgroundColor: COLORS.card,
+    backgroundColor: C.card,
     paddingHorizontal: 16,
     paddingVertical: 14,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
     borderBottomWidth: 1,
-    borderBottomColor: COLORS.border,
+    borderBottomColor: C.border,
     elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 3,
   },
-  headerTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: COLORS.text,
-  },
-  addButton: {
-    backgroundColor: COLORS.primary,
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  searchContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: COLORS.card,
-    margin: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 10,
-    gap: 8,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-  },
-  searchInput: {
-    flex: 1,
-    fontSize: 14,
-    color: COLORS.text,
-    padding: 0,
-  },
-  filterContainer: {
-    flexDirection: 'row',
-    paddingHorizontal: 12,
-    paddingBottom: 10,
-    gap: 6,
-  },
+  headerTitle: { fontSize: 20, fontWeight: 'bold', color: C.text, textAlign: 'right' },
+  filterWrap: { backgroundColor: C.card, borderBottomWidth: 1, borderBottomColor: C.border },
+  filterList: { paddingHorizontal: 12, paddingVertical: 10, gap: 8 },
   filterTab: {
-    paddingHorizontal: 12,
+    paddingHorizontal: 14,
     paddingVertical: 6,
     borderRadius: 20,
-    backgroundColor: COLORS.card,
+    backgroundColor: C.bg,
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: C.border,
   },
-  filterTabActive: {
-    backgroundColor: COLORS.primary,
-    borderColor: COLORS.primary,
-  },
-  filterText: {
-    fontSize: 12,
-    color: COLORS.textSecondary,
-    fontWeight: '500',
-  },
-  filterTextActive: {
-    color: '#FFF',
-  },
-  listContent: {
-    padding: 12,
-    paddingBottom: 24,
-  },
+  filterTabActive: { backgroundColor: C.primary, borderColor: C.primary },
+  filterText: { fontSize: 13, color: C.sub, fontWeight: '500' },
+  filterTextActive: { color: '#FFF' },
+  centered: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 12, padding: 32 },
+  errorText: { fontSize: 14, color: C.danger, textAlign: 'center' },
+  retryBtn: { backgroundColor: C.primary, paddingHorizontal: 24, paddingVertical: 8, borderRadius: 8 },
+  retryBtnText: { color: '#FFF', fontWeight: '700' },
+  emptyText: { fontSize: 15, color: C.sub },
+  listContent: { padding: 12, paddingBottom: 80 },
   card: {
-    backgroundColor: COLORS.card,
+    backgroundColor: C.card,
     borderRadius: 12,
     padding: 14,
     marginBottom: 10,
@@ -291,80 +240,40 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.06,
     shadowRadius: 4,
   },
-  cardHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+  cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
+  woId: { fontSize: 12, color: C.sub, fontWeight: '600' },
+  badge: {
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  badgeText: { fontSize: 12, fontWeight: '600' },
+  cardTitle: { fontSize: 15, fontWeight: '700', color: C.text, textAlign: 'right', marginBottom: 10, lineHeight: 22 },
+  metaBox: { backgroundColor: C.bg, borderRadius: 8, padding: 10, gap: 6, marginBottom: 10 },
+  metaRow: { flexDirection: 'row', justifyContent: 'space-between' },
+  metaLbl: { fontSize: 12, color: C.sub },
+  metaVal: { fontSize: 12, color: C.text, fontWeight: '500', flex: 1, textAlign: 'left' },
+  cardFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderTopWidth: 1, borderTopColor: '#F0F0F0', paddingTop: 8 },
+  footerDate: { fontSize: 11, color: C.sub },
+  priorityBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10 },
+  priorityDot: { width: 6, height: 6, borderRadius: 3 },
+  priorityText: { fontSize: 11, fontWeight: '600' },
+  fab: {
+    position: 'absolute',
+    bottom: 24,
+    left: 20,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: C.primary,
+    justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 8,
-  },
-  priorityContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-  },
-  priorityDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-  },
-  priorityText: {
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  cardTitle: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: COLORS.text,
-    textAlign: 'right',
-    marginBottom: 10,
-    lineHeight: 22,
-  },
-  cardInfo: {
-    gap: 6,
-    marginBottom: 10,
-    backgroundColor: '#F5F7FA',
-    borderRadius: 8,
-    padding: 10,
-  },
-  infoRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  infoLabel: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  infoLabelText: {
-    fontSize: 12,
-    color: COLORS.textSecondary,
-  },
-  infoValue: {
-    fontSize: 12,
-    color: COLORS.text,
-    fontWeight: '500',
-    flex: 1,
-    textAlign: 'left',
-  },
-  cardFooter: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    borderTopWidth: 1,
-    borderTopColor: '#F0F0F0',
-    paddingTop: 8,
-  },
-  footerDate: {
-    fontSize: 11,
-    color: COLORS.textSecondary,
-  },
-  footerRequester: {
-    fontSize: 11,
-    color: COLORS.textSecondary,
-    flex: 1,
-    textAlign: 'right',
-    marginRight: 8,
+    elevation: 6,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
   },
 });
 
