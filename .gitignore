@@ -8,5 +8,9 @@ web-build/
 *.key
 *.mobileprovision
 *.orig.*
-web-build/
 .env
+*.apk
+*.aab
+android/app/build/
+android/.gradle/
+android/build/

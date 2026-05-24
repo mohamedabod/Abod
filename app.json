@@ -14,6 +14,13 @@
     "platforms": ["ios", "android", "web"],
     "assetBundlePatterns": [
       "**/*"
-    ]
+    ],
+    "android": {
+      "package": "com.maintenance.dept.app",
+      "versionCode": 1,
+      "adaptiveIcon": {
+        "backgroundColor": "#1565C0"
+      }
+    }
   }
 }
