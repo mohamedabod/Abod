@@ -8,7 +8,7 @@ import { dashboardAPI, pmAPI, inventoryAPI } from '../../services/api';
 const C = { primary: '#1565C0', accent: '#FF6F00', bg: '#F5F7FA', white: '#fff', text: '#1a1a1a', sub: '#666' };
 
 export default function DashboardScreen({ navigation }) {
-  const { user, logout } = useAuth();
+  const { user } = useAuth();
   const [dash, setDash] = useState(null);
   const [kpi, setKpi] = useState(null);
   const [upcoming, setUpcoming] = useState([]);
@@ -38,7 +38,9 @@ export default function DashboardScreen({ navigation }) {
   return (
     <ScrollView style={styles.container} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} />}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={logout}><Ionicons name="log-out-outline" size={22} color="#fff" /></TouchableOpacity>
+        <TouchableOpacity onPress={() => navigation.navigate('Profile')} style={styles.avatarBtn}>
+          <Text style={styles.avatarTxt}>{user?.name?.charAt(0) || '?'}</Text>
+        </TouchableOpacity>
         <View style={{ flex: 1, marginHorizontal: 10 }}>
           <Text style={styles.greeting}>مرحباً، {user?.name}</Text>
           <Text style={styles.role}>{user?.role}</Text>
@@ -61,11 +63,12 @@ export default function DashboardScreen({ navigation }) {
           { label: 'منجز / شهر', value: wo.done_month, icon: 'checkmark-circle', color: '#2E7D32' },
           { label: 'متأخر', value: wo.overdue, icon: 'warning', color: '#C62828' },
         ].map(s => (
-          <View key={s.label} style={[styles.card, { borderTopColor: s.color }]}>
+          <TouchableOpacity key={s.label} style={[styles.card, { borderTopColor: s.color }]}
+            onPress={() => navigation.navigate('Requests')}>
             <Ionicons name={s.icon} size={22} color={s.color} />
             <Text style={styles.cardVal}>{s.value ?? '—'}</Text>
             <Text style={styles.cardLbl}>{s.label}</Text>
-          </View>
+          </TouchableOpacity>
         ))}
       </View>
 
@@ -87,7 +90,10 @@ export default function DashboardScreen({ navigation }) {
 
       {upcoming.length > 0 && (
         <>
-          <Text style={styles.sectionTitle}>صيانة وقائية قادمة (7 أيام)</Text>
+          <TouchableOpacity style={styles.sectionHeader} onPress={() => navigation.navigate('PM')}>
+            <Ionicons name="chevron-back" size={16} color={C.primary} />
+            <Text style={styles.sectionTitle}>صيانة وقائية قادمة (7 أيام)</Text>
+          </TouchableOpacity>
           {upcoming.slice(0, 3).map(p => (
             <View key={p.id} style={styles.pmRow}>
               <Ionicons name="calendar" size={16} color={C.primary} />
@@ -97,31 +103,39 @@ export default function DashboardScreen({ navigation }) {
               </View>
             </View>
           ))}
+          <TouchableOpacity style={styles.moreBtn} onPress={() => navigation.navigate('PM')}>
+            <Text style={styles.moreTxt}>عرض الكل</Text>
+          </TouchableOpacity>
         </>
       )}
 
       {(dash?.pm?.overdue_pm || 0) > 0 && (
-        <View style={styles.alert}>
+        <TouchableOpacity style={styles.alert} onPress={() => navigation.navigate('PM')}>
           <Ionicons name="warning" size={18} color="#C62828" />
-          <Text style={styles.alertText}>{dash.pm.overdue_pm} صيانة وقائية متأخرة</Text>
-        </View>
+          <Text style={styles.alertText}>{dash.pm.overdue_pm} صيانة وقائية متأخرة — اضغط للعرض</Text>
+        </TouchableOpacity>
       )}
+
       {lowStock.length > 0 && (
-        <View style={[styles.alert, { backgroundColor: '#FFF3E0', borderColor: '#FF6F00' }]}>
+        <TouchableOpacity style={[styles.alert, { backgroundColor: '#FFF3E0', borderColor: '#FF6F00' }]}
+          onPress={() => navigation.navigate('Inventory')}>
           <Ionicons name="cube" size={18} color="#FF6F00" />
-          <Text style={[styles.alertText, { color: '#E65100' }]}>{lowStock.length} صنف مخزون منخفض</Text>
-        </View>
+          <Text style={[styles.alertText, { color: '#E65100' }]}>{lowStock.length} صنف مخزون منخفض — اضغط للعرض</Text>
+        </TouchableOpacity>
       )}
 
       <Text style={styles.sectionTitle}>إجراءات سريعة</Text>
-      <View style={styles.actionsRow}>
+      <View style={styles.actionsGrid}>
         {[
-          { label: 'طلب جديد', icon: 'add-circle', onPress: () => navigation.navigate('Requests', { screen: 'NewRequest' }) },
-          { label: 'المعدات', icon: 'construct', onPress: () => navigation.navigate('Equipment') },
-          { label: 'التقارير', icon: 'bar-chart', onPress: () => navigation.navigate('Reports') },
+          { label: 'طلب جديد', icon: 'add-circle', color: C.primary, onPress: () => navigation.navigate('Requests', { screen: 'NewRequest' }) },
+          { label: 'الصيانة الوقائية', icon: 'calendar', color: '#2E7D32', onPress: () => navigation.navigate('PM') },
+          { label: 'المخزون', icon: 'cube', color: '#FF6F00', onPress: () => navigation.navigate('Inventory') },
+          { label: 'المعدات', icon: 'construct', color: C.primary, onPress: () => navigation.navigate('Equipment') },
+          { label: 'التقارير', icon: 'bar-chart', color: '#C62828', onPress: () => navigation.navigate('Reports') },
+          { label: 'الملف الشخصي', icon: 'person-circle', color: C.sub, onPress: () => navigation.navigate('Profile') },
         ].map(a => (
           <TouchableOpacity key={a.label} style={styles.actionBtn} onPress={a.onPress}>
-            <Ionicons name={a.icon} size={26} color={C.primary} />
+            <Ionicons name={a.icon} size={28} color={a.color} />
             <Text style={styles.actionLbl}>{a.label}</Text>
           </TouchableOpacity>
         ))}
@@ -135,12 +149,15 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: C.bg },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: C.bg },
   header: { backgroundColor: C.primary, flexDirection: 'row', alignItems: 'center', padding: 20, paddingTop: 50 },
+  avatarBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.25)', justifyContent: 'center', alignItems: 'center' },
+  avatarTxt: { fontSize: 18, fontWeight: 'bold', color: '#fff' },
   greeting: { fontSize: 17, fontWeight: 'bold', color: '#fff', textAlign: 'right' },
   role: { fontSize: 12, color: 'rgba(255,255,255,0.8)', textAlign: 'right' },
   errorBox: { margin: 12, padding: 12, backgroundColor: '#FFEBEE', borderRadius: 10, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   errorText: { color: '#C62828', fontSize: 13, flex: 1 },
   retryText: { color: C.primary, fontWeight: 'bold', fontSize: 13, marginRight: 8 },
   sectionTitle: { fontSize: 15, fontWeight: 'bold', color: C.text, textAlign: 'right', margin: 14, marginBottom: 8 },
+  sectionHeader: { flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center', marginHorizontal: 14, marginBottom: 8 },
   grid: { flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 10, gap: 8 },
   card: { flex: 1, minWidth: '44%', backgroundColor: C.white, borderRadius: 12, padding: 14, alignItems: 'center', borderTopWidth: 4, elevation: 2 },
   cardVal: { fontSize: 26, fontWeight: 'bold', color: C.text, marginTop: 6 },
@@ -152,9 +169,11 @@ const styles = StyleSheet.create({
   pmRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: C.white, marginHorizontal: 14, marginBottom: 6, borderRadius: 10, padding: 12 },
   pmTitle: { fontSize: 13, fontWeight: '600', color: C.text, textAlign: 'right' },
   pmSub: { fontSize: 12, color: C.sub, textAlign: 'right' },
+  moreBtn: { marginHorizontal: 14, marginBottom: 8, alignItems: 'flex-start' },
+  moreTxt: { color: C.primary, fontSize: 13, fontWeight: '600' },
   alert: { flexDirection: 'row', alignItems: 'center', gap: 8, marginHorizontal: 14, marginBottom: 8, padding: 12, backgroundColor: '#FFEBEE', borderRadius: 10, borderWidth: 1, borderColor: '#EF9A9A' },
-  alertText: { color: '#C62828', fontSize: 13, fontWeight: '600' },
-  actionsRow: { flexDirection: 'row', marginHorizontal: 14, gap: 8 },
-  actionBtn: { flex: 1, alignItems: 'center', backgroundColor: C.white, borderRadius: 12, padding: 16, elevation: 2 },
-  actionLbl: { fontSize: 12, color: C.text, marginTop: 6, textAlign: 'center' },
+  alertText: { color: '#C62828', fontSize: 13, fontWeight: '600', flex: 1 },
+  actionsGrid: { flexDirection: 'row', flexWrap: 'wrap', marginHorizontal: 10, gap: 8 },
+  actionBtn: { width: '30%', flex: 1, minWidth: '28%', alignItems: 'center', backgroundColor: C.white, borderRadius: 12, padding: 14, elevation: 2 },
+  actionLbl: { fontSize: 11, color: C.text, marginTop: 6, textAlign: 'center' },
 });

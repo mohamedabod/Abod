@@ -20,13 +20,27 @@ import NewTechnicianScreen from '../screens/Technicians/NewTechnicianScreen';
 import EquipmentListScreen from '../screens/Equipment/EquipmentListScreen';
 import EquipmentDetailScreen from '../screens/Equipment/EquipmentDetailScreen';
 import NewEquipmentScreen from '../screens/Equipment/NewEquipmentScreen';
+import PMScreen from '../screens/PM/PMScreen';
+import InventoryScreen from '../screens/Inventory/InventoryScreen';
 import ReportsScreen from '../screens/Reports/ReportsScreen';
+import ProfileScreen from '../screens/Profile/ProfileScreen';
 
 const Tab = createBottomTabNavigator();
 const Stack = createStackNavigator();
 
 const PRIMARY = '#1565C0';
 const HEADER = { headerStyle: { backgroundColor: PRIMARY }, headerTintColor: '#fff', headerTitleAlign: 'center' };
+
+function DashboardStack() {
+  return (
+    <Stack.Navigator screenOptions={HEADER}>
+      <Stack.Screen name="DashboardHome" component={DashboardScreen} options={{ headerShown: false }} />
+      <Stack.Screen name="PM" component={PMScreen} options={{ title: 'الصيانة الوقائية' }} />
+      <Stack.Screen name="Inventory" component={InventoryScreen} options={{ title: 'المخزون' }} />
+      <Stack.Screen name="Profile" component={ProfileScreen} options={{ title: 'الملف الشخصي' }} />
+    </Stack.Navigator>
+  );
+}
 
 function RequestsStack() {
   return (
@@ -79,7 +93,7 @@ function MainTabs() {
         },
       })}
     >
-      <Tab.Screen name="Dashboard" component={DashboardScreen} options={{ title: 'الرئيسية' }} />
+      <Tab.Screen name="Dashboard" component={DashboardStack} options={{ title: 'الرئيسية' }} />
       <Tab.Screen name="Requests" component={RequestsStack} options={{ title: 'الطلبات' }} />
       <Tab.Screen name="Technicians" component={TechniciansStack} options={{ title: 'الفنيون' }} />
       <Tab.Screen name="Equipment" component={EquipmentStack} options={{ title: 'المعدات' }} />
