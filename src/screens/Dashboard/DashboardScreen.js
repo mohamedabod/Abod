@@ -4,8 +4,21 @@ import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../context/AuthContext';
 import { dashboardAPI, pmAPI, inventoryAPI } from '../../services/api';
+import { registerForPushNotifications } from '../../utils/notifications';
 
 const C = { primary: '#1565C0', accent: '#FF6F00', bg: '#F5F7FA', white: '#fff', text: '#1a1a1a', sub: '#666' };
+
+const QUICK_ACTIONS = (nav) => [
+  { label: 'مسح QR', icon: 'qr-code', color: '#C62828', onPress: () => nav.navigate('QRScanner') },
+  { label: 'طلب جديد', icon: 'add-circle', color: C.primary, onPress: () => nav.navigate('Requests', { screen: 'NewRequest' }) },
+  { label: 'الصيانة الوقائية', icon: 'calendar', color: '#2E7D32', onPress: () => nav.navigate('PM') },
+  { label: 'المخزون', icon: 'cube', color: '#FF6F00', onPress: () => nav.navigate('Inventory') },
+  { label: 'مساعد الذكاء الاصطناعي', icon: 'hardware-chip', color: '#7B1FA2', onPress: () => nav.navigate('AIAssistant') },
+  { label: 'Wrench Time', icon: 'timer', color: C.primary, onPress: () => nav.navigate('WrenchTime') },
+  { label: 'المعدات', icon: 'construct', color: C.sub, onPress: () => nav.navigate('Equipment') },
+  { label: 'التقارير', icon: 'bar-chart', color: '#C62828', onPress: () => nav.navigate('Reports') },
+  { label: 'الملف الشخصي', icon: 'person-circle', color: C.sub, onPress: () => nav.navigate('Profile') },
+];
 
 export default function DashboardScreen({ navigation }) {
   const { user } = useAuth();
@@ -30,11 +43,16 @@ export default function DashboardScreen({ navigation }) {
     } finally { setLoading(false); setRefreshing(false); }
   };
 
-  useFocusEffect(useCallback(() => { load(); }, []));
+  useFocusEffect(useCallback(() => {
+    load();
+    registerForPushNotifications().catch(() => {});
+  }, []));
 
   if (loading) return <View style={styles.center}><ActivityIndicator size="large" color={C.primary} /></View>;
 
   const wo = dash?.workorders || {};
+  const actions = QUICK_ACTIONS(navigation);
+
   return (
     <ScrollView style={styles.container} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} />}>
       <View style={styles.header}>
@@ -45,7 +63,9 @@ export default function DashboardScreen({ navigation }) {
           <Text style={styles.greeting}>مرحباً، {user?.name}</Text>
           <Text style={styles.role}>{user?.role}</Text>
         </View>
-        <Ionicons name="construct" size={32} color="#fff" />
+        <TouchableOpacity onPress={() => navigation.navigate('Chat', { screen: 'ChatList' })}>
+          <Ionicons name="chatbubbles" size={26} color="#fff" />
+        </TouchableOpacity>
       </View>
 
       {error && (
@@ -103,39 +123,28 @@ export default function DashboardScreen({ navigation }) {
               </View>
             </View>
           ))}
-          <TouchableOpacity style={styles.moreBtn} onPress={() => navigation.navigate('PM')}>
-            <Text style={styles.moreTxt}>عرض الكل</Text>
-          </TouchableOpacity>
         </>
       )}
 
       {(dash?.pm?.overdue_pm || 0) > 0 && (
         <TouchableOpacity style={styles.alert} onPress={() => navigation.navigate('PM')}>
           <Ionicons name="warning" size={18} color="#C62828" />
-          <Text style={styles.alertText}>{dash.pm.overdue_pm} صيانة وقائية متأخرة — اضغط للعرض</Text>
+          <Text style={styles.alertText}>{dash.pm.overdue_pm} صيانة وقائية متأخرة ← اضغط للعرض</Text>
         </TouchableOpacity>
       )}
-
       {lowStock.length > 0 && (
         <TouchableOpacity style={[styles.alert, { backgroundColor: '#FFF3E0', borderColor: '#FF6F00' }]}
           onPress={() => navigation.navigate('Inventory')}>
           <Ionicons name="cube" size={18} color="#FF6F00" />
-          <Text style={[styles.alertText, { color: '#E65100' }]}>{lowStock.length} صنف مخزون منخفض — اضغط للعرض</Text>
+          <Text style={[styles.alertText, { color: '#E65100' }]}>{lowStock.length} صنف مخزون منخفض ← اضغط للعرض</Text>
         </TouchableOpacity>
       )}
 
       <Text style={styles.sectionTitle}>إجراءات سريعة</Text>
       <View style={styles.actionsGrid}>
-        {[
-          { label: 'طلب جديد', icon: 'add-circle', color: C.primary, onPress: () => navigation.navigate('Requests', { screen: 'NewRequest' }) },
-          { label: 'الصيانة الوقائية', icon: 'calendar', color: '#2E7D32', onPress: () => navigation.navigate('PM') },
-          { label: 'المخزون', icon: 'cube', color: '#FF6F00', onPress: () => navigation.navigate('Inventory') },
-          { label: 'المعدات', icon: 'construct', color: C.primary, onPress: () => navigation.navigate('Equipment') },
-          { label: 'التقارير', icon: 'bar-chart', color: '#C62828', onPress: () => navigation.navigate('Reports') },
-          { label: 'الملف الشخصي', icon: 'person-circle', color: C.sub, onPress: () => navigation.navigate('Profile') },
-        ].map(a => (
+        {actions.map(a => (
           <TouchableOpacity key={a.label} style={styles.actionBtn} onPress={a.onPress}>
-            <Ionicons name={a.icon} size={28} color={a.color} />
+            <Ionicons name={a.icon} size={26} color={a.color} />
             <Text style={styles.actionLbl}>{a.label}</Text>
           </TouchableOpacity>
         ))}
@@ -169,11 +178,9 @@ const styles = StyleSheet.create({
   pmRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: C.white, marginHorizontal: 14, marginBottom: 6, borderRadius: 10, padding: 12 },
   pmTitle: { fontSize: 13, fontWeight: '600', color: C.text, textAlign: 'right' },
   pmSub: { fontSize: 12, color: C.sub, textAlign: 'right' },
-  moreBtn: { marginHorizontal: 14, marginBottom: 8, alignItems: 'flex-start' },
-  moreTxt: { color: C.primary, fontSize: 13, fontWeight: '600' },
   alert: { flexDirection: 'row', alignItems: 'center', gap: 8, marginHorizontal: 14, marginBottom: 8, padding: 12, backgroundColor: '#FFEBEE', borderRadius: 10, borderWidth: 1, borderColor: '#EF9A9A' },
   alertText: { color: '#C62828', fontSize: 13, fontWeight: '600', flex: 1 },
   actionsGrid: { flexDirection: 'row', flexWrap: 'wrap', marginHorizontal: 10, gap: 8 },
-  actionBtn: { width: '30%', flex: 1, minWidth: '28%', alignItems: 'center', backgroundColor: C.white, borderRadius: 12, padding: 14, elevation: 2 },
-  actionLbl: { fontSize: 11, color: C.text, marginTop: 6, textAlign: 'center' },
+  actionBtn: { width: '30%', flex: 1, minWidth: '28%', alignItems: 'center', backgroundColor: C.white, borderRadius: 12, padding: 12, elevation: 2 },
+  actionLbl: { fontSize: 10, color: C.text, marginTop: 6, textAlign: 'center' },
 });

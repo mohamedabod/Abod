@@ -71,3 +71,31 @@ export const serverAPI = {
 };
 
 export default api;
+
+export const chatAPI = {
+  getRooms: () => api.get('/api/chat/rooms'),
+  createRoom: (data) => api.post('/api/chat/rooms', data),
+  getMessages: (roomId) => api.get(`/api/chat/rooms/${roomId}/messages`),
+  sendMessage: (data) => api.post('/api/chat/messages', data),
+  sendVoice: (formData) => api.post('/api/chat/voice', formData, { headers: { 'Content-Type': 'multipart/form-data' } }),
+};
+
+export const reportsAPI = {
+  getFailurePatterns: (params) => api.get('/api/reports/failure-patterns', { params }),
+  getWrenchTime: (params) => api.get('/api/reports/wrench-time', { params }),
+  getOEE: (params) => api.get('/api/reports/oee', { params }),
+};
+
+export const predictiveAPI = {
+  getPredictions: () => api.get('/api/predictions'),
+};
+
+export const locationAPI = {
+  updateLocation: (data) => api.post('/api/location/update', data),
+  getCurrentLocations: () => api.get('/api/location/current'),
+  getHistory: (techId, params) => api.get(`/api/location/history/${techId}`, { params }),
+};
+
+export const aiAPI = {
+  diagnose: (data) => api.post('/api/ai/diagnose', data),
+};
