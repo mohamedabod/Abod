@@ -26,9 +26,22 @@ export default function ServerConfigScreen({ navigation }) {
       const res = await serverAPI.getInfo(base);
       setInfo(res.data);
       await AsyncStorage.setItem('server_url', base);
-      Alert.alert('✅ اتصال ناجح', `السيرفر: ${res.data.hostname}\nـ IP: ${res.data.ips?.join(', ')}`);
+      Alert.alert('✅ اتصال ناجح', `السيرفر: ${res.data.hostname}\nIP: ${res.data.ips?.join(', ')}`);
     } catch (e) {
-      Alert.alert('❌ فشل الاتصال', 'تأكد من الـ IP والـ Port\n' + (e.message || ''));
+      const status = e.response?.status;
+      if (status === 401 || status === 403) {
+        // Server is reachable — auth required (expected before login)
+        await AsyncStorage.setItem('server_url', base);
+        setInfo({ hostname: base, ips: [base], port: 5000 });
+        Alert.alert('✅ السيرفر شغال', 'تم الاتصال بنجاح\nسجّل دخولك الآن');
+      } else if (status) {
+        // Got a response = server reachable, unexpected error
+        await AsyncStorage.setItem('server_url', base);
+        Alert.alert('✅ السيرفر شغال', `استجابة السيرفر: ${status}`);
+      } else {
+        // No response = wrong IP or server off
+        Alert.alert('❌ فشل الاتصال', 'تأكد من:\n• الـ IP صح\n• EmessA شغال على الكمبيوتر\n• الكمبيوتر والموبايل على نفس الـ WiFi');
+      }
     } finally {
       setTesting(false);
     }
