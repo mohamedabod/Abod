@@ -2,7 +2,7 @@ node_modules/
 .expo/
 dist/
 web-build/
-*.jks
+# *.jks  ← unlocked so emessa-release.keystore stays in repo
 *.p8
 *.p12
 *.key
