@@ -1,13 +1,24 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Switch, ActivityIndicator } from 'react-native';
 import * as Location from 'expo-location';
+import * as TaskManager from 'expo-task-manager';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
-import { hrAPI } from '../../services/api';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import api from '../../services/api';
+import { hrAPI, locationAPI } from '../../services/api';
+import { LOCATION_TASK } from '../../context/AuthContext';
 
 const C = { primary: '#1565C0', bg: '#F5F7FA', white: '#fff', text: '#1a1a1a', sub: '#666' };
+
+// Background task definition — must be at module level
+TaskManager.defineTask(LOCATION_TASK, async ({ data, error }) => {
+  if (error) return;
+  const { locations } = data;
+  const { latitude, longitude, accuracy } = locations[0].coords;
+  try {
+    await locationAPI.updateLocation(latitude, longitude, accuracy);
+  } catch (_) {}
+});
 
 export default function LocationTrackingScreen() {
   const [tracking, setTracking] = useState(false);
@@ -15,50 +26,63 @@ export default function LocationTrackingScreen() {
   const [myLocation, setMyLocation] = useState(null);
   const [loading, setLoading] = useState(true);
   const locationSub = useRef(null);
-  const intervalRef = useRef(null);
 
   useFocusEffect(useCallback(() => {
     hrAPI.getStaff().then(r => { setStaff(r.data); setLoading(false); }).catch(() => setLoading(false));
-    AsyncStorage.getItem('location_tracking').then(v => { if (v === 'true') startTracking(); });
-    return () => stopTracking();
+    (async () => {
+      const isRunning = await Location.hasStartedLocationUpdatesAsync(LOCATION_TASK).catch(() => false);
+      setTracking(isRunning);
+    })();
+    return () => { locationSub.current?.remove(); };
   }, []));
 
   const startTracking = async () => {
-    const { status } = await Location.requestForegroundPermissionsAsync();
-    if (status !== 'granted') {
-      Alert.alert('تنبيه', 'يلزم السماح بالوصول للموقع');
-      return;
-    }
+    const { status: fg } = await Location.requestForegroundPermissionsAsync();
+    if (fg !== 'granted') { Alert.alert('تنبيه', 'يلزم السماح بالوصول للموقع'); return; }
+    const { status: bg } = await Location.requestBackgroundPermissionsAsync();
+
     setTracking(true);
     await AsyncStorage.setItem('location_tracking', 'true');
 
+    // Foreground watch for live display
     locationSub.current = await Location.watchPositionAsync(
-      { accuracy: Location.Accuracy.Balanced, timeInterval: 30000, distanceInterval: 20 },
+      { accuracy: Location.Accuracy.Balanced, timeInterval: 60000, distanceInterval: 50 },
       (loc) => {
         setMyLocation(loc.coords);
-        sendLocation(loc.coords);
+        locationAPI.updateLocation(loc.coords.latitude, loc.coords.longitude, loc.coords.accuracy);
       }
     );
+
+    // Background task (needs bg permission)
+    if (bg === 'granted') {
+      const isRunning = await Location.hasStartedLocationUpdatesAsync(LOCATION_TASK).catch(() => false);
+      if (!isRunning) {
+        await Location.startLocationUpdatesAsync(LOCATION_TASK, {
+          accuracy: Location.Accuracy.Balanced,
+          timeInterval: 60000,
+          distanceInterval: 50,
+          foregroundService: {
+            notificationTitle: 'EmessA CMMS',
+            notificationBody: 'تتبع الموقع نشط',
+          },
+        });
+      }
+    }
   };
 
   const stopTracking = async () => {
     locationSub.current?.remove();
-    clearInterval(intervalRef.current);
+    locationSub.current = null;
     setTracking(false);
     await AsyncStorage.setItem('location_tracking', 'false');
+    try {
+      const isRunning = await Location.hasStartedLocationUpdatesAsync(LOCATION_TASK);
+      if (isRunning) await Location.stopLocationUpdatesAsync(LOCATION_TASK);
+    } catch (_) {}
+    try { await locationAPI.clearMyLocation(); } catch (_) {}
   };
 
   const toggleTracking = () => tracking ? stopTracking() : startTracking();
-
-  const sendLocation = async (coords) => {
-    try {
-      await api.post('/api/location/update', {
-        lat: coords.latitude,
-        lng: coords.longitude,
-        accuracy: coords.accuracy,
-      });
-    } catch (_) {}
-  };
 
   const StatusDot = ({ online }) => (
     <View style={[styles.dot, { backgroundColor: online ? '#4CAF50' : '#9E9E9E' }]} />
@@ -77,7 +101,7 @@ export default function LocationTrackingScreen() {
           </Text>
         )}
         <Text style={styles.trackingHint}>
-          عند التفعيل، موقعك يُحدَّث كل 30 ثانية ويظهر للمهندس
+          عند التفعيل، موقعك يُحدَّث كل دقيقة ويظهر للمهندس
         </Text>
       </View>
 

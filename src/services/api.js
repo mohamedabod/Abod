@@ -15,6 +15,7 @@ export const authAPI = {
   login: (email, password) => api.post('/api/auth/login', { email, password }),
   me: () => api.get('/api/auth/me'),
   changePassword: (current, next) => api.post('/api/auth/change-password', { current, next }),
+  savePushToken: (token) => api.post('/api/auth/push-token', { token }),
 };
 
 export const dashboardAPI = {
@@ -29,6 +30,7 @@ export const workordersAPI = {
   update: (id, data) => api.put(`/api/workorders/${id}`, data),
   updateStatus: (id, status, message) =>
     api.patch(`/api/workorders/${id}/status`, { status, message }),
+  saveChecklist: (id, data) => api.patch(`/api/workorders/${id}/checklist`, data),
   delete: (id) => api.delete(`/api/workorders/${id}`),
   getStats: () => api.get('/api/workorders/stats/summary'),
 };
@@ -87,13 +89,15 @@ export const reportsAPI = {
 };
 
 export const predictiveAPI = {
-  getPredictions: () => api.get('/api/predictions'),
+  getPredictions: (days = 90) => api.get('/api/predictions', { params: { days } }),
 };
 
 export const locationAPI = {
-  updateLocation: (data) => api.post('/api/location/update', data),
+  updateLocation: (latitude, longitude, accuracy, area_label) =>
+    api.post('/api/location/update', { latitude, longitude, accuracy, area_label }),
   getCurrentLocations: () => api.get('/api/location/current'),
   getHistory: (techId, params) => api.get(`/api/location/history/${techId}`, { params }),
+  clearMyLocation: () => api.delete('/api/location/me'),
 };
 
 export const aiAPI = {

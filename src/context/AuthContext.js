@@ -1,6 +1,11 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { authAPI } from '../services/api';
+import * as Notifications from 'expo-notifications';
+import * as Location from 'expo-location';
+import * as TaskManager from 'expo-task-manager';
+import { authAPI, locationAPI } from '../services/api';
+
+export const LOCATION_TASK = 'background-location';
 
 const AuthContext = createContext(null);
 
@@ -26,17 +31,36 @@ export function AuthProvider({ children }) {
     })();
   }, []);
 
+  const registerPushToken = async () => {
+    try {
+      const { status } = await Notifications.getPermissionsAsync();
+      const finalStatus = status === 'granted'
+        ? status
+        : (await Notifications.requestPermissionsAsync()).status;
+      if (finalStatus !== 'granted') return;
+      const { data: expoPushToken } = await Notifications.getExpoPushTokenAsync();
+      await authAPI.savePushToken(expoPushToken);
+    } catch (_) {}
+  };
+
   const login = async (email, password) => {
     const res = await authAPI.login(email, password);
     const { token: t, user: u } = res.data;
     await AsyncStorage.setItem('auth_token', t);
     setToken(t);
     setUser(u);
+    registerPushToken();
     return u;
   };
 
   const logout = async () => {
+    try { await locationAPI.clearMyLocation(); } catch (_) {}
+    try {
+      const isRunning = await Location.hasStartedLocationUpdatesAsync(LOCATION_TASK);
+      if (isRunning) await Location.stopLocationUpdatesAsync(LOCATION_TASK);
+    } catch (_) {}
     await AsyncStorage.removeItem('auth_token');
+    await AsyncStorage.removeItem('location_tracking');
     setToken(null);
     setUser(null);
   };

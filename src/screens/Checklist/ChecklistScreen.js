@@ -33,9 +33,18 @@ export default function ChecklistScreen({ navigation, route }) {
     }
     setSaving(true);
     try {
-      const checklistData = checks.map(c => ({ id: c.id, text: c.text, done: c.done, required: c.required }));
+      const checklistData = checks.map(c => ({
+        id: `step-${c.id}`,
+        label: c.text,
+        done: c.done,
+        value: '',
+        note: '',
+      }));
       await workordersAPI.updateStatus(workorderId, 'done', techNotes || 'تم الإصلاح');
-      await workordersAPI.saveChecklist?.(workorderId, { checklist: checklistData, tech_notes: techNotes });
+      await workordersAPI.saveChecklist(workorderId, {
+        checklist: checklistData,
+        tech_notes: techNotes,
+      });
       Alert.alert('✅ تم', 'تم إغلاق أمر الشغل وإرساله للمراجعة', [
         { text: 'حسناً', onPress: () => { onComplete?.(); navigation.goBack(); } }
       ]);

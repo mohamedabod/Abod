@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Alert, ActivityIndicator, Linking } from 'react-native';
 import { Camera } from 'expo-camera';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -17,7 +17,7 @@ export default function QRScannerScreen({ navigation, route }) {
     });
   }, []);
 
-  const handleBarCodeScanned = ({ data }) => {
+  const handleBarCodeScanned = async ({ data }) => {
     if (scanned || loading) return;
     setScanned(true);
     setLoading(true);
@@ -38,11 +38,9 @@ export default function QRScannerScreen({ navigation, route }) {
           Alert.alert('QR غير معروف', data, [{ text: 'حسناً', onPress: () => setScanned(false) }]);
         }
       } else if (data.includes('/report?asset=')) {
-        // Web URL format: http://server:5000/report?asset=ID&name=NAME
-        const url2 = new URL(data);
-        const assetId = url2.searchParams.get('asset');
-        const assetName = url2.searchParams.get('name');
-        navigation.replace('QuickReport', { assetId, assetName });
+        // Web URL format → فتح في المتصفح مباشرة
+        await Linking.openURL(data);
+        setScanned(false);
       } else {
         Alert.alert('QR غير معروف', 'هذا الـ QR مش من النظام', [
           { text: 'مسح تاني', onPress: () => setScanned(false) }

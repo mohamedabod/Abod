@@ -6,6 +6,7 @@ import { StatusBar } from 'expo-status-bar';
 import * as Notifications from 'expo-notifications';
 
 import { AuthProvider } from './src/context/AuthContext';
+import './src/screens/Location/LocationTrackingScreen'; // register background task
 import { NetworkProvider } from './src/context/NetworkContext';
 import AppNavigator from './src/navigation/AppNavigator';
 import OfflineBanner from './src/components/OfflineBanner';
