@@ -5,12 +5,15 @@ import {
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { serverAPI } from '../../services/api';
+import axios from 'axios';
 
 const COLORS = { primary: '#1565C0', accent: '#FF6F00', bg: '#F5F7FA', white: '#fff', text: '#1a1a1a', sub: '#666' };
 
 export default function ServerConfigScreen({ navigation }) {
   const [url, setUrl] = useState('');
   const [testing, setTesting] = useState(false);
+  const [scanning, setScanning] = useState(false);
+  const [scanProgress, setScanProgress] = useState('');
   const [info, setInfo] = useState(null);
 
   useEffect(() => {
@@ -44,6 +47,74 @@ export default function ServerConfigScreen({ navigation }) {
       }
     } finally {
       setTesting(false);
+    }
+  };
+
+  const scanNetwork = async () => {
+    setScanning(true);
+    setScanProgress('جارٍ البحث عن السيرفر...');
+    setInfo(null);
+
+    // Get subnet from common local ranges: 192.168.1.x, 192.168.0.x, 10.0.0.x
+    const subnets = ['192.168.1', '192.168.0', '10.0.0', '172.16.0'];
+    const port = 5000;
+    const found = [];
+
+    for (const subnet of subnets) {
+      setScanProgress(`فحص ${subnet}.x ...`);
+      const checks = [];
+      for (let i = 1; i <= 254; i++) {
+        const ip = `${subnet}.${i}`;
+        checks.push(
+          axios.get(`http://${ip}:${port}/api/server-info`, { timeout: 800 })
+            .then(r => ({ ip, data: r.data }))
+            .catch(e => {
+              // 401/403 means server is there but needs auth
+              if (e.response?.status === 401 || e.response?.status === 403) {
+                return { ip, data: null };
+              }
+              return null;
+            })
+        );
+      }
+
+      // Run in batches of 30 to avoid overwhelming the network
+      for (let b = 0; b < checks.length; b += 30) {
+        const batch = await Promise.all(checks.slice(b, b + 30));
+        batch.forEach(r => r && found.push(r));
+        if (found.length > 0) break;
+      }
+      if (found.length > 0) break;
+    }
+
+    setScanning(false);
+    setScanProgress('');
+
+    if (found.length === 0) {
+      Alert.alert('لم يُعثر على السيرفر', 'تأكد من:\n• EmessA شغال على الكمبيوتر\n• الموبايل والكمبيوتر على نفس الـ WiFi');
+      return;
+    }
+
+    if (found.length === 1) {
+      const base = `http://${found[0].ip}:${port}`;
+      setUrl(base);
+      await AsyncStorage.setItem('server_url', base);
+      const label = found[0].data?.hostname ? `السيرفر: ${found[0].data.hostname}` : `IP: ${found[0].ip}`;
+      Alert.alert('✅ تم العثور على السيرفر', `${label}\n${base}\n\nتم الحفظ تلقائياً`);
+    } else {
+      // Multiple servers found — let user pick
+      Alert.alert(
+        'عُثر على أكثر من سيرفر',
+        found.map(f => `http://${f.ip}:${port}`).join('\n'),
+        found.map(f => ({
+          text: `http://${f.ip}:${port}`,
+          onPress: async () => {
+            const base = `http://${f.ip}:${port}`;
+            setUrl(base);
+            await AsyncStorage.setItem('server_url', base);
+          },
+        }))
+      );
     }
   };
 
@@ -81,7 +152,13 @@ export default function ServerConfigScreen({ navigation }) {
         </View>
       )}
 
-      <TouchableOpacity style={[styles.btn, styles.testBtn]} onPress={test} disabled={testing}>
+      <TouchableOpacity style={[styles.btn, styles.scanBtn]} onPress={scanNetwork} disabled={scanning || testing}>
+        {scanning
+          ? <><ActivityIndicator color="#fff" size="small" /><Text style={[styles.btnText, { marginRight: 8 }]}>{scanProgress}</Text></>
+          : <Text style={styles.btnText}>🔍 بحث تلقائي عن السيرفر</Text>}
+      </TouchableOpacity>
+
+      <TouchableOpacity style={[styles.btn, styles.testBtn]} onPress={test} disabled={testing || scanning}>
         {testing ? <ActivityIndicator color="#fff" /> : <Text style={styles.btnText}>اختبار الاتصال</Text>}
       </TouchableOpacity>
 
@@ -117,7 +194,8 @@ const styles = StyleSheet.create({
     borderLeftWidth: 4, borderLeftColor: '#4CAF50',
   },
   infoText: { fontSize: 13, color: '#2E7D32', textAlign: 'right', marginBottom: 4 },
-  btn: { borderRadius: 12, padding: 15, alignItems: 'center', marginBottom: 12 },
+  btn: { borderRadius: 12, padding: 15, alignItems: 'center', marginBottom: 12, flexDirection: 'row', justifyContent: 'center' },
+  scanBtn: { backgroundColor: '#2E7D32' },
   testBtn: { backgroundColor: COLORS.accent },
   saveBtn: { backgroundColor: COLORS.primary },
   btnText: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
