@@ -1,5 +1,5 @@
 import React, { useState, useCallback } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, RefreshControl, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, RefreshControl, ActivityIndicator, TextInput } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import api from '../../services/api';
@@ -10,6 +10,7 @@ export default function ChatListScreen({ navigation }) {
   const [rooms, setRooms] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
 
   const load = async () => {
     try {
@@ -19,6 +20,13 @@ export default function ChatListScreen({ navigation }) {
   };
 
   useFocusEffect(useCallback(() => { load(); }, []));
+
+  const filteredRooms = searchQuery.trim()
+    ? rooms.filter(r =>
+        r.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        r.last_message?.toLowerCase().includes(searchQuery.toLowerCase())
+      )
+    : rooms;
 
   const renderRoom = ({ item }) => (
     <TouchableOpacity style={styles.room} onPress={() => navigation.navigate('ChatRoom', { room: item })}>
@@ -41,16 +49,34 @@ export default function ChatListScreen({ navigation }) {
 
   return (
     <View style={styles.container}>
+      <View style={styles.searchBar}>
+        <Ionicons name="search" size={18} color={C.sub} style={{ marginLeft: 8 }} />
+        <TextInput
+          style={styles.searchInput}
+          value={searchQuery}
+          onChangeText={setSearchQuery}
+          placeholder="ابحث في المحادثات..."
+          textAlign="right"
+          placeholderTextColor={C.sub}
+        />
+        {searchQuery.length > 0 && (
+          <TouchableOpacity onPress={() => setSearchQuery('')} style={{ marginRight: 8 }}>
+            <Ionicons name="close-circle" size={18} color={C.sub} />
+          </TouchableOpacity>
+        )}
+      </View>
       {loading ? <ActivityIndicator style={{ margin: 40 }} color={C.primary} size="large" /> : (
         <FlatList
-          data={rooms}
+          data={filteredRooms}
           keyExtractor={i => String(i.id)}
           renderItem={renderRoom}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} />}
           ListEmptyComponent={
             <View style={styles.empty}>
               <Ionicons name="chatbubbles-outline" size={56} color="#ccc" />
-              <Text style={styles.emptyTxt}>لا توجد محادثات بعد</Text>
+              <Text style={styles.emptyTxt}>
+                {searchQuery.trim() ? 'لا توجد نتائج' : 'لا توجد محادثات بعد'}
+              </Text>
             </View>
           }
         />
@@ -64,6 +90,8 @@ export default function ChatListScreen({ navigation }) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: C.bg },
+  searchBar: { flexDirection: 'row', alignItems: 'center', backgroundColor: C.white, borderBottomWidth: 1, borderBottomColor: '#e8e8e8', paddingVertical: 8 },
+  searchInput: { flex: 1, fontSize: 14, color: C.text, paddingHorizontal: 8, paddingVertical: 4 },
   room: { flexDirection: 'row', alignItems: 'center', backgroundColor: C.white, padding: 14, borderBottomWidth: 1, borderBottomColor: '#f0f0f0' },
   avatar: { width: 46, height: 46, borderRadius: 23, backgroundColor: '#E3F2FD', justifyContent: 'center', alignItems: 'center' },
   avatarTxt: { fontSize: 18, fontWeight: 'bold', color: C.primary },
