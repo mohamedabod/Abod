@@ -80,6 +80,7 @@ export const chatAPI = {
   getMessages: (roomId) => api.get(`/api/chat/rooms/${roomId}/messages`),
   sendMessage: (data) => api.post('/api/chat/messages', data),
   sendVoice: (formData) => api.post('/api/chat/voice', formData, { headers: { 'Content-Type': 'multipart/form-data' } }),
+  deleteMessage: (id) => api.delete(`/api/chat/messages/${id}`),
 };
 
 export const reportsAPI = {

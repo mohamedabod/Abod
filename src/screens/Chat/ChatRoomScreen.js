@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { View, Text, StyleSheet, FlatList, TextInput, TouchableOpacity, KeyboardAvoidingView, Platform, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, FlatList, TextInput, TouchableOpacity, KeyboardAvoidingView, Platform, ActivityIndicator, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Audio } from 'expo-av';
-import api from '../../services/api';
+import api, { chatAPI } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 
 const C = { primary: '#1565C0', bg: '#F5F7FA', white: '#fff', text: '#1a1a1a', sub: '#666' };
@@ -130,6 +130,28 @@ export default function ChatRoomScreen({ route, navigation }) {
     } catch (_) {}
   };
 
+  const confirmDelete = (msg) => {
+    Alert.alert(
+      'حذف الرسالة',
+      'هل تريد حذف هذه الرسالة؟',
+      [
+        { text: 'إلغاء', style: 'cancel' },
+        {
+          text: 'حذف',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await chatAPI.deleteMessage(msg.id);
+              setMessages(prev => prev.filter(m => m.id !== msg.id));
+            } catch (_) {
+              Alert.alert('خطأ', 'تعذّر حذف الرسالة');
+            }
+          },
+        },
+      ]
+    );
+  };
+
   const renderHighlighted = (text, isMe) => {
     if (!searchQuery.trim()) return <Text style={[styles.msgTxt, isMe && styles.msgTxtMe]}>{text}</Text>;
     const q = searchQuery.toLowerCase();
@@ -150,7 +172,12 @@ export default function ChatRoomScreen({ route, navigation }) {
     const isCurrentResult = searchResults[searchIdx]?.index === index;
     return (
       <View style={[styles.msgRow, isMe && styles.msgRowMe]}>
-        <View style={[styles.bubble, isMe ? styles.bubbleMe : styles.bubbleThem, isCurrentResult && styles.bubbleHighlighted]}>
+        <TouchableOpacity
+          activeOpacity={0.85}
+          onLongPress={() => isMe && confirmDelete(item)}
+          delayLongPress={400}
+          style={[styles.bubble, isMe ? styles.bubbleMe : styles.bubbleThem, isCurrentResult && styles.bubbleHighlighted]}
+        >
           {!isMe && <Text style={styles.sender}>{item.sender_name}</Text>}
           {item.type === 'voice'
             ? <TouchableOpacity style={styles.voiceBtn} onPress={() => playVoice(item.content)}>
@@ -162,7 +189,7 @@ export default function ChatRoomScreen({ route, navigation }) {
           <Text style={[styles.msgTime, isMe && { color: 'rgba(255,255,255,0.7)' }]}>
             {new Date(item.created_at).toLocaleTimeString('ar', { hour: '2-digit', minute: '2-digit' })}
           </Text>
-        </View>
+        </TouchableOpacity>
       </View>
     );
   };
