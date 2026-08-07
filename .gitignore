@@ -1,0 +1,8 @@
+build/
+*.apk
+*.jks
+*.keystore
+assets/public/react.min.js
+assets/public/react-dom.min.js
+.DS_Store
+*.idsig
