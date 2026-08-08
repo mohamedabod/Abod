@@ -65,6 +65,10 @@ var S = {
       },
       meals: [],
       history: [],
+      customFoods: [],
+      checkins: [],
+      pulseLog: [],
+      routes: [],
       water: { date: '', ml: 0, target: 3000 },
       profile: {
         name: 'Mohamed', weight: 70, height: 170, age: 30,
@@ -166,6 +170,10 @@ var S = {
     if (!d.band) d.band = def.band;
     if (!d.meals) d.meals = [];
     if (!d.history) d.history = [];
+    if (!d.customFoods) d.customFoods = [];
+    if (!d.checkins) d.checkins = [];
+    if (!d.pulseLog) d.pulseLog = [];
+    if (!d.routes) d.routes = [];
     if (!d.supplements) d.supplements = def.supplements;
     if (!d.profile.weightLog) d.profile.weightLog = [];
     return d;
@@ -335,6 +343,56 @@ var LANG = {
     understood: 'فهمت',
     long_fast_warn: 'تجاوزت 48 ساعة. راقب الترطيب والأملاح، وتجنّب المجهود، ولو ظهرت أعراض خطيرة افطر فوراً.',
 
+    activity_hub: 'مركز النشاط', open_activity: 'افتح مركز النشاط',
+    phone_sensors: 'مستشعرات الهاتف', available: 'متاح', not_available: 'غير متاح',
+    sensor_stepCounter: 'عدّاد خطوات', sensor_stepDetector: 'كاشف خطوة',
+    sensor_accelerometer: 'مقياس تسارع', sensor_gyroscope: 'جيروسكوب',
+    sensor_barometer: 'بارومتر (ضغط)', sensor_light: 'حساس ضوء',
+    sensor_proximity: 'حساس قرب', sensor_magnetometer: 'بوصلة',
+    sensor_heartRate: 'حساس نبض',
+    floors: 'أدوار', elevation: 'ارتفاع', lux: 'إضاءة',
+
+    pulse_title: 'قياس النبض بالكاميرا', pulse_start: 'ابدأ القياس',
+    pulse_cancel: 'إلغاء', pulse_again: 'قياس تاني',
+    pulse_howto: 'حط طرف صباعك على الكاميرا الخلفية والفلاش وغطيهم كويس. متضغطش بقوة. ثبّت إيدك 25 ثانية.',
+    pulse_warmup: 'تجهيز… ثبّت صباعك',
+    pulse_measuring: 'بيقيس… متحركش',
+    pulse_done: 'النتيجة',
+    pulse_weak: 'الإشارة ضعيفة — غطي الكاميرا والفلاش كويس وجرّب تاني',
+    pulse_quality_low: 'مش شايف صباعك — قرّبه من العدسة',
+    pulse_quality_high: 'الصورة ساطعة زيادة — غطي الفلاش',
+    pulse_disclaimer: 'قياس تقريبي بالكاميرا، مش جهاز طبي. للقياس الدقيق استخدم السوار.',
+    pulse_log: 'سجل النبض', pulse_source_camera: 'كاميرا', pulse_source_band: 'سوار',
+    err_no_camera: 'مفيش كاميرا متاحة', err_busy: 'القياس شغال بالفعل',
+
+    route: 'المسار', route_title: 'تسجيل مسار المشي/الجري',
+    route_start: 'ابدأ التسجيل', route_pause: 'إيقاف مؤقت', route_resume: 'استئناف',
+    route_stop: 'إنهاء وحفظ', route_distance: 'المسافة', route_pace: 'الإيقاع',
+    route_duration: 'المدة', route_elevation: 'الصعود', route_accuracy: 'دقة GPS',
+    route_open_maps: 'افتح في الخرائط', route_export: 'تصدير GPX',
+    route_waiting: 'بيدوّر على إشارة GPS…', route_saved: 'المسار اتحفظ',
+    route_history: 'مساراتي', no_routes: 'مفيش مسارات متسجلة',
+    err_gps_off: 'الـGPS مقفول — افتحه من إعدادات الهاتف',
+    err_no_provider: 'الجهاز مش بيدعم تحديد الموقع',
+    route_hint: 'سيب التطبيق شغال أثناء المشي. الإشعار هيفضل ظاهر والتسجيل مستمر.',
+    km: 'كم', min_per_km: 'د/كم', meter: 'م',
+
+    manual_meal: 'إضافة وجبة يدوي', meal_name: 'اسم الوجبة', add_photo: 'صورة',
+    take_photo: 'كاميرا', from_gallery: 'من المعرض', remove_photo: 'شيل الصورة',
+    save_to_db: 'احفظها في قائمة الأكل', my_foods: 'أكلاتي',
+    photo_failed: 'مافيش صورة اتحفظت',
+
+    checkin: 'حالتك النهاردة', checkin_save: 'سجّل حالتك',
+    mood: 'المزاج', energy: 'الطاقة', hunger: 'الجوع', focus: 'التركيز',
+    mood_1: 'زفت', mood_2: 'مضايق', mood_3: 'عادي', mood_4: 'كويس', mood_5: 'ممتاز',
+    low: 'منخفض', mid: 'متوسط', high: 'عالي',
+    checkin_done: 'اتسجلت — المدرب هيظبط نصايحه على كده',
+    checkin_history: 'سجل حالتك', personalized: 'مخصص لحالتك',
+    coach_hunger_high: 'الجوع عالي',
+    coach_energy_low: 'طاقتك منخفضة',
+    coach_mood_low: 'مزاجك مش تمام',
+    coach_all_good: 'حالتك كويسة',
+
     saved: 'اتحفظ', deleted: 'اتمسح', copied: 'اتنسخ', file_saved: 'الملف اتحفظ في',
     fast_started: 'بدأ الصيام — بالتوفيق!', fast_ended: 'انتهى الصيام',
     congrats: 'تهانينا!', keep_going: 'كمّل، إنت أقوى مما تتصور',
@@ -453,6 +511,56 @@ var LANG = {
     disclaimer_text: 'This app is a tracker, not medical advice. Extended fasting (24h+) is not suitable during pregnancy or breastfeeding, for people with diabetes, anyone on blood-pressure or glucose medication, or with a history of eating disorders. Talk to your doctor before any fast beyond 24 hours, and break the fast immediately if you feel severe dizziness, palpitations or faintness.',
     understood: 'Understood',
     long_fast_warn: 'Past 48 hours. Watch hydration and electrolytes, avoid exertion, and break the fast if serious symptoms appear.',
+
+    activity_hub: 'Activity hub', open_activity: 'Open activity hub',
+    phone_sensors: 'Phone sensors', available: 'available', not_available: 'not available',
+    sensor_stepCounter: 'Step counter', sensor_stepDetector: 'Step detector',
+    sensor_accelerometer: 'Accelerometer', sensor_gyroscope: 'Gyroscope',
+    sensor_barometer: 'Barometer', sensor_light: 'Light sensor',
+    sensor_proximity: 'Proximity', sensor_magnetometer: 'Compass',
+    sensor_heartRate: 'Heart rate sensor',
+    floors: 'Floors', elevation: 'Elevation', lux: 'Light',
+
+    pulse_title: 'Camera pulse', pulse_start: 'Measure',
+    pulse_cancel: 'Cancel', pulse_again: 'Measure again',
+    pulse_howto: 'Cover the rear camera and the flash with your fingertip. Do not press hard. Hold still for 25 seconds.',
+    pulse_warmup: 'Warming up… hold still',
+    pulse_measuring: 'Measuring… do not move',
+    pulse_done: 'Result',
+    pulse_weak: 'Weak signal — cover both the lens and the flash and try again',
+    pulse_quality_low: 'No finger detected — move closer to the lens',
+    pulse_quality_high: 'Too bright — cover the flash',
+    pulse_disclaimer: 'A camera estimate, not a medical device. Use the band for accuracy.',
+    pulse_log: 'Pulse log', pulse_source_camera: 'camera', pulse_source_band: 'band',
+    err_no_camera: 'No camera available', err_busy: 'A measurement is already running',
+
+    route: 'Route', route_title: 'Record a walk or run',
+    route_start: 'Start recording', route_pause: 'Pause', route_resume: 'Resume',
+    route_stop: 'Finish & save', route_distance: 'Distance', route_pace: 'Pace',
+    route_duration: 'Duration', route_elevation: 'Ascent', route_accuracy: 'GPS accuracy',
+    route_open_maps: 'Open in maps', route_export: 'Export GPX',
+    route_waiting: 'Waiting for a GPS fix…', route_saved: 'Route saved',
+    route_history: 'My routes', no_routes: 'No routes recorded yet',
+    err_gps_off: 'GPS is off — turn it on in system settings',
+    err_no_provider: 'This device has no location provider',
+    route_hint: 'Leave the app running while you walk. The notification stays up and recording continues.',
+    km: 'km', min_per_km: 'min/km', meter: 'm',
+
+    manual_meal: 'Add meal manually', meal_name: 'Meal name', add_photo: 'Photo',
+    take_photo: 'Camera', from_gallery: 'Gallery', remove_photo: 'Remove photo',
+    save_to_db: 'Save to my food list', my_foods: 'My foods',
+    photo_failed: 'No photo was saved',
+
+    checkin: 'How you feel today', checkin_save: 'Save check-in',
+    mood: 'Mood', energy: 'Energy', hunger: 'Hunger', focus: 'Focus',
+    mood_1: 'Awful', mood_2: 'Low', mood_3: 'Okay', mood_4: 'Good', mood_5: 'Great',
+    low: 'Low', mid: 'Medium', high: 'High',
+    checkin_done: 'Saved — the coach will adapt to this',
+    checkin_history: 'Check-in history', personalized: 'Personalised',
+    coach_hunger_high: 'Hunger is high',
+    coach_energy_low: 'Energy is low',
+    coach_mood_low: 'Mood is low',
+    coach_all_good: 'You are in good shape',
 
     saved: 'Saved', deleted: 'Deleted', copied: 'Copied', file_saved: 'File saved to',
     fast_started: 'Fast started — good luck!', fast_ended: 'Fast ended',
@@ -663,13 +771,21 @@ var FOOD_DB = [
   { k: 'whey', ar: 'واي بروتين (سكوب)', en: 'Whey protein (scoop)', cal: 120, p: 24, c: 3, f: 1.5 }
 ];
 
+/** Built-in database plus anything the user added by hand. */
+function allFoods() {
+  return S.get('customFoods', []).concat(FOOD_DB);
+}
+
 function searchFood(q) {
-  if (!q) return FOOD_DB.slice(0, 24);
+  var src = allFoods();
+  if (!q) return src.slice(0, 24);
   var needle = q.toLowerCase();
   var out = [];
-  for (var i = 0; i < FOOD_DB.length; i++) {
-    var f = FOOD_DB[i];
-    if (f.ar.indexOf(q) >= 0 || f.en.toLowerCase().indexOf(needle) >= 0) out.push(f);
+  for (var i = 0; i < src.length; i++) {
+    var f = src[i];
+    if ((f.ar && f.ar.indexOf(q) >= 0) || (f.en && f.en.toLowerCase().indexOf(needle) >= 0)) {
+      out.push(f);
+    }
   }
   return out;
 }
@@ -849,6 +965,174 @@ function coachFor(hours) {
   };
 }
 
+/* ---------------------------------------------------------------------
+ * Adaptive coaching — phase + how the user actually feels
+ * ------------------------------------------------------------------- */
+
+/** Most recent check-in, or null when none was logged in the last 12h. */
+function latestCheckin() {
+  var list = S.get('checkins', []);
+  if (!list.length) return null;
+  var last = list[list.length - 1];
+  if (Date.now() - last.ts > 12 * 3600000) return null;
+  return last;
+}
+
+/**
+ * Builds the coach card list from the fasting phase AND the last check-in.
+ * The psychological state changes the advice, not just the hour count: the
+ * same 20th hour needs different words when energy is 1 versus 5.
+ */
+function coachAdvice(hours, checkin, fasting) {
+  var ar = isRTL();
+  var idx = phaseIndexFor(hours);
+  var out = [];
+
+  out.push({
+    tone: 'good',
+    icon: '🧬',
+    title: t('analysis') + ' — ' + (ar ? COACH_AR : COACH_EN)[idx].title,
+    text: (ar ? COACH_AR : COACH_EN)[idx].text
+  });
+
+  out.push({
+    tone: 'exercise',
+    icon: '🏃',
+    title: t('exercise_rec'),
+    text: (ar ? EXERCISE_AR : EXERCISE_EN)[idx]
+  });
+
+  if (!checkin) return out;
+
+  var mood = checkin.mood || 3;
+  var energy = checkin.energy || 3;
+  var hunger = checkin.hunger || 3;
+
+  // Hunger — the wave, and what actually blunts it at this phase.
+  if (hunger >= 4) {
+    out.push({
+      tone: 'warn', icon: '🍽️', title: t('coach_hunger_high'),
+      text: ar
+        ? (hours < 12
+            ? 'الجوع في أول ١٢ ساعة أغلبه عادة مش حاجة فعلية. اشرب ٥٠٠ مل مياه برشة ملح، واتحرك ١٠ دقايق — الموجة بتعدّي في ٢٠ دقيقة.'
+            : 'إنت في الكيتوزية والجوع المفروض يقل. لو زاد فجأة بعد ' + Math.floor(hours) + ' ساعة، ده غالباً نقص أملاح مش جوع. صوديوم + بوتاسيوم + مغنيسيوم.')
+        : (hours < 12
+            ? 'Hunger in the first 12h is mostly habit, not need. Drink 500ml with a pinch of salt and move for 10 minutes — the wave passes in about 20.'
+            : 'You are in ketosis and hunger should be fading. A sudden spike at hour ' + Math.floor(hours) + ' usually means electrolytes, not food. Sodium, potassium, magnesium.')
+    });
+  }
+
+  // Energy — the fork between "push on" and "this is your body saying stop".
+  if (energy <= 2) {
+    out.push({
+      tone: hours >= 24 ? 'warn' : 'exercise', icon: '🔋', title: t('coach_energy_low'),
+      text: ar
+        ? (hours >= 24
+            ? 'طاقة منخفضة بعد ٢٤ ساعة تستاهل انتباه. الأول: أملاح ومياه ونوم. لو مع الإرهاق فيه دوخة عند الوقوف أو خفقان أو برودة أطراف — دي علامة توقف، افطر بمرق دافئ.'
+            : 'طاقة منخفضة بدري في الصيام طبيعية وإنت لسه بتتحول لحرق الدهون. قلّل المجهود النهاردة، وخلي حركتك مشي بس، ونام بدري.')
+        : (hours >= 24
+            ? 'Low energy past 24h deserves attention. First: electrolytes, water, sleep. If it comes with dizziness on standing, palpitations or cold hands, that is a stop signal — break the fast with warm broth.'
+            : 'Low energy early in a fast is normal while you switch to fat burning. Cut the effort today, keep movement to walking, and sleep early.')
+    });
+  } else if (energy >= 4 && hours >= 18) {
+    out.push({
+      tone: 'good', icon: '⚡', title: t('coach_all_good'),
+      text: ar
+        ? 'طاقتك عالية بعد ' + Math.floor(hours) + ' ساعة — ده النورإبينفرين والكيتونات شغالين. استغل الوقت ده في شغل ذهني مركّز، بس متستغلوش في تمرين تقيل.'
+        : 'High energy at hour ' + Math.floor(hours) + ' is norepinephrine and ketones doing their job. Spend it on focused mental work, not on a heavy workout.'
+    });
+  }
+
+  // Mood — irritability during a fast is physiological, and it is worth saying so.
+  if (mood <= 2) {
+    out.push({
+      tone: 'warn', icon: '🧠', title: t('coach_mood_low'),
+      text: ar
+        ? 'العصبية وضيق المزاج أثناء الصيام حاجة فسيولوجية: سكر الدم بينزل والكورتيزول بيطلع. مش ضعف إرادة. جرّب ٥ دقايق تنفس بطيء، اخرج لضوء الشمس، وأجّل أي قرار أو نقاش متوتر لبعد الإفطار. ولو المزاج بينزل كل مرة تصوم فيها — ده سبب حقيقي تراجع بيه خطة الصيام مع دكتور.'
+        : 'Irritability while fasting is physiological: blood glucose drops and cortisol rises. It is not weak will. Try five minutes of slow breathing, get into daylight, and postpone any tense decision or argument until after you eat. If your mood drops every single fast, that is a real reason to review the plan with a doctor.'
+    });
+  }
+
+  if (fasting && hours >= 48) {
+    out.push({
+      tone: 'warn', icon: '⚠️', title: '48h+',
+      text: t('long_fast_warn')
+    });
+  }
+
+  return out;
+}
+
+/** Rolling averages of the last N check-ins, for the trend row. */
+function checkinTrend(n) {
+  var list = S.get('checkins', []);
+  var take = list.slice(Math.max(0, list.length - (n || 7)));
+  if (!take.length) return null;
+  var mood = 0, energy = 0, hunger = 0;
+  for (var i = 0; i < take.length; i++) {
+    mood += take[i].mood || 3;
+    energy += take[i].energy || 3;
+    hunger += take[i].hunger || 3;
+  }
+  return {
+    count: take.length,
+    mood: mood / take.length,
+    energy: energy / take.length,
+    hunger: hunger / take.length
+  };
+}
+
+/* ---------------------------------------------------------------------
+ * Route helpers
+ * ------------------------------------------------------------------- */
+
+function fmtPace(secPerKm) {
+  if (!secPerKm || secPerKm <= 0) return '--';
+  var m = Math.floor(secPerKm / 60);
+  var s = Math.round(secPerKm % 60);
+  return num(m) + ':' + pad2(s);
+}
+
+function fmtDistance(metres) {
+  if (metres >= 1000) return num((metres / 1000).toFixed(2)) + ' ' + t('km');
+  return num(Math.round(metres)) + ' ' + t('meter');
+}
+
+/**
+ * Projects a flat [lat,lon,...] track onto an SVG viewbox.
+ * Longitude is scaled by cos(latitude) so the shape is not stretched — at
+ * Alexandria's latitude a degree of longitude is ~0.85 of a degree of latitude.
+ */
+function routeToPath(flat, w, h, pad) {
+  if (!flat || flat.length < 4) return '';
+  var minLat = 90, maxLat = -90, minLon = 180, maxLon = -180;
+  var i;
+  for (i = 0; i < flat.length; i += 2) {
+    if (flat[i] < minLat) minLat = flat[i];
+    if (flat[i] > maxLat) maxLat = flat[i];
+    if (flat[i + 1] < minLon) minLon = flat[i + 1];
+    if (flat[i + 1] > maxLon) maxLon = flat[i + 1];
+  }
+  var midLat = (minLat + maxLat) / 2;
+  var kx = Math.cos(midLat * Math.PI / 180);
+  var spanLat = Math.max(maxLat - minLat, 0.00001);
+  var spanLon = Math.max((maxLon - minLon) * kx, 0.00001);
+  var span = Math.max(spanLat, spanLon);
+
+  var innerW = w - pad * 2, innerH = h - pad * 2;
+  var scale = Math.min(innerW, innerH) / span;
+  var offX = pad + (innerW - spanLon * scale) / 2;
+  var offY = pad + (innerH - spanLat * scale) / 2;
+
+  var d = '';
+  for (i = 0; i < flat.length; i += 2) {
+    var x = offX + ((flat[i + 1] - minLon) * kx) * scale;
+    var y = offY + (maxLat - flat[i]) * scale;
+    d += (i === 0 ? 'M' : 'L') + x.toFixed(1) + ' ' + y.toFixed(1);
+  }
+  return d;
+}
+
 function randomTips(n) {
   var src = (isRTL() ? TIPS_AR : TIPS_EN).slice();
   for (var i = src.length - 1; i > 0; i--) {
@@ -939,7 +1223,23 @@ var N = {
     return this.parse(this.call('sensorsState'), { steps: 0, activeMinutes: 0, calories: 0, level: 'still', hasStepSensor: false, permission: false });
   },
   permsState: function () {
-    return this.parse(this.call('permsState'), { bluetooth: false, activity: false, notifications: false });
+    return this.parse(this.call('permsState'),
+      { bluetooth: false, activity: false, location: false, camera: false, notifications: false });
+  },
+  routeState: function () {
+    return this.parse(this.call('routeState'),
+      { tracking: false, paused: false, points: 0, distanceM: 0, elapsedMs: 0,
+        paceSecPerKm: 0, elevationM: 0, accuracy: -1, error: '', hasPermission: false });
+  },
+  routePath: function (max) {
+    return this.parse(this.call('routePath', max || 300), []);
+  },
+  pulseState: function () {
+    return this.parse(this.call('pulseState'),
+      { status: 'idle', running: false, progress: 0, bpm: 0, quality: 0 });
+  },
+  inventory: function () {
+    return this.parse(this.call('sensorsInventory'), {});
   }
 };
 

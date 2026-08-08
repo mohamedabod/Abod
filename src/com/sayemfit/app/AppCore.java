@@ -42,6 +42,8 @@ public class AppCore {
     private SharedPreferences prefs;
     private BleManager ble;
     private SensorTracker sensors;
+    private RouteTracker route;
+    private PulseCamera pulse;
     private NativeListener listener;
 
     private AppCore() {
@@ -58,6 +60,8 @@ public class AppCore {
         prefs = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
         ble = new BleManager(ctx, this);
         sensors = new SensorTracker(ctx, this);
+        route = new RouteTracker(ctx, this);
+        pulse = new PulseCamera(ctx, this);
     }
 
     public Context context() {
@@ -74,6 +78,19 @@ public class AppCore {
 
     public SensorTracker sensors() {
         return sensors;
+    }
+
+    public RouteTracker route() {
+        return route;
+    }
+
+    public PulseCamera pulse() {
+        return pulse;
+    }
+
+    /** A finished camera pulse reading; JS decides where to log it. */
+    public void recordPulse(int bpm) {
+        emit("pulseResult", "{\"bpm\":" + bpm + ",\"ts\":" + System.currentTimeMillis() + "}");
     }
 
     public void setListener(NativeListener l) {
@@ -158,6 +175,9 @@ public class AppCore {
                     .putLong(K_STEP_BASE, -1L)
                     .putInt(K_STEP_TODAY, 0)
                     .putInt(K_ACTIVE_MIN, 0)
+                    .putInt("floors_today", 0)
+                    .putFloat("altitude_today", 0f)
+                    .putFloat("calories_today", 0f)
                     .apply();
         }
     }

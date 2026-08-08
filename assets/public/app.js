@@ -16,8 +16,15 @@ var _bump = null;
 function refresh() { if (_bump) _bump(function (n) { return n + 1; }); }
 
 var BAND = { status: 'idle', hr: 0, battery: -1, name: '', address: '', saved: false, auto: false };
-var SENSORS = { steps: 0, activeMinutes: 0, calories: 0, cadence: 0, level: 'still', hasStepSensor: false, permission: false, running: false };
-var PERMS = { bluetooth: false, activity: false, notifications: false };
+var SENSORS = { steps: 0, activeMinutes: 0, calories: 0, cadence: 0, level: 'still', floors: 0, elevationM: 0, lux: -1, hasStepSensor: false, permission: false, running: false };
+var PERMS = { bluetooth: false, activity: false, location: false, camera: false, notifications: false };
+var ROUTE = { tracking: false, paused: false, points: 0, distanceM: 0, elapsedMs: 0, paceSecPerKm: 0, elevationM: 0, accuracy: -1, error: '', hasPermission: false };
+var ROUTE_PATH = [];
+var PULSE = { status: 'idle', running: false, progress: 0, bpm: 0, quality: 0 };
+var INVENTORY = {};
+
+/** Set while a photo picker is open, so the result lands on the right form. */
+var _photoTarget = null;
 
 /** Native -> JS entry point (called from JsBridge.java). */
 window.__onNative = function (type, data) {
@@ -28,6 +35,15 @@ window.__onNative = function (type, data) {
     SENSORS = m(SENSORS, data || {});
   } else if (type === 'perms') {
     PERMS = m(PERMS, data || {});
+  } else if (type === 'route') {
+    ROUTE = m(ROUTE, data || {});
+    if (ROUTE.tracking && ROUTE.points > 1) ROUTE_PATH = N.routePath(300);
+  } else if (type === 'pulse') {
+    PULSE = m(PULSE, data || {});
+  } else if (type === 'pulseResult') {
+    logPulse(data && data.bpm, 'camera');
+  } else if (type === 'photo') {
+    if (_photoTarget) _photoTarget(data && data.id ? data.id : '');
   }
   refresh();
 };
@@ -42,6 +58,19 @@ function pullNative() {
   BAND = m(BAND, N.bandState());
   SENSORS = m(SENSORS, N.sensorsState());
   PERMS = m(PERMS, N.permsState());
+  ROUTE = m(ROUTE, N.routeState());
+  PULSE = m(PULSE, N.pulseState());
+}
+
+/** Records one heart-rate reading, from the camera or the band. */
+function logPulse(bpm, source) {
+  if (!bpm || bpm <= 0) return;
+  var log = S.get('pulseLog', []);
+  log.push({ ts: Date.now(), bpm: bpm, source: source || 'camera' });
+  if (log.length > 400) log = log.slice(log.length - 400);
+  S.set('pulseLog', log);
+  recordHeartRate(bpm);
+  N.call('vibrate', 40);
 }
 
 /**
@@ -210,6 +239,73 @@ function Empty(props) {
   return h('div', { className: 'empty' }, props.text);
 }
 
+/**
+ * Number input that does NOT fight the user while typing.
+ *
+ * The previous version parsed and clamped on every keystroke, so clearing the
+ * height field and typing "1" snapped it straight to the minimum (90) and the
+ * next keystrokes were lost. Now the raw text is kept locally and only parsed,
+ * clamped and saved when the field loses focus.
+ */
+function NumField(props) {
+  var st = useState(props.value === null || props.value === undefined ? '' : String(props.value));
+  var raw = st[0], setRaw = st[1];
+
+  function commit() {
+    var v = parseFloat(raw);
+    if (isNaN(v)) { setRaw(String(props.value)); return; }
+    if (props.min !== undefined && v < props.min) v = props.min;
+    if (props.max !== undefined && v > props.max) v = props.max;
+    setRaw(String(v));
+    props.onCommit(v);
+  }
+
+  return h('input', {
+    className: 'setting-input',
+    type: 'number',
+    inputMode: 'decimal',
+    value: raw,
+    onChange: function (e) { setRaw(e.target.value); },
+    onBlur: commit,
+    onKeyDown: function (e) { if (e.key === 'Enter' && e.target.blur) e.target.blur(); }
+  });
+}
+
+/** Text input with the same commit-on-blur behaviour. */
+function TextField(props) {
+  var st = useState(props.value === null || props.value === undefined ? '' : String(props.value));
+  var raw = st[0], setRaw = st[1];
+  return h('input', {
+    className: props.className || 'setting-input',
+    type: 'text',
+    value: raw,
+    placeholder: props.placeholder || '',
+    onChange: function (e) {
+      setRaw(e.target.value);
+      if (props.onInput) props.onInput(e.target.value);
+    },
+    onBlur: function () { if (props.onCommit) props.onCommit(raw); },
+    onKeyDown: function (e) { if (e.key === 'Enter' && e.target.blur) e.target.blur(); }
+  });
+}
+
+/** 1-5 selector used by the daily check-in. */
+function Scale(props) {
+  var btns = [];
+  for (var i = 1; i <= 5; i++) {
+    (function (v) {
+      btns.push(h('button', {
+        key: 'sc' + props.name + v,
+        className: 'scale-btn' + (props.value === v ? ' active' : ''),
+        onClick: function () { props.onChange(v); }
+      }, props.icons ? props.icons[v - 1] : num(v)));
+    })(i);
+  }
+  return h('div', { className: 'scale-row' },
+    h('div', { className: 'scale-label' }, props.label),
+    h('div', { className: 'scale-btns' }, btns));
+}
+
 /* ---------------------------------------------------------------------
  * Timer ring
  * ------------------------------------------------------------------- */
@@ -349,7 +445,13 @@ function LiveCard() {
 
   var levelKey = 'level_' + (SENSORS.level || 'still');
 
-  return h(Card, { title: t('activity'), icon: '📊' },
+  return h(Card, {
+    title: t('activity'), icon: '📊',
+    right: h('button', {
+      className: 'btn btn-sm btn-outline',
+      onClick: function () { if (_setView) _setView('activity'); }
+    }, t('open_activity'))
+  },
     h('div', { className: 'live-row' },
       h('div', { className: 'live-metric' },
         h('div', { className: 'live-val', style: { color: '#e94560' } },
@@ -368,11 +470,19 @@ function LiveCard() {
       connected && BAND.battery >= 0
         ? h('span', { className: 'chip' }, '🔋 ' + num(BAND.battery) + '%') : null,
       h('span', { className: 'chip' }, '🔥 ' + num(SENSORS.calories || 0) + ' ' + t('calories')),
-      h('span', { className: 'chip' }, '🚶 ' + t(levelKey))),
+      h('span', { className: 'chip' }, '🚶 ' + t(levelKey)),
+      SENSORS.floors > 0
+        ? h('span', { className: 'chip' }, '🏢 ' + num(SENSORS.floors) + ' ' + t('floors')) : null,
+      ROUTE.tracking
+        ? h('span', { className: 'chip ok' }, '🗺️ ' + fmtDistance(ROUTE.distanceM)) : null),
 
-    !connected ? h('div', { className: 'btn-group', style: { marginTop: '12px' } },
-      h('button', { className: 'btn btn-sm btn-outline', onClick: connectBand },
-        busy ? t('connecting') : t('connect_band'))) : null);
+    h('div', { className: 'btn-group', style: { marginTop: '12px' } },
+      !connected ? h('button', { className: 'btn btn-sm btn-outline', onClick: connectBand },
+        busy ? t('connecting') : t('connect_band')) : null,
+      h('button', {
+        className: 'btn btn-sm btn-outline',
+        onClick: function () { if (_setView) _setView('activity'); }
+      }, '❤️ ' + t('pulse_title'))));
 }
 
 function QuickStats() {
@@ -450,9 +560,20 @@ function StartTimeModal(props) {
  * Meals
  * ------------------------------------------------------------------- */
 
+/** Thumbnails are fetched across the bridge once and kept in memory. */
+var PHOTO_CACHE = {};
+function photoSrc(id) {
+  if (!id) return '';
+  if (PHOTO_CACHE[id] !== undefined) return PHOTO_CACHE[id];
+  var data = N.call('photoData', id) || '';
+  PHOTO_CACHE[id] = data;
+  return data;
+}
+
 function MealsPage() {
   var s1 = useState(''); var q = s1[0], setQ = s1[1];
   var s2 = useState(null); var pending = s2[0], setPending = s2[1];
+  var s3 = useState(false); var showManual = s3[0], setShowManual = s3[1];
 
   var todayKey = dayKey(Date.now());
   var all = S.get('meals', []);
@@ -470,12 +591,12 @@ function MealsPage() {
     tot.f += it.f * it.portions;
   }
 
-  function reallyAdd(food) {
+  function reallyAdd(food, photoId) {
     var meals = S.get('meals', []);
     meals.push({
       id: uid(), k: food.k, ar: food.ar, en: food.en,
       cal: food.cal, p: food.p, c: food.c, f: food.f,
-      portions: 1, ts: Date.now()
+      portions: 1, ts: Date.now(), photo: photoId || ''
     });
     // Keep the log bounded: a week of meals is plenty for the totals view.
     var cutoff = Date.now() - 7 * 86400000;
@@ -504,7 +625,10 @@ function MealsPage() {
   function removeMeal(id) {
     var meals = S.get('meals', []);
     var kept = [];
-    for (var x = 0; x < meals.length; x++) if (meals[x].id !== id) kept.push(meals[x]);
+    for (var x = 0; x < meals.length; x++) {
+      if (meals[x].id !== id) kept.push(meals[x]);
+      else if (meals[x].photo) N.call('photoDelete', meals[x].photo);
+    }
     S.set('meals', kept);
     refresh();
   }
@@ -528,7 +652,9 @@ function MealsPage() {
   var mealRows = [];
   for (var k2 = today.length - 1; k2 >= 0; k2--) {
     (function (it) {
+      var src = it.photo ? photoSrc(it.photo) : '';
       mealRows.push(h('div', { key: 'm' + it.id, className: 'row' },
+        src ? h('img', { className: 'photo-thumb', src: src, alt: '' }) : null,
         h('div', { className: 'row-main' },
           h('div', { className: 'row-title' }, isRTL() ? it.ar : it.en),
           h('div', { className: 'row-sub' },
@@ -552,6 +678,12 @@ function MealsPage() {
       ? h('div', null, h('div', { className: 'section-title' }, t('meals')), mealRows)
       : h(Empty, { text: t('no_meals') }),
 
+    h('div', { className: 'btn-group', style: { marginTop: 0 } },
+      h('button', {
+        className: 'btn btn-sm btn-primary',
+        onClick: function () { setShowManual(true); }
+      }, '➕ ' + t('manual_meal'))),
+
     h('div', { className: 'section-title' }, t('search_food')),
     h('input', {
       className: 'search-input', value: q, placeholder: t('search_food'),
@@ -560,17 +692,33 @@ function MealsPage() {
     h('div', { style: { height: '10px' } }),
     resultRows.length ? resultRows : h(Empty, { text: t('empty_search') }),
 
+    showManual ? h(ManualMealModal, {
+      onClose: function () { setShowManual(false); },
+      onSave: function (food, photoId) {
+        setShowManual(false);
+        if (S.get('currentFast.active', false)) {
+          setPending(m({}, food, { __photo: photoId }));
+        } else {
+          reallyAdd(food, photoId);
+        }
+      }
+    }) : null,
+
     pending ? h('div', { className: 'modal-overlay', onClick: function () { setPending(null); } },
       h('div', { className: 'modal', onClick: function (e) { e.stopPropagation(); } },
         h('h3', null, t('eating_while_fasting')),
         h('div', { className: 'modal-btns', style: { flexDirection: 'column' } },
           h('button', {
             className: 'btn btn-primary btn-block',
-            onClick: function () { var f = pending; setPending(null); stopFast(); reallyAdd(f); }
+            onClick: function () {
+              var f = pending; setPending(null); stopFast(); reallyAdd(f, f.__photo);
+            }
           }, t('end_and_log')),
           h('button', {
             className: 'btn btn-outline btn-block',
-            onClick: function () { var f = pending; setPending(null); reallyAdd(f); }
+            onClick: function () {
+              var f = pending; setPending(null); reallyAdd(f, f.__photo);
+            }
           }, t('just_log')),
           h('button', {
             className: 'btn btn-outline btn-block',
@@ -744,8 +892,18 @@ function logWeight() {
 function CoachPage() {
   var cf = S.get('currentFast', {});
   var hours = fastElapsed(cf) / 3600000;
-  var c = coachFor(hours);
+  var checkin = latestCheckin();
+  var cards = coachAdvice(hours, checkin, !!cf.active);
   var tips = randomTips(4);
+
+  var adviceCards = [];
+  for (var a = 0; a < cards.length; a++) {
+    (function (c) {
+      adviceCards.push(h('div', { key: 'ad' + a, className: 'tip-card ' + c.tone },
+        h('div', { className: 'tip-title' }, c.icon + ' ' + c.title),
+        h('div', { className: 'tip-text' }, c.text)));
+    })(cards[a]);
+  }
 
   var tipCards = [];
   for (var i = 0; i < tips.length; i++) {
@@ -754,13 +912,11 @@ function CoachPage() {
   }
 
   return h('div', null,
-    h('div', { className: 'tip-card good' },
-      h('div', { className: 'tip-title' }, '🧬 ' + t('analysis') + ' — ' + c.analysis.title),
-      h('div', { className: 'tip-text' }, c.analysis.text)),
+    h(CheckInCard, null),
 
-    h('div', { className: 'tip-card exercise' },
-      h('div', { className: 'tip-title' }, '🏃 ' + t('exercise_rec')),
-      h('div', { className: 'tip-text' }, c.exercise)),
+    h('div', { className: 'section-title' },
+      t('coach_title') + (checkin ? ' — ' + t('personalized') : '')),
+    adviceCards,
 
     h('div', { className: 'section-title' }, t('refeeding')),
     h('div', { className: 'refeed-card' },
@@ -773,7 +929,7 @@ function CoachPage() {
       h('div', { className: 'tip-title' }, '⛔ ' + t('refeed_rule')),
       h('div', { className: 'tip-text' }, t('refeed_rule_desc'))),
     hours >= 48 ? h('div', { className: 'tip-card warn' },
-      h('div', { className: 'tip-title' }, '⚠️ 48h+'),
+      h('div', { className: 'tip-title' }, '⚠️ ' + t('refeeding') + ' 48h+'),
       h('div', { className: 'tip-text' }, t('refeed_long_warn'))) : null,
 
     h('div', { className: 'section-title' }, t('tips')),
@@ -801,15 +957,12 @@ function SettingsPage() {
   }
 
   function numberField(key, min, max) {
-    return h('input', {
-      className: 'setting-input', type: 'number', value: p[key],
-      onChange: function (e) {
-        var v = parseFloat(e.target.value);
-        if (isNaN(v)) v = min;
-        if (v < min) v = min;
-        if (v > max) v = max;
-        setProfile(key, v);
-      }
+    return h(NumField, {
+      key: 'nf_' + key,
+      value: p[key],
+      min: min,
+      max: max,
+      onCommit: function (v) { setProfile(key, v); }
     });
   }
 
@@ -838,9 +991,9 @@ function SettingsPage() {
     h('div', { className: 'section-title' }, t('profile')),
     h(Card, { flat: true },
       h(SettingRow, { label: t('name') },
-        h('input', {
-          className: 'setting-input', value: p.name || '',
-          onChange: function (e) { setProfile('name', e.target.value); }
+        h(TextField, {
+          value: p.name || '',
+          onCommit: function (v) { setProfile('name', v); }
         })),
       h(SettingRow, { label: t('weight') }, numberField('weight', 25, 350)),
       h(SettingRow, { label: t('height') }, numberField('height', 90, 250)),
@@ -913,7 +1066,8 @@ function SettingsPage() {
           className: 'btn btn-sm btn-outline',
           onClick: function () { N.call('sensorsReset'); setTimeout(pullNative, 300); refresh(); }
         }, t('confirm'))),
-      (!PERMS.activity || !PERMS.bluetooth || !PERMS.notifications)
+      (!PERMS.activity || !PERMS.bluetooth || !PERMS.notifications
+        || !PERMS.location || !PERMS.camera)
         ? h(SettingRow, { label: t('permissions'), hint: t('perm_activity') },
           h('button', {
             className: 'btn btn-sm btn-primary',
@@ -1044,6 +1198,348 @@ function takeSupplement(id) {
 }
 
 /* ---------------------------------------------------------------------
+ * Activity hub — camera pulse, GPS route, sensor inventory
+ * ------------------------------------------------------------------- */
+
+function ActivityView(props) {
+  return h('div', { className: 'subview' },
+    h('div', { className: 'subview-hdr' },
+      h('button', { className: 'back-btn', onClick: props.onClose }, '←'),
+      h('span', { className: 'subview-title' }, t('activity_hub'))),
+    h('div', { className: 'subview-body' },
+      h(PulseCard, null),
+      h(RouteCard, null),
+      h(SensorInventoryCard, null)));
+}
+
+function PulseCard() {
+  var running = PULSE.running;
+  var status = PULSE.status;
+
+  var hint = t('pulse_howto');
+  if (running && status === 'warmup') hint = t('pulse_warmup');
+  else if (running && status === 'measuring') hint = t('pulse_measuring');
+  else if (status === 'weak_signal') hint = t('pulse_weak');
+  else if (status === 'no_permission') hint = t('err_no_permission');
+  else if (status === 'no_camera') hint = t('err_no_camera');
+
+  if (running && PULSE.quality === 0) hint = t('pulse_quality_low');
+  else if (running && PULSE.quality === 1) hint = t('pulse_quality_high');
+
+  var log = S.get('pulseLog', []);
+  var rows = [];
+  for (var i = log.length - 1; i >= 0 && rows.length < 6; i--) {
+    (function (e) {
+      rows.push(h('div', { key: 'pl' + e.ts, className: 'row-plain' },
+        h('span', { style: { fontSize: '13px' } },
+          num(e.bpm) + ' ' + t('bpm'),
+          h('span', { style: { color: '#6c6c8a', fontSize: '11px' } },
+            '  ' + t('pulse_source_' + (e.source === 'band' ? 'band' : 'camera')))),
+        h('span', { className: 'row-end', style: { fontSize: '11px' } },
+          fmtDate(e.ts) + ' ' + fmtTimeOfDay(e.ts))));
+    })(log[i]);
+  }
+
+  return h(Card, { title: t('pulse_title'), icon: '❤️' },
+    h('div', { className: 'pulse-big' },
+      running ? '···' : (PULSE.bpm > 0 ? num(PULSE.bpm) : '--')),
+    h('div', { className: 'pulse-sub' }, t('bpm')),
+    running ? h('div', { className: 'progress-track' },
+      h('div', { className: 'progress-fill', style: { width: PULSE.progress + '%' } })) : null,
+    h('div', { className: 'card-sub', style: { marginTop: '10px', textAlign: 'center' } }, hint),
+    h('div', { className: 'btn-group' },
+      running
+        ? h('button', {
+            className: 'btn btn-sm btn-outline',
+            onClick: function () { N.call('pulseCancel'); setTimeout(pullNative, 200); refresh(); }
+          }, t('pulse_cancel'))
+        : h('button', {
+            className: 'btn btn-sm btn-primary',
+            onClick: function () {
+              if (!N.ok()) { toast(t('no_native')); return; }
+              var r = N.call('pulseStart');
+              if (r && r !== 'ok') toast(t('err_' + r) || r);
+              setTimeout(function () { pullNative(); refresh(); }, 300);
+            }
+          }, PULSE.bpm > 0 ? t('pulse_again') : t('pulse_start'))),
+    h('div', { className: 'info-box' }, 'ℹ️ ' + t('pulse_disclaimer')),
+    rows.length ? h('div', null,
+      h('div', { className: 'section-title' }, t('pulse_log')), rows) : null);
+}
+
+function RouteCard() {
+  var tracking = ROUTE.tracking;
+  var km = ROUTE.distanceM / 1000;
+
+  function saveRoute() {
+    var path = N.routePath(400);
+    var entry = {
+      id: uid(),
+      end: Date.now(),
+      distanceM: ROUTE.distanceM,
+      elapsedMs: ROUTE.elapsedMs,
+      elevationM: ROUTE.elevationM,
+      paceSecPerKm: ROUTE.paceSecPerKm,
+      path: path
+    };
+    if (entry.distanceM > 20) {
+      var routes = S.get('routes', []);
+      routes.push(entry);
+      if (routes.length > 100) routes = routes.slice(routes.length - 100);
+      S.set('routes', routes);
+      toast(t('route_saved') + ' — ' + fmtDistance(entry.distanceM));
+    }
+    N.call('routeStop');
+    ROUTE_PATH = [];
+    setTimeout(function () { pullNative(); refresh(); }, 200);
+  }
+
+  var controls;
+  if (!tracking) {
+    controls = h('button', {
+      className: 'btn btn-sm btn-primary',
+      onClick: function () {
+        if (!N.ok()) { toast(t('no_native')); return; }
+        var r = N.call('routeStart');
+        if (r && r !== 'ok') toast(t('err_' + r) || r);
+        setTimeout(function () { pullNative(); refresh(); }, 300);
+      }
+    }, '▶  ' + t('route_start'));
+  } else {
+    controls = h('div', { className: 'btn-group', style: { marginTop: 0 } },
+      ROUTE.paused
+        ? h('button', {
+            className: 'btn btn-sm btn-green',
+            onClick: function () { N.call('routeResume'); setTimeout(pullNative, 200); refresh(); }
+          }, t('route_resume'))
+        : h('button', {
+            className: 'btn btn-sm btn-gold',
+            onClick: function () { N.call('routePause'); setTimeout(pullNative, 200); refresh(); }
+          }, t('route_pause')),
+      h('button', { className: 'btn btn-sm btn-danger', onClick: saveRoute }, t('route_stop')));
+  }
+
+  var routes = S.get('routes', []);
+  var histRows = [];
+  for (var i = routes.length - 1; i >= 0 && histRows.length < 10; i--) {
+    (function (r) {
+      histRows.push(h('div', { key: 'rt' + r.id, className: 'row' },
+        h('div', { className: 'row-main' },
+          h('div', { className: 'row-title' }, fmtDistance(r.distanceM)),
+          h('div', { className: 'row-sub' },
+            fmtDate(r.end) + ' · ' + fmtShort(r.elapsedMs)
+            + ' · ' + fmtPace(r.paceSecPerKm) + ' ' + t('min_per_km'))),
+        h('button', {
+          className: 'icon-btn danger',
+          onClick: function () {
+            var kept = [];
+            var all = S.get('routes', []);
+            for (var j = 0; j < all.length; j++) if (all[j].id !== r.id) kept.push(all[j]);
+            S.set('routes', kept);
+            toast(t('deleted'));
+            refresh();
+          }
+        }, '🗑')));
+    })(routes[i]);
+  }
+
+  return h(Card, { title: t('route_title'), icon: '🗺️' },
+    h(RouteMap, { path: ROUTE_PATH, live: tracking }),
+    h('div', { className: 'stats-grid' },
+      h(Stat, { value: fmtDistance(ROUTE.distanceM), label: t('route_distance'), tone: 'green' }),
+      h(Stat, { value: fmtShort(ROUTE.elapsedMs), label: t('route_duration'), tone: 'gold' }),
+      h(Stat, { value: fmtPace(ROUTE.paceSecPerKm), label: t('min_per_km'), tone: 'blue' })),
+    h('div', { className: 'chip-row' },
+      h('span', { className: 'chip' }, '⛰️ ' + num(ROUTE.elevationM) + ' ' + t('meter')),
+      ROUTE.accuracy >= 0
+        ? h('span', { className: 'chip' + (ROUTE.accuracy > 25 ? ' warn' : ' ok') },
+            '📡 ±' + num(ROUTE.accuracy) + ' ' + t('meter'))
+        : null,
+      h('span', { className: 'chip' }, '📍 ' + num(ROUTE.points))),
+    h('div', { className: 'btn-group' }, controls),
+    ROUTE.points > 1 ? h('div', { className: 'btn-group' },
+      h('button', {
+        className: 'btn btn-sm btn-outline',
+        onClick: function () { N.call('routeOpenInMaps'); }
+      }, t('route_open_maps')),
+      h('button', {
+        className: 'btn btn-sm btn-outline',
+        onClick: function () { N.call('routeExportGpx', t('route')); }
+      }, t('route_export'))) : null,
+    h('div', { className: 'info-box' }, 'ℹ️ ' + t('route_hint')),
+    histRows.length ? h('div', null,
+      h('div', { className: 'section-title' }, t('route_history')), histRows) : null);
+}
+
+/**
+ * Draws the recorded track as a plain SVG polyline.
+ * No map tiles on purpose: the app ships with no network permission at all,
+ * and the shape of the walk is what is actually informative offline.
+ */
+function RouteMap(props) {
+  var path = props.path || [];
+  if (path.length < 4) {
+    return h('div', { className: 'map-box' },
+      h('div', { className: 'map-empty' },
+        props.live ? t('route_waiting') : t('route_hint')));
+  }
+  var w = 320, hh = 200;
+  var d = routeToPath(path, w, hh, 14);
+  var startX = null;
+  return h('div', { className: 'map-box' },
+    h('svg', { width: '100%', height: '100%', viewBox: '0 0 ' + w + ' ' + hh, preserveAspectRatio: 'xMidYMid meet' },
+      h('path', {
+        d: d, fill: 'none', stroke: '#00e676', strokeWidth: 3,
+        strokeLinecap: 'round', strokeLinejoin: 'round'
+      })));
+}
+
+function SensorInventoryCard() {
+  var keys = ['stepCounter', 'stepDetector', 'accelerometer', 'gyroscope',
+    'barometer', 'light', 'proximity', 'magnetometer', 'heartRate'];
+  var cells = [];
+  for (var i = 0; i < keys.length; i++) {
+    (function (k) {
+      var on = !!INVENTORY[k];
+      cells.push(h('div', { key: 'sn' + k, className: 'sensor-cell' + (on ? '' : ' off') },
+        h('span', null, on ? '✅' : '—'),
+        h('span', null, t('sensor_' + k))));
+    })(keys[i]);
+  }
+  return h(Card, { title: t('phone_sensors'), icon: '📡' },
+    h('div', { className: 'stats-grid' },
+      h(Stat, { value: num(SENSORS.steps || 0), label: t('steps_label'), tone: 'green' }),
+      h(Stat, { value: num(SENSORS.floors || 0), label: t('floors'), tone: 'gold' }),
+      h(Stat, { value: num(SENSORS.elevationM || 0) + ' ' + t('meter'), label: t('elevation'), tone: 'blue' })),
+    h('div', { style: { height: '10px' } }),
+    h('div', { className: 'sensor-grid' }, cells));
+}
+
+/* ---------------------------------------------------------------------
+ * Daily check-in (feeds the coach)
+ * ------------------------------------------------------------------- */
+
+var MOOD_ICONS = ['😖', '😕', '😐', '🙂', '😄'];
+var LEVEL_ICONS = ['1', '2', '3', '4', '5'];
+
+function CheckInCard() {
+  var last = latestCheckin();
+  var s1 = useState(last ? last.mood : 3); var mood = s1[0], setMood = s1[1];
+  var s2 = useState(last ? last.energy : 3); var energy = s2[0], setEnergy = s2[1];
+  var s3 = useState(last ? last.hunger : 3); var hunger = s3[0], setHunger = s3[1];
+
+  function save() {
+    var list = S.get('checkins', []);
+    list.push({ ts: Date.now(), mood: mood, energy: energy, hunger: hunger });
+    if (list.length > 400) list = list.slice(list.length - 400);
+    S.set('checkins', list);
+    toast(t('checkin_done'));
+    refresh();
+  }
+
+  var trend = checkinTrend(7);
+
+  return h(Card, { title: t('checkin'), icon: '🫀' },
+    h(Scale, { name: 'mood', label: t('mood'), value: mood, icons: MOOD_ICONS, onChange: setMood }),
+    h(Scale, { name: 'energy', label: t('energy'), value: energy, icons: LEVEL_ICONS, onChange: setEnergy }),
+    h(Scale, { name: 'hunger', label: t('hunger'), value: hunger, icons: LEVEL_ICONS, onChange: setHunger }),
+    h('div', { className: 'btn-group', style: { marginTop: '4px' } },
+      h('button', { className: 'btn btn-sm btn-primary', onClick: save }, t('checkin_save'))),
+    trend ? h('div', { className: 'chip-row' },
+      h('span', { className: 'chip' }, '😊 ' + num(trend.mood.toFixed(1))),
+      h('span', { className: 'chip' }, '⚡ ' + num(trend.energy.toFixed(1))),
+      h('span', { className: 'chip' }, '🍽️ ' + num(trend.hunger.toFixed(1))),
+      h('span', { className: 'chip' }, num(trend.count) + ' × ' + t('checkin'))) : null);
+}
+
+/* ---------------------------------------------------------------------
+ * Manual meal entry with a photo
+ * ------------------------------------------------------------------- */
+
+function ManualMealModal(props) {
+  var s1 = useState(''); var name = s1[0], setName = s1[1];
+  var s2 = useState(''); var cal = s2[0], setCal = s2[1];
+  var s3 = useState(''); var prot = s3[0], setProt = s3[1];
+  var s4 = useState(''); var carb = s4[0], setCarb = s4[1];
+  var s5 = useState(''); var fat = s5[0], setFat = s5[1];
+  var s6 = useState(''); var photo = s6[0], setPhoto = s6[1];
+  var s7 = useState(''); var thumb = s7[0], setThumb = s7[1];
+  var s8 = useState(false); var toDb = s8[0], setToDb = s8[1];
+
+  function grabPhoto(which) {
+    if (!N.ok()) { toast(t('no_native')); return; }
+    _photoTarget = function (id) {
+      _photoTarget = null;
+      if (!id) { toast(t('photo_failed')); return; }
+      setPhoto(id);
+      setThumb(N.call('photoData', id) || '');
+    };
+    N.call(which === 'camera' ? 'photoCapture' : 'photoPick');
+  }
+
+  function save() {
+    var trimmed = (name || '').replace(/^\s+|\s+$/g, '');
+    if (!trimmed) { toast(t('meal_name')); return; }
+    var food = {
+      k: 'custom_' + uid(),
+      ar: trimmed, en: trimmed,
+      cal: parseFloat(cal) || 0,
+      p: parseFloat(prot) || 0,
+      c: parseFloat(carb) || 0,
+      f: parseFloat(fat) || 0,
+      custom: true
+    };
+    if (toDb) {
+      var list = S.get('customFoods', []);
+      list.unshift(food);
+      if (list.length > 200) list = list.slice(0, 200);
+      S.set('customFoods', list);
+    }
+    props.onSave(food, photo);
+  }
+
+  return h('div', { className: 'modal-overlay', onClick: props.onClose },
+    h('div', { className: 'modal', onClick: function (e) { e.stopPropagation(); } },
+      h('h3', null, t('manual_meal')),
+      h(TextField, {
+        className: 'search-input', value: name,
+        placeholder: t('meal_name'), onInput: setName
+      }),
+      h('div', { style: { height: '8px' } }),
+      h(SettingRow, { label: t('calories') },
+        h(NumField, { value: cal, min: 0, max: 5000, onCommit: function (v) { setCal(v); } })),
+      h(SettingRow, { label: t('protein') },
+        h(NumField, { value: prot, min: 0, max: 500, onCommit: function (v) { setProt(v); } })),
+      h(SettingRow, { label: t('carbs') },
+        h(NumField, { value: carb, min: 0, max: 900, onCommit: function (v) { setCarb(v); } })),
+      h(SettingRow, { label: t('fat') },
+        h(NumField, { value: fat, min: 0, max: 400, onCommit: function (v) { setFat(v); } })),
+      h(SettingRow, { label: t('save_to_db') },
+        h(Switch, { on: toDb, onChange: function () { setToDb(!toDb); } })),
+      h('div', { className: 'btn-group', style: { marginTop: '6px' } },
+        h('button', {
+          className: 'btn btn-sm btn-outline',
+          onClick: function () { grabPhoto('camera'); }
+        }, '📷 ' + t('take_photo')),
+        h('button', {
+          className: 'btn btn-sm btn-outline',
+          onClick: function () { grabPhoto('gallery'); }
+        }, '🖼️ ' + t('from_gallery'))),
+      thumb ? h('img', { className: 'photo-preview', src: thumb, alt: '' }) : null,
+      thumb ? h('div', { className: 'btn-group' },
+        h('button', {
+          className: 'btn btn-sm btn-outline',
+          onClick: function () {
+            N.call('photoDelete', photo);
+            setPhoto(''); setThumb('');
+          }
+        }, t('remove_photo'))) : null,
+      h('div', { className: 'modal-btns' },
+        h('button', { className: 'btn btn-primary btn-sm', onClick: save }, t('save')),
+        h('button', { className: 'btn btn-outline btn-sm', onClick: props.onClose }, t('cancel')))));
+}
+
+/* ---------------------------------------------------------------------
  * Shell
  * ------------------------------------------------------------------- */
 
@@ -1058,11 +1554,15 @@ var TABS = [
 
 var _setTab = null;
 var _curTab = 'home';
+var _setView = null;
+var _curView = null;
 
 function App() {
   var v = useState(0); _bump = v[1];
   var tb = useState('home'); var tab = tb[0]; _setTab = tb[1];
+  var vw = useState(null); var view = vw[0]; _setView = vw[1];
   _curTab = tab;
+  _curView = view;
   var dc = useState(!S.get('settings.disclaimerSeen', false));
   var showDisclaimer = dc[0], setShowDisclaimer = dc[1];
 
@@ -1124,6 +1624,10 @@ function App() {
     h('div', { className: 'content' }, body),
     h('div', { className: 'bnav' }, navItems),
 
+    view === 'activity'
+      ? h(ActivityView, { onClose: function () { _setView(null); } })
+      : null,
+
     showDisclaimer ? h('div', { className: 'modal-overlay' },
       h('div', { className: 'modal' },
         h('h3', null, '⚕️ ' + t('disclaimer')),
@@ -1152,6 +1656,10 @@ window.__onBack = function () {
     overlay.dispatchEvent(evt);
     return;
   }
+  if (_setView && _curView) {
+    _setView(null);
+    return;
+  }
   if (_setTab && _curTab !== 'home') {
     _setTab('home');
     return;
@@ -1173,6 +1681,7 @@ window.__onBack = function () {
   N.syncFast();
   N.call('sensorsStart');
   pullNative();
+  INVENTORY = N.inventory();
   recomputeStats();
 
   var root = ReactDOM.createRoot(document.getElementById('root'));

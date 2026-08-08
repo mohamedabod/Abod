@@ -1,36 +1,40 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.sayemfit.app"
-    android:versionCode="40"
-    android:versionName="4.0">
+    android:versionCode="41"
+    android:versionName="4.1">
 
     <uses-sdk android:minSdkVersion="24" android:targetSdkVersion="34" />
 
     <!-- ================= Bluetooth (smart band) ================= -->
-    <!-- Legacy BT permissions: only up to Android 11 -->
     <uses-permission android:name="android.permission.BLUETOOTH"
         android:maxSdkVersion="30" />
     <uses-permission android:name="android.permission.BLUETOOTH_ADMIN"
         android:maxSdkVersion="30" />
-    <!-- Android 12+ split permissions -->
     <uses-permission android:name="android.permission.BLUETOOTH_SCAN"
         android:usesPermissionFlags="neverForLocation" />
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
-    <!-- Android <= 11 refuses to return BLE scan results without location -->
-    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"
-        android:maxSdkVersion="30" />
 
-    <!-- ================= Phone sensors (activity) ================= -->
+    <!-- ================= Location (route tracking + BLE scan pre-12) =====
+         No maxSdkVersion any more: walk/run route recording needs real GPS. -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+
+    <!-- ================= Phone sensors ================= -->
     <uses-permission android:name="android.permission.ACTIVITY_RECOGNITION" />
     <uses-permission android:name="android.permission.HIGH_SAMPLING_RATE_SENSORS" />
+    <!-- Camera: PPG pulse measurement (finger on lens) + meal photos -->
+    <uses-permission android:name="android.permission.CAMERA" />
 
     <!-- ================= Long fast survival ================= -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <!-- dataSync (not health) on purpose: the health FGS type makes
          startForeground() throw on Android 14 when ACTIVITY_RECOGNITION is
          denied, and a denied optional permission must never crash the app.
-         If targetSdk is ever raised to 35+, switch to specialUse. -->
+         The location type is only requested at runtime, and only once the
+         location permission is actually granted. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
@@ -38,6 +42,10 @@
 
     <uses-feature android:name="android.hardware.bluetooth_le" android:required="false" />
     <uses-feature android:name="android.hardware.sensor.stepcounter" android:required="false" />
+    <uses-feature android:name="android.hardware.sensor.barometer" android:required="false" />
+    <uses-feature android:name="android.hardware.location.gps" android:required="false" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <uses-feature android:name="android.hardware.camera.flash" android:required="false" />
 
     <application
         android:allowBackup="true"
@@ -61,7 +69,7 @@
         <service
             android:name=".FastingService"
             android:exported="false"
-            android:foregroundServiceType="dataSync" />
+            android:foregroundServiceType="dataSync|location" />
 
         <receiver
             android:name=".AlarmReceiver"

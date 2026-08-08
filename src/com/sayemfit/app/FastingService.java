@@ -9,6 +9,7 @@ import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.content.pm.ServiceInfo;
 import android.os.Build;
 import android.os.Handler;
 import android.os.IBinder;
@@ -58,15 +59,15 @@ public class FastingService extends Service {
         }
 
         if (!foreground) {
-            startForeground(NOTIF_ID, buildOngoing());
+            enterForeground();
             foreground = true;
         }
 
         core.sensors().start();
         core.ble().autoConnectIfEnabled();
 
-        if (!core.isFasting()) {
-            // Nothing to time any more (e.g. restored after reboot with no fast).
+        if (!core.isFasting() && !core.route().isTracking()) {
+            // Nothing to keep alive (e.g. restored after reboot with no fast).
             shutdown();
             return START_NOT_STICKY;
         }
@@ -75,15 +76,39 @@ public class FastingService extends Service {
         return START_STICKY;
     }
 
+    /**
+     * Declares the foreground type at runtime rather than relying on the
+     * manifest union: the location type may only be claimed once the location
+     * permission is actually granted, otherwise Android 14 throws.
+     */
+    private void enterForeground() {
+        Notification n = buildOngoing();
+        if (Build.VERSION.SDK_INT < 29) {
+            startForeground(NOTIF_ID, n);
+            return;
+        }
+        int type = ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC;
+        if (core.route().isTracking() && core.route().hasPermission()) {
+            type |= ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION;
+        }
+        try {
+            startForeground(NOTIF_ID, n, type);
+        } catch (Exception e) {
+            startForeground(NOTIF_ID, n);
+        }
+    }
+
     /** Refreshes the notification, fires milestones, re-arms the alarm. */
     void onTick() {
-        if (!core.isFasting()) {
+        if (!core.isFasting() && !core.route().isTracking()) {
             shutdown();
             return;
         }
-        checkMilestones();
+        if (core.isFasting()) {
+            checkMilestones();
+            scheduleAlarm();
+        }
         notifyManager().notify(NOTIF_ID, buildOngoing());
-        scheduleAlarm();
         handler.removeCallbacks(ticker);
         handler.postDelayed(ticker, REFRESH_MS);
     }
@@ -120,6 +145,7 @@ public class FastingService extends Service {
 
     private Notification buildOngoing() {
         boolean ar = core.isArabic();
+        if (!core.isFasting() && core.route().isTracking()) return buildRouteOngoing(ar);
         long ms = core.elapsedMs();
         long totalMin = ms / 60000L;
         long h = totalMin / 60;
@@ -163,6 +189,34 @@ public class FastingService extends Service {
             if (pct > 100) pct = 100;
             b.setProgress(100, pct, false);
         }
+        return b.build();
+    }
+
+    /** Ongoing notification for a walk recorded outside of a fast. */
+    private Notification buildRouteOngoing(boolean ar) {
+        RouteTracker r = core.route();
+        long ms = r.elapsedMs();
+        long min = ms / 60000L;
+        String title = (ar ? "تسجيل المسار — " : "Recording route — ")
+                + (min / 60) + (ar ? " س " : "h ") + (min % 60) + (ar ? " د" : "m");
+
+        Intent open = new Intent(this, MainActivity.class);
+        open.setFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+        PendingIntent pi = PendingIntent.getActivity(this, 0, open, piFlags(false));
+
+        Notification.Builder b;
+        if (Build.VERSION.SDK_INT >= 26) {
+            b = new Notification.Builder(this, CH_ONGOING);
+        } else {
+            b = new Notification.Builder(this);
+            b.setPriority(Notification.PRIORITY_LOW);
+        }
+        b.setContentTitle(title);
+        b.setContentText(ar ? "المسافة قيد التسجيل" : "Distance is being recorded");
+        b.setSmallIcon(R.mipmap.ic_launcher);
+        b.setContentIntent(pi);
+        b.setOngoing(true);
+        b.setOnlyAlertOnce(true);
         return b.build();
     }
 

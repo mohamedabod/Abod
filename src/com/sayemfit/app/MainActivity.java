@@ -83,9 +83,9 @@ public class MainActivity extends Activity {
     protected void onPause() {
         super.onPause();
         if (webView != null) webView.onPause();
-        // Keep the sensors alive only when a fast is actually running; the
+        // Keep the sensors alive only while a fast or a route is running; the
         // hardware step counter is cumulative so nothing is lost by stopping.
-        if (!core.isFasting()) core.sensors().stop();
+        if (!core.isFasting() && !core.route().isTracking()) core.sensors().stop();
     }
 
     /**
@@ -123,10 +123,11 @@ public class MainActivity extends Activity {
         if (Build.VERSION.SDK_INT >= 31) {
             addIfMissing(need, Manifest.permission.BLUETOOTH_SCAN);
             addIfMissing(need, Manifest.permission.BLUETOOTH_CONNECT);
-        } else {
-            // Pre-Android 12 a BLE scan silently returns nothing without this.
-            addIfMissing(need, Manifest.permission.ACCESS_FINE_LOCATION);
         }
+        // Route recording needs it on every version; pre-Android 12 a BLE scan
+        // also silently returns nothing without it.
+        addIfMissing(need, Manifest.permission.ACCESS_FINE_LOCATION);
+        addIfMissing(need, Manifest.permission.CAMERA);
         if (Build.VERSION.SDK_INT >= 29) {
             addIfMissing(need, Manifest.permission.ACTIVITY_RECOGNITION);
         }
@@ -157,6 +158,53 @@ public class MainActivity extends Activity {
         if (Build.VERSION.SDK_INT < 33) return true;
         return checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)
                 == PackageManager.PERMISSION_GRANTED;
+    }
+
+    public boolean hasCameraPermission() {
+        return checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED;
+    }
+
+    // ------------------------------------------------------------------
+    // Photos and maps
+    // ------------------------------------------------------------------
+
+    public void startPhotoCapture() {
+        if (!MediaHelper.capture(this)) {
+            core.emit("photo", "{\"id\":\"\",\"error\":\"no_camera_app\"}");
+        }
+    }
+
+    public void startPhotoPick() {
+        if (!MediaHelper.pick(this)) {
+            core.emit("photo", "{\"id\":\"\",\"error\":\"no_gallery\"}");
+        }
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode != MediaHelper.REQ_CAMERA && requestCode != MediaHelper.REQ_GALLERY) return;
+        if (resultCode != Activity.RESULT_OK) {
+            core.emit("photo", "{\"id\":\"\",\"error\":\"cancelled\"}");
+            return;
+        }
+        String id = MediaHelper.handleResult(this, requestCode, data);
+        core.emit("photo", "{\"id\":\"" + id + "\",\"error\":\"" + (id.length() == 0 ? "failed" : "") + "\"}");
+    }
+
+    /** Opens "lat,lng" in any installed maps app (Google Maps, Petal, OSM…). */
+    public void openGeo(String latLng) {
+        try {
+            Intent i = new Intent(Intent.ACTION_VIEW,
+                    Uri.parse("geo:" + latLng + "?q=" + latLng));
+            startActivity(i);
+        } catch (Exception e) {
+            try {
+                startActivity(new Intent(Intent.ACTION_VIEW,
+                        Uri.parse("https://www.google.com/maps/search/?api=1&query=" + latLng)));
+            } catch (Exception ignored) {
+            }
+        }
     }
 
     /**

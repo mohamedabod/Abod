@@ -40,6 +40,8 @@ public class SensorTracker implements SensorEventListener {
     private SensorManager sm;
     private Sensor stepSensor;
     private Sensor accelSensor;
+    private Sensor pressureSensor;
+    private Sensor lightSensor;
 
     private HandlerThread thread;
     private Handler handler;
@@ -55,6 +57,12 @@ public class SensorTracker implements SensorEventListener {
     private float calories;
     private int cadence;
     private int stepsAtCycleStart = -1;
+
+    /** Barometric altitude, used for floors climbed. */
+    private float lastAltitudeM = Float.NaN;
+    private float altitudeGainM;
+    private int floors;
+    private float lux = -1f;
 
     private final Runnable startSampling = new SampleStartTask(this);
     private final Runnable stopSampling = new SampleStopTask(this);
@@ -84,6 +92,10 @@ public class SensorTracker implements SensorEventListener {
             }
         }
         accelSensor = sm.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
+        pressureSensor = sm.getDefaultSensor(Sensor.TYPE_PRESSURE);
+        lightSensor = sm.getDefaultSensor(Sensor.TYPE_LIGHT);
+        floors = prefs.getInt("floors_today", 0);
+        altitudeGainM = prefs.getFloat("altitude_today", 0f);
 
         running = true;
         handler.post(startSampling);
@@ -140,6 +152,9 @@ public class SensorTracker implements SensorEventListener {
         sb.append("\"calories\":").append(Math.round(calories)).append(',');
         sb.append("\"cadence\":").append(cadence).append(',');
         sb.append("\"level\":\"").append(level).append("\",");
+        sb.append("\"floors\":").append(floors).append(',');
+        sb.append("\"elevationM\":").append(Math.round(altitudeGainM)).append(',');
+        sb.append("\"lux\":").append(Math.round(lux)).append(',');
         sb.append("\"hasStepSensor\":").append(hasStepSensor()).append(',');
         sb.append("\"permission\":").append(hasActivityPermission()).append(',');
         sb.append("\"running\":").append(running);
@@ -147,15 +162,50 @@ public class SensorTracker implements SensorEventListener {
         return sb.toString();
     }
 
+    /** What this particular phone actually has, so the UI can stop guessing. */
+    public String inventoryJson() {
+        SensorManager m = sm;
+        if (m == null) m = (SensorManager) ctx.getSystemService(Context.SENSOR_SERVICE);
+        StringBuilder sb = new StringBuilder("{");
+        if (m == null) return sb.append('}').toString();
+        appendSensor(sb, m, "stepCounter", Sensor.TYPE_STEP_COUNTER);
+        sb.append(',');
+        appendSensor(sb, m, "stepDetector", Sensor.TYPE_STEP_DETECTOR);
+        sb.append(',');
+        appendSensor(sb, m, "accelerometer", Sensor.TYPE_ACCELEROMETER);
+        sb.append(',');
+        appendSensor(sb, m, "gyroscope", Sensor.TYPE_GYROSCOPE);
+        sb.append(',');
+        appendSensor(sb, m, "barometer", Sensor.TYPE_PRESSURE);
+        sb.append(',');
+        appendSensor(sb, m, "light", Sensor.TYPE_LIGHT);
+        sb.append(',');
+        appendSensor(sb, m, "proximity", Sensor.TYPE_PROXIMITY);
+        sb.append(',');
+        appendSensor(sb, m, "magnetometer", Sensor.TYPE_MAGNETIC_FIELD);
+        sb.append(',');
+        appendSensor(sb, m, "heartRate", Sensor.TYPE_HEART_RATE);
+        return sb.append('}').toString();
+    }
+
+    private void appendSensor(StringBuilder sb, SensorManager m, String key, int type) {
+        sb.append('"').append(key).append("\":").append(m.getDefaultSensor(type) != null);
+    }
+
     /** Zeroes today's counters (used by the "reset activity" action). */
     public void resetToday() {
         calories = 0f;
         cadence = 0;
+        floors = 0;
+        altitudeGainM = 0f;
+        lastAltitudeM = Float.NaN;
         prefs.edit()
                 .putLong(AppCore.K_STEP_BASE, -1L)
                 .putInt(AppCore.K_STEP_TODAY, 0)
                 .putInt(AppCore.K_ACTIVE_MIN, 0)
                 .putFloat("calories_today", 0f)
+                .putInt("floors_today", 0)
+                .putFloat("altitude_today", 0f)
                 .apply();
         core.emit("sensors", stateJson());
     }
@@ -175,6 +225,12 @@ public class SensorTracker implements SensorEventListener {
             sm.registerListener(this, accelSensor, SensorManager.SENSOR_DELAY_UI, handler);
             sampling = true;
         }
+        if (pressureSensor != null && sm != null) {
+            sm.registerListener(this, pressureSensor, SensorManager.SENSOR_DELAY_NORMAL, handler);
+        }
+        if (lightSensor != null && sm != null) {
+            sm.registerListener(this, lightSensor, SensorManager.SENSOR_DELAY_NORMAL, handler);
+        }
         handler.postDelayed(stopSampling, SAMPLE_MS);
     }
 
@@ -184,6 +240,8 @@ public class SensorTracker implements SensorEventListener {
             sm.unregisterListener(this, accelSensor);
             sampling = false;
         }
+        if (sm != null && pressureSensor != null) sm.unregisterListener(this, pressureSensor);
+        if (sm != null && lightSensor != null) sm.unregisterListener(this, lightSensor);
 
         if (sampleCount > 4) {
             double mean = sumMag / sampleCount;
@@ -243,7 +301,35 @@ public class SensorTracker implements SensorEventListener {
             sumMag += mag;
             sumMagSq += mag * mag;
             sampleCount++;
+        } else if (event.sensor.getType() == Sensor.TYPE_PRESSURE) {
+            handlePressure(event.values[0]);
+        } else if (event.sensor.getType() == Sensor.TYPE_LIGHT) {
+            lux = event.values[0];
         }
+    }
+
+    /**
+     * Floors climbed from the barometer. A storm front moves the pressure too,
+     * so only sustained gains of ~3m (one storey) are counted, and only upward.
+     */
+    private void handlePressure(float hPa) {
+        float alt = SensorManager.getAltitude(SensorManager.PRESSURE_STANDARD_ATMOSPHERE, hPa);
+        if (Float.isNaN(lastAltitudeM)) {
+            lastAltitudeM = alt;
+            return;
+        }
+        float delta = alt - lastAltitudeM;
+        if (Math.abs(delta) < 1.0f) return; // noise
+        if (delta > 0) {
+            altitudeGainM += delta;
+            int newFloors = (int) (altitudeGainM / 3.0f);
+            if (newFloors != floors) {
+                floors = newFloors;
+                prefs.edit().putInt("floors_today", floors)
+                        .putFloat("altitude_today", altitudeGainM).apply();
+            }
+        }
+        lastAltitudeM = alt;
     }
 
     private void handleStepCounter(long cumulative) {

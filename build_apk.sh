@@ -16,7 +16,10 @@
 # =====================================================================
 set -euo pipefail
 
-APP_ID="${APP_ID:-}"
+# The installed app id. It is com.sayemfit.app4 and NOT com.sayemfit.app
+# because an older build signed with a lost key still owns the original id;
+# changing it back would break updates for anyone already on v4.
+APP_ID="${APP_ID:-com.sayemfit.app4}"
 APP_LABEL="${APP_LABEL:-}"
 OUT="${OUT:-app-release.apk}"
 
@@ -122,10 +125,26 @@ echo "d8         : ok"
 KEYSTORE="$BASEDIR/sayem-key.jks"
 STOREPASS="${SAYEM_STOREPASS:-sayemfit123}"
 if [ ! -f "$KEYSTORE" ]; then
+  # Never silently mint a new identity: a different key means Android refuses
+  # to update the installed app, and the only way out is uninstalling it and
+  # losing the user's history. That is exactly how v3 became unupdatable.
+  if [ "${ALLOW_NEW_KEY:-0}" != "1" ]; then
+    echo
+    echo "ERROR: $KEYSTORE is missing."
+    echo
+    echo "  Signing with a new key makes this APK REFUSE to install over the"
+    echo "  existing app ('package conflicts with an existing package'), and the"
+    echo "  only fix would be uninstalling and losing all stored data."
+    echo
+    echo "  Restore your backup of sayem-key.jks next to this script."
+    echo "  To deliberately start a NEW app identity: ALLOW_NEW_KEY=1 bash build_apk.sh"
+    echo
+    exit 1
+  fi
   keytool -genkeypair -v -keystore "$KEYSTORE" -keyalg RSA -keysize 2048 \
     -validity 10000 -alias sayemfit -storepass "$STOREPASS" -keypass "$STOREPASS" \
     -dname "CN=SayemFit,O=SayemFit,C=EG" >/dev/null
-  echo "keystore   : created"
+  echo "keystore   : created (NEW IDENTITY — back this file up!)"
 fi
 
 "$ZIPALIGN" -f 4 "$BUILD/app-unsigned.apk" "$BUILD/app-aligned.apk"

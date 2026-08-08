@@ -69,7 +69,7 @@ public class JsBridge implements NativeListener {
         Context c = core.context();
         if (active) {
             FastingService.start(c);
-        } else {
+        } else if (!core.route().isTracking()) {
             FastingService.stop(c);
         }
     }
@@ -127,6 +127,105 @@ public class JsBridge implements NativeListener {
     }
 
     @JavascriptInterface
+    public String sensorsInventory() {
+        return core.sensors().inventoryJson();
+    }
+
+    // ---------------- Camera pulse (PPG) ----------------
+
+    /** @return "ok" | "no_permission" | "no_camera" | "busy" */
+    @JavascriptInterface
+    public String pulseStart() {
+        return core.pulse().start();
+    }
+
+    @JavascriptInterface
+    public void pulseCancel() {
+        core.pulse().cancel();
+    }
+
+    @JavascriptInterface
+    public String pulseState() {
+        return core.pulse().stateJson();
+    }
+
+    // ---------------- Route (GPS) ----------------
+
+    /** @return "ok" | "no_permission" | "gps_off" | "no_provider" */
+    @JavascriptInterface
+    public String routeStart() {
+        String r = core.route().start();
+        if ("ok".equals(r)) FastingService.start(core.context());
+        return r;
+    }
+
+    @JavascriptInterface
+    public void routePause() {
+        core.route().pause();
+    }
+
+    @JavascriptInterface
+    public void routeResume() {
+        core.route().resume();
+    }
+
+    @JavascriptInterface
+    public void routeStop() {
+        core.route().stop();
+        if (!core.isFasting()) FastingService.stop(core.context());
+    }
+
+    @JavascriptInterface
+    public String routeState() {
+        return core.route().stateJson();
+    }
+
+    @JavascriptInterface
+    public String routePath(int maxPoints) {
+        return core.route().pathJson(maxPoints > 0 ? maxPoints : 300);
+    }
+
+    /** Saves the current track as GPX and offers it to the share sheet. */
+    @JavascriptInterface
+    public String routeExportGpx(String name) {
+        String gpx = core.route().toGpx(name == null ? "walk" : name);
+        String path = saveExport("route-" + System.currentTimeMillis() + ".gpx", gpx);
+        share(name, gpx);
+        return path;
+    }
+
+    /** Opens the track's starting point in whatever maps app is installed. */
+    @JavascriptInterface
+    public void routeOpenInMaps() {
+        String p = core.route().firstPoint();
+        if (p.length() == 0) return;
+        activity.openGeo(p);
+    }
+
+    // ---------------- Meal photos ----------------
+
+    @JavascriptInterface
+    public void photoCapture() {
+        activity.startPhotoCapture();
+    }
+
+    @JavascriptInterface
+    public void photoPick() {
+        activity.startPhotoPick();
+    }
+
+    /** @return a data: URI thumbnail for the stored photo id, or "". */
+    @JavascriptInterface
+    public String photoData(String id) {
+        return MediaHelper.dataUri(core.context(), id);
+    }
+
+    @JavascriptInterface
+    public void photoDelete(String id) {
+        MediaHelper.delete(core.context(), id);
+    }
+
+    @JavascriptInterface
     public void sensorsStart() {
         core.sensors().start();
     }
@@ -149,6 +248,8 @@ public class JsBridge implements NativeListener {
         sb.append('{');
         sb.append("\"bluetooth\":").append(core.ble().hasScanPermission()).append(',');
         sb.append("\"activity\":").append(core.sensors().hasActivityPermission()).append(',');
+        sb.append("\"location\":").append(core.route().hasPermission()).append(',');
+        sb.append("\"camera\":").append(activity.hasCameraPermission()).append(',');
         sb.append("\"notifications\":").append(activity.hasNotificationPermission());
         sb.append('}');
         return sb.toString();
