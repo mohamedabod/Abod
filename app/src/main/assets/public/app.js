@@ -22,6 +22,7 @@ var ROUTE = { tracking: false, paused: false, points: 0, distanceM: 0, elapsedMs
 var ROUTE_PATH = [];
 var PULSE = { status: 'idle', running: false, progress: 0, bpm: 0, quality: 0 };
 var INVENTORY = {};
+var HEALTH = { status: '', granted: 0, total: 11, syncing: false, lastResult: null };
 
 /** Set while a photo picker is open, so the result lands on the right form. */
 var _photoTarget = null;
@@ -44,12 +45,31 @@ window.__onNative = function (type, data) {
     logPulse(data && data.bpm, 'camera');
   } else if (type === 'photo') {
     if (_photoTarget) _photoTarget(data && data.id ? data.id : '');
+  } else if (type === 'healthState') {
+    HEALTH = m(HEALTH, data || {});
+    HEALTH.syncing = (data && data.granted === -1) || (data && data.syncing) || false;
+    if (data && data.granted >= 0) HEALTH.granted = data.granted;
+    S.set('health', m(S.get('health', {}), { status: HEALTH.status, granted: HEALTH.granted }));
+  } else if (type === 'health') {
+    HEALTH.syncing = false;
+    HEALTH.lastResult = applyHealthSync(data);
+    recomputeStats();
+    if (HEALTH.lastResult.error) {
+      toast(t('hc_error') + ': ' + HEALTH.lastResult.error);
+    } else {
+      toast(t('hc_result') + ' — '
+        + num(HEALTH.lastResult.days) + ' ' + t('hc_days') + ' · '
+        + num(HEALTH.lastResult.workouts) + ' ' + t('hc_workouts'));
+    }
   }
   refresh();
 };
 
 window.__onResume = function () {
   pullNative();
+  // Permissions may have been changed in the Health Connect app while we
+  // were backgrounded, so re-read them rather than trusting the cache.
+  N.call('healthRefresh');
   refresh();
 };
 
@@ -864,6 +884,8 @@ function ProgressPage() {
         }),
         h(Stat, { value: stats.longest ? fmtShort(stats.longest) : '-', label: t('longest_fast'), tone: 'gold' }))),
 
+    h(HealthTrendsCard, null),
+
     h(BodyCompCard, null),
 
     h(Card, { title: t('bmi') + ' / ' + t('tdee'), icon: '⚖️' },
@@ -962,11 +984,21 @@ function BodyCompCard() {
           value: latest.muscleKg ? num(latest.muscleKg) : '-',
           label: t('muscle_kg'), tone: 'green'
         })),
+      // Only fields measured at least twice are shown; a single scan cannot
+      // produce a trend, and printing 0 would read as "no change".
       delta ? h('div', { className: 'chip-row' },
-        h('span', { className: 'chip' + (delta.fatKg < 0 ? ' ok' : '') },
-          '🔻 ' + t('fat_kg') + ' ' + num(delta.fatKg.toFixed(1))),
-        h('span', { className: 'chip' + (delta.muscleKg >= 0 ? ' ok' : ' warn') },
-          '💪 ' + t('muscle_kg') + ' ' + num(delta.muscleKg.toFixed(1))),
+        delta.kg !== null
+          ? h('span', { className: 'chip' + (delta.kg < 0 ? ' ok' : '') },
+              '⚖️ ' + num(delta.kg > 0 ? '+' + delta.kg : delta.kg) + ' ' + t('weight_unit'))
+          : null,
+        delta.fatKg !== null
+          ? h('span', { className: 'chip' + (delta.fatKg < 0 ? ' ok' : ' warn') },
+              '🔻 ' + t('fat_kg') + ' ' + num(delta.fatKg))
+          : null,
+        delta.muscleKg !== null
+          ? h('span', { className: 'chip' + (delta.muscleKg >= 0 ? ' ok' : ' warn') },
+              '💪 ' + t('muscle_kg') + ' ' + num(delta.muscleKg))
+          : null,
         h('span', { className: 'chip' }, num(delta.days) + ' ' + t('day') + ' ' + t('since_first'))) : null)
       : h(Empty, { text: t('no_scans') }),
 
@@ -1514,10 +1546,132 @@ function ActivityView(props) {
       h('button', { className: 'back-btn', onClick: props.onClose }, '←'),
       h('span', { className: 'subview-title' }, t('activity_hub'))),
     h('div', { className: 'subview-body' },
+      h(HealthConnectCard, null),
       h(PulseCard, null),
       h(RouteCard, null),
       h(WorkoutCard, null),
       h(SensorInventoryCard, null)));
+}
+
+/**
+ * Health Connect: the only route by which Huawei Health data (sleep, SpO2,
+ * resting HR, workouts) can reach this app, and only once a bridge app has
+ * copied it into Health Connect first.
+ */
+function HealthConnectCard() {
+  var status = HEALTH.status || 'unknown';
+  var granted = HEALTH.granted || 0;
+  var last = S.get('health.lastSync', 0);
+
+  var chipClass = 'chip';
+  var label;
+  if (status === 'ok' && granted > 0) { chipClass += ' ok'; label = t('hc_ready'); }
+  else if (status === 'ok') { chipClass += ' warn'; label = t('hc_need_perms'); }
+  else if (status === 'not_installed') { chipClass += ' bad'; label = t('hc_not_installed'); }
+  else if (status === 'update_required') { chipClass += ' warn'; label = t('hc_update'); }
+  else if (status === 'unsupported') { chipClass += ' bad'; label = t('hc_unsupported'); }
+  else { label = '…'; }
+
+  var actions = [];
+  if (status === 'ok' && granted > 0) {
+    actions.push(h('button', {
+      key: 'sync', className: 'btn btn-sm btn-primary',
+      disabled: HEALTH.syncing,
+      onClick: function () {
+        HEALTH.syncing = true;
+        N.call('healthSync', 30);
+        refresh();
+      }
+    }, HEALTH.syncing ? t('hc_syncing') : t('hc_sync')));
+    actions.push(h('button', {
+      key: 'open', className: 'btn btn-sm btn-outline',
+      onClick: function () { N.call('healthOpenProvider'); }
+    }, t('hc_open')));
+  } else if (status === 'ok') {
+    actions.push(h('button', {
+      key: 'perm', className: 'btn btn-sm btn-primary',
+      onClick: function () { N.call('healthRequestPermissions'); }
+    }, t('hc_connect')));
+  } else if (status === 'not_installed' || status === 'update_required') {
+    actions.push(h('button', {
+      key: 'install', className: 'btn btn-sm btn-primary',
+      onClick: function () { N.call('healthOpenProvider'); }
+    }, status === 'update_required' ? t('hc_update') : t('hc_install')));
+  }
+
+  var r = HEALTH.lastResult;
+
+  return h(Card, { title: t('hc_title'), icon: '🔗' },
+    h('div', { className: 'chip-row' },
+      h('span', { className: chipClass }, label),
+      h('span', { className: 'chip' },
+        t('hc_granted') + ': ' + num(granted) + '/' + num(HEALTH.total || 11)),
+      h('span', { className: 'chip' },
+        t('hc_last_sync') + ': ' + (last ? fmtDate(last) + ' ' + fmtTimeOfDay(last) : t('hc_never')))),
+
+    actions.length ? h('div', { className: 'btn-group' }, actions) : null,
+
+    r && !r.error ? h('div', { className: 'chip-row' },
+      h('span', { className: 'chip ok' }, num(r.days) + ' ' + t('hc_days')),
+      h('span', { className: 'chip ok' }, num(r.workouts) + ' ' + t('hc_workouts')),
+      h('span', { className: 'chip ok' }, num(r.weights) + ' ' + t('hc_weights'))) : null,
+    r && r.error ? h('div', { className: 'alert-box' }, '⚠️ ' + t('hc_error') + ': ' + r.error) : null,
+
+    h('div', { className: 'info-box' }, 'ℹ️ ' + t('hc_hint')));
+}
+
+/** Sleep, resting heart rate and SpO2 — everything the band knows but the
+ *  phone cannot sense on its own. */
+function HealthTrendsCard() {
+  var sleep = latestSleep();
+  var sleepAvg = healthAverage('sleepMs', 7);
+  var restAvg = healthAverage('restingHr', 7);
+  var spo2Avg = healthAverage('spo2Avg', 7);
+  var days = S.get('healthDays', []);
+
+  if (!days.length) {
+    return h(Card, { title: t('health_trends'), icon: '💤' },
+      h(Empty, { text: t('no_health_data') }));
+  }
+
+  var bars = [];
+  var maxSleep = 1;
+  var recent = days.slice(Math.max(0, days.length - 7));
+  var i;
+  for (i = 0; i < recent.length; i++) {
+    if ((recent[i].sleepMs || 0) > maxSleep) maxSleep = recent[i].sleepMs;
+  }
+  for (i = 0; i < recent.length; i++) {
+    (function (d) {
+      var pct = d.sleepMs ? Math.max(4, Math.round(d.sleepMs / maxSleep * 100)) : 3;
+      bars.push(h('div', { key: 'sl' + d.date, className: 'bar-col' },
+        h('div', {
+          className: 'bar' + (d.sleepMs ? '' : ' dim'),
+          style: { height: pct + '%', background: d.sleepMs ? '#9c27b0' : undefined }
+        }),
+        h('div', { className: 'bar-label' }, d.date.slice(8)),
+        h('div', { className: 'bar-label' },
+          d.sleepMs ? num((d.sleepMs / 3600000).toFixed(1)) : '')));
+    })(recent[i]);
+  }
+
+  return h(Card, { title: t('health_trends'), icon: '💤' },
+    h('div', { className: 'stats-grid' },
+      h(Stat, {
+        value: sleep ? fmtShort(sleep.sleepMs) : '-',
+        label: t('sleep_last'), tone: 'blue'
+      }),
+      h(Stat, {
+        value: restAvg ? num(Math.round(restAvg)) : '-',
+        label: t('resting_hr'), tone: 'gold'
+      }),
+      h(Stat, {
+        value: spo2Avg ? num(spo2Avg.toFixed(0)) + '%' : '-',
+        label: t('spo2_avg'), tone: 'green'
+      })),
+    h('div', { className: 'bar-chart' }, bars),
+    sleepAvg ? h('div', { className: 'chip-row' },
+      h('span', { className: 'chip' }, t('sleep_avg') + ': ' + fmtShort(sleepAvg))) : null);
 }
 
 function PulseCard() {
@@ -1990,6 +2144,7 @@ window.__onBack = function () {
   N.call('sensorsStart');
   pullNative();
   INVENTORY = N.inventory();
+  N.call('healthRefresh');
   recomputeStats();
 
   var root = ReactDOM.createRoot(document.getElementById('root'));

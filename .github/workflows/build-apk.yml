@@ -16,20 +16,26 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
+          cache: gradle
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Install platform + build-tools 34
-        run: |
-          sdkmanager --install "platforms;android-34" "build-tools;34.0.0"
+      # The release keystore is intentionally NOT in the repository: it is
+      # public, and the key is what lets an update install over the existing
+      # app. Add it as a base64 secret to get a signed build out of CI.
+      - name: Restore keystore
+        if: ${{ secrets.SAYEM_KEYSTORE_B64 != '' }}
+        run: echo "${{ secrets.SAYEM_KEYSTORE_B64 }}" | base64 -d > sayem-key.jks
 
       - name: Build
-        run: bash build_apk.sh
+        env:
+          SAYEM_STOREPASS: ${{ secrets.SAYEM_STOREPASS }}
+        run: ./gradlew --no-daemon :app:assembleRelease
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: aboud-sayem-apk
-          path: app-release.apk
+          path: app/build/outputs/apk/release/*.apk
           if-no-files-found: error

@@ -14,16 +14,19 @@ import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.widget.FrameLayout;
 
+import androidx.activity.ComponentActivity;
+
 import java.util.ArrayList;
 import java.util.List;
 
-public class MainActivity extends Activity {
+public class MainActivity extends ComponentActivity {
 
     private static final int REQ_PERMS = 91;
 
     private WebView webView;
     private JsBridge bridge;
     private AppCore core;
+    private HealthConnectManager health;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -32,6 +35,11 @@ public class MainActivity extends Activity {
 
         core = AppCore.get();
         core.init(this);
+
+        // Registered here on purpose: an activity result launcher must be
+        // created before the activity reaches STARTED.
+        health = new HealthConnectManager(this, core);
+        health.register();
 
         webView = new WebView(this);
         WebSettings s = webView.getSettings();
@@ -158,6 +166,10 @@ public class MainActivity extends Activity {
         if (Build.VERSION.SDK_INT < 33) return true;
         return checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)
                 == PackageManager.PERMISSION_GRANTED;
+    }
+
+    public HealthConnectManager health() {
+        return health;
     }
 
     public boolean hasCameraPermission() {

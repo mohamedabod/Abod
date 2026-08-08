@@ -71,6 +71,8 @@ var S = {
       routes: [],
       workouts: [],
       bodyLog: [],
+      healthDays: [],
+      health: { lastSync: 0, status: '', granted: 0 },
       water: { date: '', ml: 0, target: 3000 },
       profile: {
         // age stays null until the user sets it: a guessed age silently
@@ -188,6 +190,8 @@ var S = {
     if (!d.routes) d.routes = [];
     if (!d.workouts) d.workouts = [];
     if (!d.bodyLog) d.bodyLog = [];
+    if (!d.healthDays) d.healthDays = [];
+    if (!d.health) d.health = def.health;
     if (!d.supplements) d.supplements = def.supplements;
     if (!d.profile.weightLog) d.profile.weightLog = [];
     return d;
@@ -514,6 +518,22 @@ var LANG = {
     bmr_lean: 'محسوب من الكتلة الصافية', bmr_mifflin: 'محسوب من الوزن والطول والعمر',
     need_age: 'حدد عمرك عشان نحسب السعرات',
     no_macros: 'وجبة من غير ماكروز', weight_unit: 'كجم',
+    hc_title: 'Health Connect', hc_connect: 'اربط Health Connect', hc_sync: 'زامن الآن',
+    hc_syncing: 'بيزامن…', hc_last_sync: 'آخر مزامنة', hc_never: 'لسه متزامنش',
+    hc_granted: 'أذونات ممنوحة', hc_open: 'افتح Health Connect',
+    hc_install: 'ثبّت Health Connect', hc_update: 'حدّث Health Connect',
+    hc_unsupported: 'الجهاز مش بيدعم Health Connect',
+    hc_not_installed: 'Health Connect مش متثبت على الجهاز',
+    hc_ready: 'جاهز — اضغط زامن',
+    hc_need_perms: 'محتاج تسمح للتطبيق يقرا بياناتك',
+    hc_hint: 'هواوي مبتكتبش في Health Connect لوحدها. محتاج تطبيق وسيط (زي Health Sync) يعمل الجسر من Huawei Health لـHealth Connect، وبعدين التطبيق ده بيقرا منها.',
+    hc_result: 'اتقرا',
+    hc_days: 'يوم', hc_workouts: 'تمرين', hc_weights: 'قياس وزن',
+    sleep_last: 'آخر نوم', sleep_avg: 'متوسط النوم', resting_hr: 'نبض الراحة',
+    spo2: 'الأكسجين', spo2_avg: 'متوسط الأكسجين', health_trends: 'مؤشراتك',
+    no_health_data: 'مفيش بيانات — اربط Health Connect وزامن',
+    hc_error: 'المزامنة فشلت',
+
 
     workouts: 'التمارين', add_workout: 'سجّل تمرين', workout_type: 'النوع',
     distance_km: 'المسافة (كم)', duration_min: 'المدة (دقيقة)',
@@ -707,6 +727,22 @@ var LANG = {
     bmr_lean: 'from lean mass', bmr_mifflin: 'from weight, height and age',
     need_age: 'Set your age to compute calories',
     no_macros: 'meals without macros', weight_unit: 'kg',
+    hc_title: 'Health Connect', hc_connect: 'Connect Health Connect', hc_sync: 'Sync now',
+    hc_syncing: 'Syncing…', hc_last_sync: 'Last sync', hc_never: 'never',
+    hc_granted: 'Permissions granted', hc_open: 'Open Health Connect',
+    hc_install: 'Install Health Connect', hc_update: 'Update Health Connect',
+    hc_unsupported: 'This device does not support Health Connect',
+    hc_not_installed: 'Health Connect is not installed',
+    hc_ready: 'Ready — tap sync',
+    hc_need_perms: 'The app needs permission to read your data',
+    hc_hint: 'Huawei does not write to Health Connect by itself. A bridge app (such as Health Sync) has to copy Huawei Health into Health Connect, and this app reads it from there.',
+    hc_result: 'read',
+    hc_days: 'days', hc_workouts: 'workouts', hc_weights: 'weight readings',
+    sleep_last: 'Last night', sleep_avg: 'Average sleep', resting_hr: 'Resting HR',
+    spo2: 'Oxygen', spo2_avg: 'Average SpO2', health_trends: 'Your metrics',
+    no_health_data: 'No data — connect Health Connect and sync',
+    hc_error: 'Sync failed',
+
 
     workouts: 'Workouts', add_workout: 'Log a workout', workout_type: 'Type',
     distance_km: 'Distance (km)', duration_min: 'Duration (min)',
@@ -901,18 +937,45 @@ function latestBody() {
   return log.length ? log[log.length - 1] : null;
 }
 
-/** Change between the first and last scan, or null with fewer than two. */
+/**
+ * Change per field between the first and last scan that actually carry it.
+ *
+ * Comparing whole entries is wrong here: scans arrive from different sources
+ * (a full InBody has muscle mass, a smart scale synced through Health Connect
+ * may only have weight). Treating a missing field as zero once produced a
+ * "-59 kg of muscle" reading. A field with fewer than two measurements is
+ * reported as null so the UI can leave it out entirely.
+ */
 function bodyDelta() {
   var log = S.get('bodyLog', []);
   if (log.length < 2) return null;
-  var a = log[0], b = log[log.length - 1];
-  return {
-    days: Math.max(1, Math.round((b.ts - a.ts) / 86400000)),
-    kg: (b.kg || 0) - (a.kg || 0),
-    fatKg: (b.fatKg || 0) - (a.fatKg || 0),
-    muscleKg: (b.muscleKg || 0) - (a.muscleKg || 0),
-    fatPct: (b.fatPct || 0) - (a.fatPct || 0)
-  };
+
+  var fields = ['kg', 'fatKg', 'muscleKg', 'fatPct', 'waterPct'];
+  var out = { days: 0 };
+  var any = false;
+  var minTs = null, maxTs = null;
+
+  for (var f = 0; f < fields.length; f++) {
+    var key = fields[f];
+    var first = null, last = null, i;
+    for (i = 0; i < log.length; i++) {
+      if (log[i][key] !== null && log[i][key] !== undefined) { first = log[i]; break; }
+    }
+    for (i = log.length - 1; i >= 0; i--) {
+      if (log[i][key] !== null && log[i][key] !== undefined) { last = log[i]; break; }
+    }
+    if (first && last && first !== last) {
+      out[key] = Math.round((last[key] - first[key]) * 10) / 10;
+      any = true;
+      if (minTs === null || first.ts < minTs) minTs = first.ts;
+      if (maxTs === null || last.ts > maxTs) maxTs = last.ts;
+    } else {
+      out[key] = null;
+    }
+  }
+  if (!any) return null;
+  out.days = Math.max(1, Math.round((maxTs - minTs) / 86400000));
+  return out;
 }
 
 /** Fat-mass and lean-mass split, derived when only one of them is given. */
@@ -1579,6 +1642,164 @@ function checkinTrend(n) {
     energy: energy / take.length,
     hunger: hunger / take.length
   };
+}
+
+/* ---------------------------------------------------------------------
+ * Health Connect
+ * ------------------------------------------------------------------- */
+
+/**
+ * Folds a Health Connect sync into the store.
+ *
+ * Everything is merged rather than replaced, and an incoming null never wins
+ * over a value already recorded — the bridge apps that feed Health Connect
+ * routinely deliver partial days.
+ * @return { added, days, workouts, weights, error }
+ */
+function applyHealthSync(payload) {
+  var res = { added: 0, days: 0, workouts: 0, weights: 0, spo2: 0, error: '' };
+  if (!payload) { res.error = 'empty'; return res; }
+  if (!payload.ok) { res.error = payload.error || 'failed'; return res; }
+
+  var i;
+
+  // --- SpO2 samples collapsed into a daily average ---
+  var spo2ByDay = {};
+  var spo2 = payload.spo2 || [];
+  for (i = 0; i < spo2.length; i++) {
+    var k = dayKey(spo2[i].ts);
+    if (!spo2ByDay[k]) spo2ByDay[k] = { sum: 0, n: 0, min: 100 };
+    spo2ByDay[k].sum += spo2[i].pct;
+    spo2ByDay[k].n++;
+    if (spo2[i].pct < spo2ByDay[k].min) spo2ByDay[k].min = spo2[i].pct;
+    res.spo2++;
+  }
+
+  // --- Daily rows ---
+  var days = S.get('healthDays', []);
+  var index = {};
+  for (i = 0; i < days.length; i++) index[days[i].date] = i;
+
+  var incoming = payload.days || [];
+  for (i = 0; i < incoming.length; i++) {
+    var row = incoming[i];
+    var s = spo2ByDay[row.date];
+    if (s) {
+      row.spo2Avg = Math.round(s.sum / s.n * 10) / 10;
+      row.spo2Min = s.min;
+    }
+    if (index[row.date] === undefined) {
+      days.push(row);
+      index[row.date] = days.length - 1;
+      res.added++;
+      res.days++;
+    } else {
+      // Refresh an existing day, but never blank a known value.
+      var existing = days[index[row.date]];
+      for (var f in row) {
+        if (!Object.prototype.hasOwnProperty.call(row, f)) continue;
+        if (row[f] === null || row[f] === undefined) continue;
+        existing[f] = row[f];
+      }
+    }
+  }
+  // Leftover SpO2 for days with no other data at all.
+  for (var dk in spo2ByDay) {
+    if (!Object.prototype.hasOwnProperty.call(spo2ByDay, dk)) continue;
+    if (index[dk] !== undefined) continue;
+    days.push({
+      date: dk,
+      spo2Avg: Math.round(spo2ByDay[dk].sum / spo2ByDay[dk].n * 10) / 10,
+      spo2Min: spo2ByDay[dk].min
+    });
+    res.added++;
+    res.days++;
+  }
+  days.sort(function (a, b) { return a.date < b.date ? -1 : 1; });
+  if (days.length > 400) days = days.slice(days.length - 400);
+  S.set('healthDays', days);
+
+  // --- Weight and body fat feed the body-composition log ---
+  var body = S.get('bodyLog', []);
+  var weightLog = S.get('profile.weightLog', []);
+  var bodyByDay = {};
+  for (i = 0; i < body.length; i++) bodyByDay[dayKey(body[i].ts)] = body[i];
+
+  var weights = payload.weights || [];
+  for (i = 0; i < weights.length; i++) {
+    var wKey = dayKey(weights[i].ts);
+    var known = false;
+    for (var w = 0; w < weightLog.length; w++) {
+      if (dayKey(weightLog[w].ts) === wKey) { known = true; break; }
+    }
+    if (!known) {
+      weightLog.push({ ts: weights[i].ts, kg: weights[i].kg });
+      res.added++;
+      res.weights++;
+    }
+    if (!bodyByDay[wKey]) {
+      bodyByDay[wKey] = { ts: weights[i].ts, kg: weights[i].kg };
+      body.push(bodyByDay[wKey]);
+    } else if (!bodyByDay[wKey].kg) {
+      bodyByDay[wKey].kg = weights[i].kg;
+    }
+  }
+
+  var fats = payload.bodyFat || [];
+  for (i = 0; i < fats.length; i++) {
+    var fKey = dayKey(fats[i].ts);
+    if (!bodyByDay[fKey]) {
+      bodyByDay[fKey] = { ts: fats[i].ts, fatPct: fats[i].pct };
+      body.push(bodyByDay[fKey]);
+      res.added++;
+    } else if (!bodyByDay[fKey].fatPct) {
+      bodyByDay[fKey].fatPct = fats[i].pct;
+    }
+  }
+
+  var height = S.get('profile.height', null);
+  for (i = 0; i < body.length; i++) {
+    if (height && !body[i].height) body[i].height = height;
+    body[i] = normaliseBody(body[i]);
+  }
+  sortByTime(body, 'ts');
+  sortByTime(weightLog, 'ts');
+  S.set('bodyLog', body);
+  S.set('profile.weightLog', weightLog);
+  if (weightLog.length) S.set('profile.weight', weightLog[weightLog.length - 1].kg);
+
+  // --- Workouts (ids are prefixed hc_, so re-syncing never duplicates) ---
+  var workouts = S.get('workouts', []);
+  var added = mergeList(workouts, payload.workouts || [], 'id');
+  res.added += added;
+  res.workouts = added;
+  sortByTime(workouts, 'ts');
+  S.set('workouts', workouts);
+
+  S.set('health', m(S.get('health', {}), { lastSync: payload.syncedAt || Date.now() }));
+  return res;
+}
+
+/** The most recent day that actually carries a sleep figure. */
+function latestSleep() {
+  var days = S.get('healthDays', []);
+  for (var i = days.length - 1; i >= 0; i--) {
+    if (days[i].sleepMs) return days[i];
+  }
+  return null;
+}
+
+/** Average of a numeric field across the last N health days that have it. */
+function healthAverage(field, n) {
+  var days = S.get('healthDays', []);
+  var sum = 0, count = 0;
+  for (var i = days.length - 1; i >= 0 && count < (n || 7); i--) {
+    var v = days[i][field];
+    if (v === null || v === undefined) continue;
+    sum += v;
+    count++;
+  }
+  return count ? sum / count : null;
 }
 
 /* ---------------------------------------------------------------------

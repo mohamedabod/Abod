@@ -202,6 +202,36 @@ public class JsBridge implements NativeListener {
         activity.openGeo(p);
     }
 
+    // ---------------- Health Connect ----------------
+
+    /** @return "ok" | "not_installed" | "update_required" | "unsupported" */
+    @JavascriptInterface
+    public String healthStatus() {
+        return activity.health().status();
+    }
+
+    @JavascriptInterface
+    public void healthRequestPermissions() {
+        activity.health().requestPermissions();
+    }
+
+    /** Opens the Health Connect app, or its store listing when not installed. */
+    @JavascriptInterface
+    public void healthOpenProvider() {
+        activity.health().openProvider();
+    }
+
+    @JavascriptInterface
+    public void healthRefresh() {
+        activity.health().refreshState();
+    }
+
+    /** Reads the last `days` days; the result arrives as a "health" event. */
+    @JavascriptInterface
+    public void healthSync(int days) {
+        activity.health().sync(days > 0 ? days : 30);
+    }
+
     // ---------------- Meal photos ----------------
 
     @JavascriptInterface

@@ -1,4 +1,4 @@
-# Aboud Sayem — v4.2
+# Aboud Sayem — v5.0
 
 تطبيق أندرويد لإدارة الصيام المتقطع والممتد (حتى 72 ساعة فأكثر)، مع سجل كامل،
 وربط سوار **Huawei Band 11 Pro** لقراءة النبض مباشرة، وقراءة النشاط البدني من
@@ -49,6 +49,13 @@ standard BLE, and activity tracking from the phone's own sensors.
 - **تسجيل مسار المشي/الجري بالـGPS**: مسافة، إيقاع، صعود، رسم المسار، تصدير GPX،
   وفتح نقطة البداية في تطبيق الخرائط.
 - جرد بكل مستشعرات موبايلك وأي واحد منها متاح.
+
+**Health Connect (بيانات السوار)**
+- قراءة **النوم** و**نبض الراحة** و**SpO2** والخطوات والوزن ونسبة الدهون وجلسات
+  التمرين — كل ده جاي من Huawei Health عبر تطبيق جسر ثم Health Connect.
+- قراءة فقط: التطبيق مبيكتبش أي بيانات صحية.
+- المزامنة بالدمج، فتكرارها مبيعملش نسخ مكررة.
+- رسم بياني للنوم آخر ٧ أيام + متوسطات النوم ونبض الراحة والأكسجين.
 
 **تركيب الجسم والتمارين**
 - **قياسات InBody**: الوزن، نسبة الدهون، كتلة الدهون، الكتلة العضلية، نسبة المياه،
@@ -102,20 +109,31 @@ standard BLE, and activity tracking from the phone's own sensors.
 
 لو السوار اتصل والتطبيق قال **"بث النبض مقفول"** يبقى الخطوة ١ مش متعملة.
 
-### ليه مش بنقرا من تطبيق Huawei Health مباشرة؟
+### بيانات هواوي: إزاي بتوصل للتطبيق
 
-الطريق الرسمي الوحيد لبيانات هواوي الكاملة (SpO2، النوم، التوتر) هو
-**Huawei Health Kit**، وده محتاج: حساب مطوّر هواوي، وتسجيل التطبيق على
-AppGallery Connect، و**موافقة هواوي على صلاحيات البيانات الصحية** — وهي موافقة
-بتتطلب توثيق كيان تجاري، مش متاحة لتطبيق شخصي. مفيش طريقة تانية: البروتوكول
-بين السوار و Huawei Health مشفّر ومقفول.
+**Huawei Health مالوش دعم أصلي لـHealth Connect**، و**Huawei Health Kit** (الطريق
+الرسمي لـSpO2 والنوم والتوتر) محتاج موافقة هواوي على صلاحيات صحية بتتطلب توثيق
+كيان تجاري — مش متاحة لتطبيق شخصي. والبروتوكول بين السوار والتطبيق مشفّر.
 
-الطريق غير المباشر الوحيد اللي شغّال فعلاً:
-`Huawei Health -> تطبيق وسيط (زي Health Sync) -> Health Connect -> التطبيق ده`.
-ده هيجيب الخطوات والنبض والنوم و SpO2، بس **مش التوتر** — لأن Health Connect
-أصلاً مفيهوش نوع بيانات اسمه stress. تنفيذه محتاج مكتبة
-`androidx.health.connect`، يعني تحويل المشروع لـGradle + AndroidX. مش متعمل
-لحد دلوقتي، ومتسجّل كخطوة تالية.
+الطريق الشغّال اللي التطبيق مبني عليه دلوقتي:
+
+```
+Huawei Health → تطبيق جسر (Health Sync أو ما شابه) → Health Connect → عبود صايم
+```
+
+التطبيق بيقرا من Health Connect (قراءة فقط، مبيكتبش أي بيانات صحية):
+خطوات، مسافة، سعرات، **نوم**، **نبض الراحة**، نبض متوسط/أقصى/أدنى،
+**SpO2**، وزن، نسبة دهون، وجلسات تمرين بمسافتها وسعراتها ونبضها.
+
+**مش هيجيب "التوتر/القلق"** — Health Connect أصلاً مفيهوش نوع بيانات اسمه stress،
+فمفيش طريق له من أي مصدر.
+
+**خطوات التشغيل:**
+
+1. ثبّت **Health Connect** (مدمج في أندرويد 14+، وتطبيق من Play في الأقدم).
+2. ثبّت تطبيق جسر واربطه: `Huawei Health → Health Connect`.
+3. في عبود صايم: مركز النشاط → Health Connect → **اربط** → وافق على الأذونات.
+4. اضغط **زامن الآن**. بيقرا آخر ٣٠ يوم، والمزامنة بالدمج فمفيش تكرار لو كررتها.
 
 ### البديل المتاح دلوقتي: مستشعرات الهاتف
 
@@ -132,75 +150,47 @@ AppGallery Connect، و**موافقة هواوي على صلاحيات البي�
 
 ---
 
-## 4. التحديثات من غير إعادة تثبيت — Updates
+## 4. البناء والتحديثات — Build & updates
 
-عشان التحديث يركب فوق النسخة المتثبتة ويحافظ على بياناتك، لازم **٣ شروط**:
-
-1. **نفس اسم الحزمة**: `com.sayemfit.app4` (هو الافتراضي في `build_apk.sh` دلوقتي).
-2. **نفس مفتاح التوقيع**: ملف `sayem-key.jks`. الملف ده **مش في الريبو** لأن
-   الريبو عام — أي حد كان هيقدر يوقّع تطبيق باسمك. احتفظ بنسخة منه في مكان آمن.
-3. **`versionCode` أكبر** من المتثبت (في `AndroidManifest.xml`).
-
-`build_apk.sh` دلوقتي **بيرفض يبني** لو المفتاح مش موجود بدل ما يولّد واحد جديد
-بالساكت — لأن ده بالظبط اللي خلى v3 مستحيل يتحدّث. لو عايز هوية جديدة عن قصد:
-`ALLOW_NEW_KEY=1 bash build_apk.sh`.
-
-
-
-## 5. البناء — Build
-
-**المطلوب:** JDK 17+ و Android SDK فيه `platforms;android-34` و `build-tools;34.0.0`.
+**المطلوب:** JDK 17 و Android SDK (platform 34). Gradle بييجي مع الـwrapper.
 
 ```bash
 export ANDROID_HOME=/path/to/android-sdk
-bash build_apk.sh
-# -> app-release.apk  (~118 KB)
+./gradlew :app:assembleRelease
+# -> app/build/outputs/apk/release/app-release.apk
 ```
 
-السكربت بيعمل: أيقونات → `aapt package` (مع توليد `R.java`) → `javac` →
-`d8` → إضافة `classes.dex` → `zipalign` → `apksigner`. من غير Gradle ولا Capacitor.
+المشروع اتحوّل من بايبلاين `aapt`/`d8` اليدوي لـ**Gradle + AndroidX + Kotlin**
+عشان Health Connect محتاج `androidx.health.connect`. النتيجة: الـAPK بقى ٣ ميجا
+بدل ١٥٠ كيلو، و**minSdk بقى 26** (أندرويد 8) بدل 24 لأن مكتبة Health Connect
+بتطلب كده.
 
-### نسخة تتثبت جنب نسخة قديمة — Side-by-side build
+القيود اليدوية القديمة (ممنوع generics بسبب d8، وممنوع anonymous classes) **بقت
+ملغية** — AGP بيتعامل مع الـdexing صح. الكود لسه ES5 في طبقة الويب، وده بقى
+اختيار مش إجبار.
 
-لو فيه نسخة قديمة متثبتة بنفس اسم الحزمة لكن موقّعة بمفتاح تاني، أندرويد بيرفض
-التثبيت بـ**"App not installed as package conflicts with an existing package"**.
-ده قيد أمان، مش عطل — أندرويد مبيسمحش باستبدال تطبيق بمفتاح مختلف. الحل من غير
-مسح النسخة القديمة:
+### التحديثات والتوقيع
 
-```bash
-APP_ID=com.sayemfit.app4 APP_LABEL="Aboud Sayem 4" \
-OUT=aboud-sayem-v4-side.apk bash build_apk.sh
-```
+عشان التحديث يركب فوق المتثبت ويحافظ على البيانات، لازم:
 
-`--rename-manifest-package` بتغيّر **اسم الحزمة المثبّتة بس**؛ `R.java` وأسماء
-الكلاسات بتفضل على `com.sayemfit.app`، فمفيش أي تعديل في الكود.
+1. `applicationId = com.sayemfit.app4` (متثبّت في `app/build.gradle.kts`).
+2. نفس المفتاح `sayem-key.jks` في جذر المشروع. **مش في الريبو** — الريبو عام.
+   من غيره Gradle بيبني نسخة غير موقّعة.
+3. `versionCode` أكبر من المتثبت.
 
-فيه كمان GitHub Actions workflow (`.github/workflows/build-apk.yml`) بيبني الـAPK
-ويرفعه كـartifact على كل push.
+في CI: حط المفتاح كـsecret اسمه `SAYEM_KEYSTORE_B64` (base64) و`SAYEM_STOREPASS`.
 
-### قيود لازم تتحافظ عليها (اتعلمناها بالتجربة)
-
-1. **`build-tools` لازم 34.0.0 أو أقل** — `aapt` (v1) اتشال من 35+، والبايبلاين ده بيعتمد عليه.
-2. **متعملش `implements` لأي interface بـgenerics** (زي `ValueCallback<String>`).
-   javac بيولّد bridge method، و`d8 8.2.2` بيقع عليه بـ`NullPointerException`.
-   عشان كده زرار الرجوع بيشتغل عن طريق `Native.exitApp()` بدل `ValueCallback`.
-3. **مفيش anonymous inner classes** — كل `Runnable` / `Callback` كلاس مستقل باسمه.
-4. **JS كله ES5** — مفيش `let/const`، arrow functions، template literals، spread،
-   destructuring، classes، أو Promises. استعمل `m(a, b)` بدل الـspread.
-5. **`foregroundServiceType="dataSync"`** مش `health` — النوع `health` بيرمي
-   `SecurityException` على أندرويد 14 لو `ACTIVITY_RECOGNITION` مرفوض، وإذن اختياري
-   مرفوض المفروض ميوقعش التطبيق. لو الـtargetSdk اترفع لـ35+ حوّلها لـ`specialUse`.
-
----
-
-## 6. بنية المشروع — Layout
+## 5. بنية المشروع — Layout
 
 ```
-AndroidManifest.xml            الأذونات + الخدمة + الـreceivers
-build_apk.sh                   بايبلاين البناء اليدوي
+settings.gradle.kts            إعداد Gradle
+app/build.gradle.kts           الإعدادات، التوقيع، الاعتماديات
 tools/make_icons.py            توليد الأيقونات (بدون Pillow)
-res/values/                    strings.xml, styles.xml
-src/com/sayemfit/app/
+app/src/main/AndroidManifest.xml   الأذونات + الخدمة + الـreceivers
+app/src/main/res/values/       strings.xml, styles.xml
+app/src/main/kotlin/com/sayemfit/app/
+  HealthConnectManager.kt      قراءة Health Connect (Kotlin + coroutines)
+app/src/main/java/com/sayemfit/app/
   MainActivity.java            WebView + الأذونات + زر الرجوع
   JsBridge.java                window.Native — كل ما JS مش قادر يعمله
   AppCore.java                 singleton: ساعة الصيام + SharedPreferences
@@ -214,7 +204,7 @@ src/com/sayemfit/app/
   Phases.java                  المراحل الـ٧ (نسخة Java للإشعارات)
   Json.java                    escape بسيط لـJSON
   *Task.java                   Runnables مسمّاة (بدل anonymous classes)
-assets/public/
+app/src/main/assets/public/
   index.html                   الشكل والـCSS
   utils.js                     التخزين، i18n، المراحل، الأكل، الحسابات، الجسر
   app.js                       واجهة React (createElement، بدون JSX)
@@ -235,7 +225,7 @@ Native -> JS    window.__onNative('band'|'sensors'|'perms', {...})
 
 ---
 
-## 7. تنبيه طبي — Medical notice
+## 6. تنبيه طبي — Medical notice
 
 التطبيق ده **أداة تتبّع، مش استشارة طبية**. الصيام الممتد (٢٤ ساعة فأكثر) مش
 مناسب للحوامل والمرضعات ومرضى السكري ومن بيتناول أدوية ضغط أو سكر أو له تاريخ

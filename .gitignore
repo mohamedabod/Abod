@@ -1,8 +1,13 @@
+# build output
 build/
+app/build/
+.gradle/
 *.apk
+*.idsig
+
+# signing material — the repo is public; never commit the key
 *.jks
 *.keystore
-assets/public/react.min.js
-assets/public/react-dom.min.js
+local.properties
+
 .DS_Store
-*.idsig
