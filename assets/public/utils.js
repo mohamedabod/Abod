@@ -6,7 +6,7 @@
  * no destructuring, no classes, no async/await. See README.
  * ===================================================================== */
 
-var APP_VERSION = '4.0';
+var APP_VERSION = '4.2';
 var STORE_KEY = 'sayem_v4';
 var LEGACY_KEY = 'sayem_v3';
 
@@ -69,9 +69,13 @@ var S = {
       checkins: [],
       pulseLog: [],
       routes: [],
+      workouts: [],
+      bodyLog: [],
       water: { date: '', ml: 0, target: 3000 },
       profile: {
-        name: 'Mohamed', weight: 70, height: 170, age: 30,
+        // age stays null until the user sets it: a guessed age silently
+        // corrupts every calorie number derived from it.
+        name: 'Mohamed', weight: 70, height: 170, age: null,
         gender: 'male', activity: 'moderate', lang: 'ar', weightLog: []
       },
       band: { name: '', address: '', auto: false },
@@ -87,8 +91,16 @@ var S = {
       settings: {
         notifyPhase: true,
         arabicDigits: false,
-        defaultGoal: 24,
-        disclaimerSeen: false
+        defaultGoal: 20,
+        disclaimerSeen: false,
+        // OMAD-shaped defaults: one evening meal, which is the pattern the
+        // logged history actually shows.
+        windowStart: '17:00',
+        windowEnd: '21:00',
+        wakeTime: '09:00',
+        sleepTarget: 7.5,
+        caffeineCutoffH: 8,
+        stimulantCutoffH: 8
       }
     };
   },
@@ -174,6 +186,8 @@ var S = {
     if (!d.checkins) d.checkins = [];
     if (!d.pulseLog) d.pulseLog = [];
     if (!d.routes) d.routes = [];
+    if (!d.workouts) d.workouts = [];
+    if (!d.bodyLog) d.bodyLog = [];
     if (!d.supplements) d.supplements = def.supplements;
     if (!d.profile.weightLog) d.profile.weightLog = [];
     return d;
@@ -222,8 +236,106 @@ var S = {
       this.save();
       return true;
     } catch (e) { return false; }
+  },
+
+  /**
+   * Adds an export into the current store instead of replacing it.
+   *
+   * Replace-on-import is a trap when the data comes from elsewhere (a chat
+   * log, an old phone): everything already logged here would vanish. Merge
+   * keeps both sides, de-duplicating records by id and by timestamp, and
+   * never lets an incoming null overwrite a value that is already known.
+   * @return the number of records added, or -1 on a parse failure.
+   */
+  mergeJson: function (text) {
+    var incoming;
+    try {
+      incoming = JSON.parse(text);
+    } catch (e) { return -1; }
+    if (!incoming || typeof incoming !== 'object') return -1;
+
+    var d = this.data();
+    var added = 0;
+
+    if (incoming.profile) {
+      for (var k in incoming.profile) {
+        if (!Object.prototype.hasOwnProperty.call(incoming.profile, k)) continue;
+        if (k === 'weightLog') continue;
+        var v = incoming.profile[k];
+        if (v === null || v === undefined || v === '') continue;
+        d.profile[k] = v;
+      }
+      if (incoming.profile.weightLog) {
+        added += mergeList(d.profile.weightLog, incoming.profile.weightLog, 'ts');
+      }
+    }
+    if (incoming.settings) d.settings = m(d.settings, incoming.settings);
+
+    added += mergeList(d.history, incoming.history, 'id');
+    added += mergeList(d.meals, incoming.meals, 'id');
+    added += mergeList(d.customFoods, incoming.customFoods, 'k');
+    added += mergeList(d.checkins, incoming.checkins, 'ts');
+    added += mergeList(d.pulseLog, incoming.pulseLog, 'ts');
+    added += mergeList(d.routes, incoming.routes, 'id');
+    added += mergeList(d.workouts, incoming.workouts, 'id');
+    added += mergeList(d.bodyLog, incoming.bodyLog, 'ts');
+
+    // Supplements match on name so the same pill does not appear twice.
+    if (incoming.supplements) {
+      for (var i = 0; i < incoming.supplements.length; i++) {
+        var sup = incoming.supplements[i];
+        var found = null;
+        for (var j = 0; j < d.supplements.length; j++) {
+          if (d.supplements[j].name === sup.name) { found = d.supplements[j]; break; }
+        }
+        if (!found) {
+          d.supplements.push(sup);
+          added++;
+        } else {
+          if (!found.log) found.log = [];
+          var logs = sup.log || [];
+          for (var x = 0; x < logs.length; x++) {
+            if (found.log.indexOf(logs[x]) < 0) { found.log.push(logs[x]); added++; }
+          }
+          found.log.sort(function (a, b) { return a - b; });
+        }
+      }
+    }
+
+    sortByTime(d.history, 'start');
+    sortByTime(d.meals, 'ts');
+    sortByTime(d.checkins, 'ts');
+    sortByTime(d.workouts, 'ts');
+    sortByTime(d.bodyLog, 'ts');
+    sortByTime(d.profile.weightLog, 'ts');
+
+    this.heal(d);
+    this.save();
+    return added;
   }
 };
+
+/** Appends records missing from `target`, keyed by `key`. */
+function mergeList(target, incoming, key) {
+  if (!target || !incoming || !incoming.length) return 0;
+  var seen = {};
+  var i;
+  for (i = 0; i < target.length; i++) seen[String(target[i][key])] = true;
+  var added = 0;
+  for (i = 0; i < incoming.length; i++) {
+    var id = String(incoming[i][key]);
+    if (seen[id]) continue;
+    seen[id] = true;
+    target.push(incoming[i]);
+    added++;
+  }
+  return added;
+}
+
+function sortByTime(list, key) {
+  if (!list) return;
+  list.sort(function (a, b) { return (a[key] || 0) - (b[key] || 0); });
+}
 
 /* ---------------------------------------------------------------------
  * i18n
@@ -392,6 +504,30 @@ var LANG = {
     coach_energy_low: 'طاقتك منخفضة',
     coach_mood_low: 'مزاجك مش تمام',
     coach_all_good: 'حالتك كويسة',
+
+    body_comp: 'تركيب الجسم', add_scan: 'أضف قياس', body_history: 'سجل القياسات',
+    no_scans: 'مفيش قياسات — ضيف قياس InBody أو ميزان ذكي',
+    fat_pct: 'نسبة الدهون %', fat_kg: 'كتلة الدهون (كجم)',
+    muscle_kg: 'الكتلة العضلية (كجم)', water_pct: 'نسبة المياه %',
+    lean_mass: 'الكتلة الصافية', since_first: 'من أول قياس',
+    body_hint: 'الميزان لوحده بيكدب أثناء الصيام: أول ٢٤ ساعة بتنزل مياه وجليكوجين مش دهون. القياس ده هو اللي بيفرق.',
+    bmr_lean: 'محسوب من الكتلة الصافية', bmr_mifflin: 'محسوب من الوزن والطول والعمر',
+    need_age: 'حدد عمرك عشان نحسب السعرات',
+    no_macros: 'وجبة من غير ماكروز', weight_unit: 'كجم',
+
+    workouts: 'التمارين', add_workout: 'سجّل تمرين', workout_type: 'النوع',
+    distance_km: 'المسافة (كم)', duration_min: 'المدة (دقيقة)',
+    avg_hr: 'متوسط النبض', max_hr: 'أقصى نبض', hr_zone: 'شدة التمرين',
+    zone_easy: 'خفيف', zone_moderate: 'متوسط', zone_hard: 'عنيف', zone_max: 'أقصى مجهود',
+    no_workouts: 'مفيش تمارين متسجلة', workout_history: 'سجل التمارين',
+    fasted_workout: 'صايم', of_max_hr: 'من أقصى نبض متوقع',
+
+    sleep: 'النوم والمنبهات', wake_time: 'موعد الصحيان', sleep_target: 'ساعات النوم',
+    bedtime: 'موعد النوم المفترض', caffeine_cutoff: 'آخر كافيين',
+    eating_window: 'نافذة الأكل', window_start: 'تبدأ', window_end: 'تنتهي',
+
+    import_merge: 'دمج مع بياناتي', import_replace: 'استبدال كل شيء',
+    merged_records: 'سجل اتضاف', import_replace_warn: 'الاستبدال هيمسح كل اللي مسجل دلوقتي',
 
     saved: 'اتحفظ', deleted: 'اتمسح', copied: 'اتنسخ', file_saved: 'الملف اتحفظ في',
     fast_started: 'بدأ الصيام — بالتوفيق!', fast_ended: 'انتهى الصيام',
@@ -562,6 +698,30 @@ var LANG = {
     coach_mood_low: 'Mood is low',
     coach_all_good: 'You are in good shape',
 
+    body_comp: 'Body composition', add_scan: 'Add scan', body_history: 'Scan history',
+    no_scans: 'No scans yet — add an InBody or smart-scale reading',
+    fat_pct: 'Body fat %', fat_kg: 'Fat mass (kg)',
+    muscle_kg: 'Muscle mass (kg)', water_pct: 'Body water %',
+    lean_mass: 'Lean mass', since_first: 'since first scan',
+    body_hint: 'The scale alone lies during a fast: the first 24h drops water and glycogen, not fat. This is what tells them apart.',
+    bmr_lean: 'from lean mass', bmr_mifflin: 'from weight, height and age',
+    need_age: 'Set your age to compute calories',
+    no_macros: 'meals without macros', weight_unit: 'kg',
+
+    workouts: 'Workouts', add_workout: 'Log a workout', workout_type: 'Type',
+    distance_km: 'Distance (km)', duration_min: 'Duration (min)',
+    avg_hr: 'Average HR', max_hr: 'Max HR', hr_zone: 'Intensity',
+    zone_easy: 'Easy', zone_moderate: 'Moderate', zone_hard: 'Hard', zone_max: 'All out',
+    no_workouts: 'No workouts logged', workout_history: 'Workout history',
+    fasted_workout: 'fasted', of_max_hr: 'of estimated max HR',
+
+    sleep: 'Sleep and stimulants', wake_time: 'Wake time', sleep_target: 'Sleep hours',
+    bedtime: 'Implied bedtime', caffeine_cutoff: 'Last caffeine',
+    eating_window: 'Eating window', window_start: 'Opens', window_end: 'Closes',
+
+    import_merge: 'Merge with my data', import_replace: 'Replace everything',
+    merged_records: 'records added', import_replace_warn: 'Replacing erases everything currently stored',
+
     saved: 'Saved', deleted: 'Deleted', copied: 'Copied', file_saved: 'File saved to',
     fast_started: 'Fast started — good luck!', fast_ended: 'Fast ended',
     congrats: 'Congratulations!', keep_going: 'Keep going, you are stronger than you think',
@@ -682,16 +842,224 @@ function bmiLabel(bmi) {
   return ar ? 'سمنة' : 'Obese';
 }
 
+/** @return BMR, or null when a required input is missing. */
 function calcBMR(kg, cm, age, gender) {
+  if (!kg || !cm || !age) return null;
   // Mifflin-St Jeor
   return gender === 'female'
     ? (10 * kg + 6.25 * cm - 5 * age - 161)
     : (10 * kg + 6.25 * cm - 5 * age + 5);
 }
 
+/** @return TDEE, or null when BMR cannot be computed. */
 function calcTDEE(kg, cm, age, gender, activity) {
+  var bmr = calcBMR(kg, cm, age, gender);
+  if (bmr === null) return null;
   var f = { sedentary: 1.2, light: 1.375, moderate: 1.55, active: 1.725, very_active: 1.9 };
-  return Math.round(calcBMR(kg, cm, age, gender) * (f[activity] || 1.55));
+  return Math.round(bmr * (f[activity] || 1.55));
+}
+
+/**
+ * Katch-McArdle: when a body-composition scan is available it beats
+ * Mifflin-St Jeor, because it works from lean mass and needs no age at all.
+ */
+function calcBMRLean(leanKg) {
+  if (!leanKg) return null;
+  return 370 + 21.6 * leanKg;
+}
+
+/** Best available resting-energy estimate, with its source named. */
+function bestBMR(profile) {
+  var body = latestBody();
+  if (body && body.muscleKg) {
+    return { value: Math.round(calcBMRLean(body.muscleKg)), source: 'lean' };
+  }
+  var v = calcBMR(profile.weight, profile.height, profile.age, profile.gender);
+  return v === null ? { value: null, source: 'none' } : { value: Math.round(v), source: 'mifflin' };
+}
+
+/**
+ * Daily burn from the best BMR available. Using lean mass means a body scan
+ * removes the need for an age entirely, instead of blocking the whole number.
+ */
+function bestTDEE(profile) {
+  var bmr = bestBMR(profile);
+  if (bmr.value === null) return { value: null, source: 'none' };
+  var f = { sedentary: 1.2, light: 1.375, moderate: 1.55, active: 1.725, very_active: 1.9 };
+  return {
+    value: Math.round(bmr.value * (f[profile.activity] || 1.55)),
+    source: bmr.source
+  };
+}
+
+/* ---------------------------------------------------------------------
+ * Body composition (InBody-style scans)
+ * ------------------------------------------------------------------- */
+
+function latestBody() {
+  var log = S.get('bodyLog', []);
+  return log.length ? log[log.length - 1] : null;
+}
+
+/** Change between the first and last scan, or null with fewer than two. */
+function bodyDelta() {
+  var log = S.get('bodyLog', []);
+  if (log.length < 2) return null;
+  var a = log[0], b = log[log.length - 1];
+  return {
+    days: Math.max(1, Math.round((b.ts - a.ts) / 86400000)),
+    kg: (b.kg || 0) - (a.kg || 0),
+    fatKg: (b.fatKg || 0) - (a.fatKg || 0),
+    muscleKg: (b.muscleKg || 0) - (a.muscleKg || 0),
+    fatPct: (b.fatPct || 0) - (a.fatPct || 0)
+  };
+}
+
+/** Fat-mass and lean-mass split, derived when only one of them is given. */
+function normaliseBody(entry) {
+  var e = m({}, entry);
+  if (e.kg && e.fatPct && !e.fatKg) e.fatKg = Math.round(e.kg * e.fatPct / 10) / 10;
+  if (e.kg && e.fatKg && !e.fatPct) e.fatPct = Math.round(e.fatKg / e.kg * 1000) / 10;
+  if (e.kg && e.height) e.bmi = Math.round(calcBMI(e.kg, e.height) * 10) / 10;
+  return e;
+}
+
+/* ---------------------------------------------------------------------
+ * Workouts
+ * ------------------------------------------------------------------- */
+
+var WORKOUT_TYPES = [
+  { k: 'walk', emoji: '🚶', ar: 'مشي', en: 'Walk' },
+  { k: 'cycle', emoji: '🚴', ar: 'عجلة', en: 'Cycling' },
+  { k: 'run', emoji: '🏃', ar: 'جري', en: 'Run' },
+  { k: 'gym', emoji: '🏋️', ar: 'مقاومة', en: 'Resistance' },
+  { k: 'swim', emoji: '🏊', ar: 'سباحة', en: 'Swim' },
+  { k: 'other', emoji: '⚡', ar: 'غير ذلك', en: 'Other' }
+];
+
+function workoutType(k) {
+  for (var i = 0; i < WORKOUT_TYPES.length; i++) {
+    if (WORKOUT_TYPES[i].k === k) return WORKOUT_TYPES[i];
+  }
+  return WORKOUT_TYPES[WORKOUT_TYPES.length - 1];
+}
+
+/** Age-predicted max heart rate (Tanaka), or null without an age. */
+function maxHrFor(age) {
+  if (!age) return null;
+  return Math.round(208 - 0.7 * age);
+}
+
+/**
+ * How hard a session was relative to the user's own ceiling.
+ * Falls back to the highest HR ever logged when age is unknown, so the zone
+ * is still meaningful rather than silently absent.
+ */
+function hrZone(maxHr) {
+  if (!maxHr) return null;
+  var age = S.get('profile.age', null);
+  var ceiling = maxHrFor(age);
+  var basis = 'age';
+  if (!ceiling) {
+    // Without an age, fall back to the highest HR this user has ever logged.
+    // That makes their own hardest session read as 100%, so the value is
+    // flagged as observed rather than presented as a physiological ceiling.
+    var best = 0;
+    var w = S.get('workouts', []);
+    for (var i = 0; i < w.length; i++) if ((w[i].maxHr || 0) > best) best = w[i].maxHr;
+    var hist = S.get('history', []);
+    for (var j = 0; j < hist.length; j++) if ((hist[j].maxHr || 0) > best) best = hist[j].maxHr;
+    if (!best) return null;
+    ceiling = best;
+    basis = 'observed';
+  }
+  var pct = maxHr / ceiling;
+  var level = 'easy';
+  if (pct >= 0.9) level = 'max';
+  else if (pct >= 0.8) level = 'hard';
+  else if (pct >= 0.7) level = 'moderate';
+  return { pct: pct, level: level, ceiling: ceiling, basis: basis };
+}
+
+/**
+ * Sessions that started shortly AFTER a fast ended — the "eat, then train"
+ * pattern, which needs different advice from training while fasted.
+ */
+function postFastWorkouts(windowH) {
+  var w = S.get('workouts', []);
+  var hist = S.get('history', []);
+  var gap = (windowH || 2) * 3600000;
+  var out = [];
+  for (var i = w.length - 1; i >= 0; i--) {
+    for (var j = 0; j < hist.length; j++) {
+      var after = w[i].ts - hist[j].end;
+      if (after >= 0 && after <= gap) {
+        out.push(m({}, w[i], {
+          minutesAfterMeal: Math.round(after / 60000),
+          fastHours: (hist[j].duration || 0) / 3600000
+        }));
+        break;
+      }
+    }
+  }
+  return out;
+}
+
+/** Workouts that happened inside a recorded fast, newest first. */
+function fastedWorkouts() {
+  var w = S.get('workouts', []);
+  var hist = S.get('history', []);
+  var out = [];
+  for (var i = w.length - 1; i >= 0; i--) {
+    var ts = w[i].ts;
+    var inFast = null;
+    for (var j = 0; j < hist.length; j++) {
+      if (ts >= hist[j].start && ts <= hist[j].end) {
+        inFast = (ts - hist[j].start) / 3600000;
+        break;
+      }
+    }
+    if (inFast !== null) out.push(m({}, w[i], { fastHours: inFast }));
+  }
+  return out;
+}
+
+/* ---------------------------------------------------------------------
+ * Sleep and stimulants
+ * ------------------------------------------------------------------- */
+
+function parseHHMM(s, fallbackH) {
+  if (!s || s.indexOf(':') < 0) return { h: fallbackH || 0, mn: 0 };
+  var parts = s.split(':');
+  return { h: parseInt(parts[0], 10) || 0, mn: parseInt(parts[1], 10) || 0 };
+}
+
+/**
+ * Latest time to take caffeine or a stimulant so it is mostly cleared by
+ * bedtime. Bedtime is derived from the wake target and the sleep goal.
+ */
+function stimulantCutoff(kind) {
+  var wake = parseHHMM(S.get('settings.wakeTime', '09:00'), 9);
+  var sleepH = parseFloat(S.get('settings.sleepTarget', 7.5)) || 7.5;
+  var cutoffH = parseFloat(S.get('settings.' + (kind === 'stimulant' ? 'stimulantCutoffH' : 'caffeineCutoffH'))) || 8;
+
+  var wakeMin = wake.h * 60 + wake.mn;
+  var bedMin = ((wakeMin - Math.round(sleepH * 60)) % 1440 + 1440) % 1440;
+  var cutMin = ((bedMin - Math.round(cutoffH * 60)) % 1440 + 1440) % 1440;
+  return {
+    bed: pad2(Math.floor(bedMin / 60)) + ':' + pad2(bedMin % 60),
+    cutoff: pad2(Math.floor(cutMin / 60)) + ':' + pad2(cutMin % 60),
+    cutoffMin: cutMin
+  };
+}
+
+/** Supplement doses taken today, per supplement. */
+function dosesToday(sup) {
+  var today = dayKey(Date.now());
+  var n = 0;
+  var log = (sup && sup.log) || [];
+  for (var i = 0; i < log.length; i++) if (dayKey(log[i]) === today) n++;
+  return n;
 }
 
 /* ---------------------------------------------------------------------
@@ -1002,7 +1370,7 @@ function coachAdvice(hours, checkin, fasting) {
     text: (ar ? EXERCISE_AR : EXERCISE_EN)[idx]
   });
 
-  if (!checkin) return out;
+  if (!checkin) return out.concat(routineAdvice(hours, fasting));
 
   var mood = checkin.mood || 3;
   var energy = checkin.energy || 3;
@@ -1058,6 +1426,137 @@ function coachAdvice(hours, checkin, fasting) {
       tone: 'warn', icon: '⚠️', title: '48h+',
       text: t('long_fast_warn')
     });
+  }
+
+  return out.concat(routineAdvice(hours, fasting));
+}
+
+/**
+ * Advice driven by what the user actually does, not by the clock alone:
+ * hard training late in a fast, stacked supplement doses, and stimulants
+ * too close to the target bedtime.
+ */
+function routineAdvice(hours, fasting) {
+  var ar = isRTL();
+  var out = [];
+
+  // --- Training hard while deep in a fast ---
+  var fw = fastedWorkouts();
+  var recentHard = null;
+  for (var i = 0; i < fw.length && i < 6; i++) {
+    var z = hrZone(fw[i].maxHr);
+    if (z && (z.level === 'hard' || z.level === 'max') && fw[i].fastHours >= 16) {
+      recentHard = m({}, fw[i], { zone: z });
+      break;
+    }
+  }
+  if (recentHard) {
+    var wt = workoutType(recentHard.type);
+    out.push({
+      tone: 'exercise', icon: wt.emoji, title: ar ? 'تمرين عنيف وإنت صايم' : 'Hard training deep in a fast',
+      text: ar
+        ? 'سجّلت ' + (ar ? wt.ar : wt.en) + ' بأقصى نبض ' + recentHard.maxHr
+          + ' بعد ' + Math.floor(recentHard.fastHours) + ' ساعة صيام — ده '
+          + Math.round(recentHard.zone.pct * 100) + '% من سقفك التقريبي. مش هقولك متعملهوش '
+          + 'لأنك بتعمله فعلاً وجسمك متأقلم، بس ٤ قواعد بتفرق: '
+          + '(١) أملاح قبل التمرين مش بعده — الصوديوم هو اللي بيمنع الدوخة والتقلصات. '
+          + '(٢) متكررش الوصول لأقصى نبض أكتر من مرة أو مرتين في الأسبوع وإنت صايم. '
+          + '(٣) بروتين خلال ساعة من الإفطار — ده اللي بيحمي العضل مع OMAD متكرر. '
+          + '(٤) دوخة عند الوقوف أو برودة في الأطراف أو خفقان بعد التمرين = افطر، مش "كمّل".'
+        : 'You logged ' + wt.en + ' peaking at ' + recentHard.maxHr + ' bpm after '
+          + Math.floor(recentHard.fastHours) + ' fasted hours — about '
+          + Math.round(recentHard.zone.pct * 100) + '% of your estimated ceiling. '
+          + 'Four rules matter here: electrolytes BEFORE the session, not after; '
+          + 'do not hit max heart rate fasted more than once or twice a week; '
+          + 'protein within an hour of breaking the fast, which is what protects muscle '
+          + 'on repeated OMAD; and dizziness on standing, cold extremities or palpitations '
+          + 'after a session mean eat, not push on.'
+    });
+  }
+
+  // --- Training right after breaking a long fast ---
+  if (!recentHard) {
+    var pf = postFastWorkouts(2);
+    if (pf.length) {
+      var last = pf[0];
+      var lt = workoutType(last.type);
+      out.push({
+        tone: 'exercise', icon: lt.emoji,
+        title: ar ? 'بتتمرن بعد الفطار على طول' : 'Training right after you eat',
+        text: ar
+          ? 'آخر ' + lt.ar + ' كان بعد الفطار بـ' + last.minutesAfterMeal + ' دقيقة، والفطار ده كان بعد '
+            + Math.floor(last.fastHours) + ' ساعة صيام. التوقيت ده منطقي فعلاً — الجليكوجين اترجّع فمعاك وقود. '
+            + 'بس حاجتين: (١) بعد صيام طويل، المعدة بتكون بطيئة، فالتمرين العنيف بعد أقل من ساعة من وجبة تقيلة '
+            + 'بيعمل غثيان وحموضة — خلي المسافة ٩٠ دقيقة على الأقل لو الوجبة كبيرة. '
+            + '(٢) إنت بتتمرن بالليل، فالتمرين العنيف بيرفع النبض والحرارة الداخلية ويأخر النوم ساعة لساعتين. '
+            + 'لو النوم أولوية، قدّم التمرين قبل الفطار بدل ما تأخره بعده.'
+          : 'Your last ' + lt.en.toLowerCase() + ' started ' + last.minutesAfterMeal
+            + ' minutes after breaking a ' + Math.floor(last.fastHours) + '-hour fast. The timing makes sense — '
+            + 'glycogen is back, so you have fuel. Two caveats: after a long fast the gut is slow, so hard effort '
+            + 'less than an hour after a big meal invites nausea and reflux — leave 90 minutes if the meal was large. '
+            + 'And training this late raises heart rate and core temperature, pushing sleep back an hour or two. '
+            + 'If sleep matters more, move the session to before the meal instead.'
+      });
+    }
+  }
+
+  // --- Stacked supplement doses ---
+  var sups = S.get('supplements', []);
+  for (var s = 0; s < sups.length; s++) {
+    if (dosesToday(sups[s]) > 1) {
+      out.push({
+        tone: 'warn', icon: '💊', title: ar ? 'جرعة مكررة النهاردة' : 'Doubled dose today',
+        text: ar
+          ? 'مسجّل أكتر من جرعة من "' + sups[s].name + '" النهاردة. لو ده متعدد فيتامينات، '
+            + 'الفيتامينات الذائبة في الدهون (A/D/E) بتتراكم ومبتتخلصش زي فيتامين C. '
+            + 'جرعة واحدة في اليوم، ومع أول وجبة فيها دهون — مش على معدة فاضية.'
+          : 'More than one dose of "' + sups[s].name + '" is logged today. If that is a '
+            + 'multivitamin, the fat-soluble vitamins (A/D/E) accumulate instead of being '
+            + 'flushed out like vitamin C. One dose a day, with the first meal containing fat.'
+      });
+      break;
+    }
+  }
+
+  // --- Stimulants versus the sleep target ---
+  var cut = stimulantCutoff('caffeine');
+  var nowMin = new Date().getHours() * 60 + new Date().getMinutes();
+  var pastCutoff = nowMin > cut.cutoffMin && nowMin < cut.cutoffMin + 600;
+  out.push({
+    tone: pastCutoff ? 'warn' : 'good',
+    icon: '☕',
+    title: ar ? 'الكافيين والنوم' : 'Caffeine and sleep',
+    text: ar
+      ? 'هدفك تصحى ' + S.get('settings.wakeTime', '09:00') + '، يعني نومك المفروض يبدأ حوالي '
+        + cut.bed + '. آخر قهوة أو منبّه (زي ليمتلس باور ماكس) يبقى قبل ' + cut.cutoff + '. '
+        + (pastCutoff
+            ? 'إنت عدّيت الوقت ده دلوقتي — أي كافيين من هنا هيقصّر النوم العميق حتى لو نمت عادي.'
+            : 'الكافيين عمره النصفي ٥-٦ ساعات، فاللي بتشربه بالليل نصه لسه شغال وقت النوم.')
+      : 'Your wake target is ' + S.get('settings.wakeTime', '09:00') + ', so sleep should start near '
+        + cut.bed + '. Last coffee or stimulant before ' + cut.cutoff + '. '
+        + (pastCutoff
+            ? 'You are past that window now — caffeine from here shortens deep sleep even if you fall asleep fine.'
+            : 'Caffeine has a 5-6 hour half-life, so half of an evening dose is still active at bedtime.')
+  });
+
+  // --- Eating window ---
+  if (fasting) {
+    var ws = parseHHMM(S.get('settings.windowStart', '17:00'), 17);
+    var we = parseHHMM(S.get('settings.windowEnd', '21:00'), 21);
+    var startMin = ws.h * 60 + ws.mn;
+    var endMin = we.h * 60 + we.mn;
+    if (nowMin >= startMin && nowMin <= endMin && hours >= 16) {
+      out.push({
+        tone: 'good', icon: '🍽️', title: ar ? 'نافذة الأكل بتاعتك' : 'Your eating window',
+        text: ar
+          ? 'إنت جوه نافذة الأكل (' + S.get('settings.windowStart', '17:00') + ' - '
+            + S.get('settings.windowEnd', '21:00') + ') وكملت ' + Math.floor(hours) + ' ساعة. '
+            + 'ابدأ ببروتين وسلطة قبل أي كارب — الترتيب ده بيقلل قفزة الإنسولين بعد صيام طويل.'
+          : 'You are inside your eating window (' + S.get('settings.windowStart', '17:00') + ' - '
+            + S.get('settings.windowEnd', '21:00') + ') at hour ' + Math.floor(hours) + '. '
+            + 'Start with protein and salad before any carbs — that order blunts the insulin spike after a long fast.'
+      });
+    }
   }
 
   return out;
@@ -1161,7 +1660,14 @@ function exportText() {
   L.push(t('weight') + ': ' + d.profile.weight);
   L.push(t('height') + ': ' + d.profile.height);
   L.push(t('bmi') + ': ' + calcBMI(d.profile.weight, d.profile.height).toFixed(1));
-  L.push(t('tdee') + ': ' + calcTDEE(d.profile.weight, d.profile.height, d.profile.age, d.profile.gender, d.profile.activity));
+  var tdee = bestTDEE(d.profile);
+  L.push(t('tdee') + ': ' + (tdee.value === null ? '-' : tdee.value));
+  var body = latestBody();
+  if (body) {
+    L.push(t('body_comp') + ': ' + body.kg + ' ' + t('weight_unit')
+      + (body.fatPct ? ' · ' + body.fatPct + '% ' + t('fat') : '')
+      + (body.muscleKg ? ' · ' + body.muscleKg + ' ' + t('muscle_kg') : ''));
+  }
   L.push('');
   L.push('--- ' + t('progress') + ' ---');
   L.push(t('current_streak') + ': ' + d.stats.currentStreak);

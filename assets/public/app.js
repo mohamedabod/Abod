@@ -582,13 +582,17 @@ function MealsPage() {
     if (dayKey(all[i].ts) === todayKey) today.push(all[i]);
   }
 
-  var tot = { cal: 0, p: 0, c: 0, f: 0 };
+  // Meals imported from elsewhere often have no macros at all; a null must
+  // read as "unknown", never silently as a zero that skews the day's total.
+  var tot = { cal: 0, p: 0, c: 0, f: 0, unknown: 0 };
   for (var j = 0; j < today.length; j++) {
     var it = today[j];
-    tot.cal += it.cal * it.portions;
-    tot.p += it.p * it.portions;
-    tot.c += it.c * it.portions;
-    tot.f += it.f * it.portions;
+    var mult = it.portions || 1;
+    if (it.cal === null || it.cal === undefined) tot.unknown++;
+    tot.cal += (it.cal || 0) * mult;
+    tot.p += (it.p || 0) * mult;
+    tot.c += (it.c || 0) * mult;
+    tot.f += (it.f || 0) * mult;
   }
 
   function reallyAdd(food, photoId) {
@@ -644,8 +648,13 @@ function MealsPage() {
         h('div', { className: 'row-main' },
           h('div', { className: 'row-title' }, isRTL() ? food.ar : food.en),
           h('div', { className: 'row-sub' },
-            'P ' + food.p + ' · C ' + food.c + ' · F ' + food.f)),
-        h('div', { className: 'row-end' }, num(food.cal) + ' ' + t('calories'))));
+            food.cal === null || food.cal === undefined
+              ? '—'
+              : 'P ' + food.p + ' · C ' + food.c + ' · F ' + food.f)),
+        h('div', { className: 'row-end' },
+          food.cal === null || food.cal === undefined
+            ? '—'
+            : num(food.cal) + ' ' + t('calories'))));
     })(results[r]);
   }
 
@@ -658,7 +667,10 @@ function MealsPage() {
         h('div', { className: 'row-main' },
           h('div', { className: 'row-title' }, isRTL() ? it.ar : it.en),
           h('div', { className: 'row-sub' },
-            fmtTimeOfDay(it.ts) + ' · ' + num(Math.round(it.cal * it.portions)) + ' ' + t('calories'))),
+            fmtTimeOfDay(it.ts) + ' · '
+            + (it.cal === null || it.cal === undefined
+                ? '—'
+                : num(Math.round(it.cal * (it.portions || 1))) + ' ' + t('calories')))),
         h('button', { className: 'icon-btn', onClick: function () { changePortion(it.id, -0.5); } }, '−'),
         h('span', { className: 'row-end' }, '×' + it.portions),
         h('button', { className: 'icon-btn', onClick: function () { changePortion(it.id, 0.5); } }, '+'),
@@ -672,7 +684,10 @@ function MealsPage() {
         h(Stat, { value: num(Math.round(tot.cal)), label: t('calories'), tone: 'gold' }),
         h(Stat, { value: num(Math.round(tot.p)) + 'g', label: t('protein'), tone: 'green' }),
         h(Stat, { value: num(Math.round(tot.c)) + 'g', label: t('carbs'), tone: 'blue' }),
-        h(Stat, { value: num(Math.round(tot.f)) + 'g', label: t('fat') }))),
+        h(Stat, { value: num(Math.round(tot.f)) + 'g', label: t('fat') })),
+      tot.unknown ? h('div', { className: 'chip-row' },
+        h('span', { className: 'chip warn' },
+          '⚠️ ' + num(tot.unknown) + ' × ' + t('no_macros'))) : null),
 
     mealRows.length
       ? h('div', null, h('div', { className: 'section-title' }, t('meals')), mealRows)
@@ -791,7 +806,8 @@ function ProgressPage() {
   var stats = S.get('stats', {});
   var hist = S.get('history', []);
   var bmi = calcBMI(p.weight, p.height);
-  var tdee = calcTDEE(p.weight, p.height, p.age, p.gender, p.activity);
+  var bmr = bestBMR(p);
+  var tdee = bestTDEE(p);
   var week = last7Days();
 
   var maxH = 1;
@@ -848,16 +864,23 @@ function ProgressPage() {
         }),
         h(Stat, { value: stats.longest ? fmtShort(stats.longest) : '-', label: t('longest_fast'), tone: 'gold' }))),
 
+    h(BodyCompCard, null),
+
     h(Card, { title: t('bmi') + ' / ' + t('tdee'), icon: '⚖️' },
       h('div', { className: 'row-plain' },
         h('span', null, t('bmi')),
         h('span', { className: 'row-end' }, bmi ? num(bmi.toFixed(1)) + ' · ' + bmiLabel(bmi) : '-')),
       h('div', { className: 'row-plain' },
         h('span', null, t('bmr')),
-        h('span', { className: 'row-end' }, num(Math.round(calcBMR(p.weight, p.height, p.age, p.gender))) + ' ' + t('calories'))),
+        h('span', { className: 'row-end' },
+          bmr.value === null
+            ? t('need_age')
+            : num(bmr.value) + ' ' + t('calories')
+              + (bmr.source === 'lean' ? ' · ' + t('bmr_lean') : ''))),
       h('div', { className: 'row-plain' },
         h('span', null, t('tdee')),
-        h('span', { className: 'row-end' }, num(tdee) + ' ' + t('calories'))),
+        h('span', { className: 'row-end' },
+          tdee.value === null ? t('need_age') : num(tdee.value) + ' ' + t('calories'))),
       h('div', { className: 'row-plain' },
         h('span', null, t('add_weight')),
         h('button', { className: 'btn btn-sm btn-outline', onClick: logWeight }, t('save')))),
@@ -883,6 +906,245 @@ function logWeight() {
   S.set('profile.weightLog', log);
   toast(t('saved'));
   refresh();
+}
+
+/* ---------------------------------------------------------------------
+ * Body composition
+ * ------------------------------------------------------------------- */
+
+function BodyCompCard() {
+  var st = useState(false); var showAdd = st[0], setShowAdd = st[1];
+  var latest = latestBody();
+  var delta = bodyDelta();
+  var log = S.get('bodyLog', []);
+
+  var rows = [];
+  for (var i = log.length - 1; i >= 0 && rows.length < 12; i--) {
+    (function (e) {
+      rows.push(h('div', { key: 'bl' + e.ts, className: 'row' },
+        h('div', { className: 'row-main' },
+          h('div', { className: 'row-title' },
+            num(e.kg) + ' ' + t('weight_unit')
+            + (e.fatPct ? ' · ' + num(e.fatPct) + '% ' + t('fat') : '')),
+          h('div', { className: 'row-sub' },
+            fmtDate(e.ts)
+            + (e.muscleKg ? ' · ' + t('muscle_kg') + ' ' + num(e.muscleKg) : '')
+            + (e.waterPct ? ' · ' + t('water_pct') + ' ' + num(e.waterPct) : ''))),
+        h('button', {
+          className: 'icon-btn danger',
+          onClick: function () {
+            var kept = [];
+            var all = S.get('bodyLog', []);
+            for (var j = 0; j < all.length; j++) if (all[j].ts !== e.ts) kept.push(all[j]);
+            S.set('bodyLog', kept);
+            toast(t('deleted'));
+            refresh();
+          }
+        }, '🗑')));
+    })(log[i]);
+  }
+
+  return h(Card, {
+    title: t('body_comp'), icon: '🧍',
+    right: h('button', {
+      className: 'btn btn-sm btn-outline',
+      onClick: function () { setShowAdd(true); }
+    }, t('add_scan'))
+  },
+    latest ? h('div', null,
+      h('div', { className: 'stats-grid' },
+        h(Stat, { value: num(latest.kg) + ' ' + t('weight_unit'), label: t('weight'), tone: 'gold' }),
+        h(Stat, {
+          value: latest.fatPct ? num(latest.fatPct) + '%' : '-',
+          label: t('fat_pct'), tone: 'blue'
+        }),
+        h(Stat, {
+          value: latest.muscleKg ? num(latest.muscleKg) : '-',
+          label: t('muscle_kg'), tone: 'green'
+        })),
+      delta ? h('div', { className: 'chip-row' },
+        h('span', { className: 'chip' + (delta.fatKg < 0 ? ' ok' : '') },
+          '🔻 ' + t('fat_kg') + ' ' + num(delta.fatKg.toFixed(1))),
+        h('span', { className: 'chip' + (delta.muscleKg >= 0 ? ' ok' : ' warn') },
+          '💪 ' + t('muscle_kg') + ' ' + num(delta.muscleKg.toFixed(1))),
+        h('span', { className: 'chip' }, num(delta.days) + ' ' + t('day') + ' ' + t('since_first'))) : null)
+      : h(Empty, { text: t('no_scans') }),
+
+    h('div', { className: 'info-box' }, 'ℹ️ ' + t('body_hint')),
+
+    rows.length ? h('div', null,
+      h('div', { className: 'section-title' }, t('body_history')), rows) : null,
+
+    showAdd ? h(BodyScanModal, {
+      onClose: function () { setShowAdd(false); },
+      onSave: function (entry) {
+        var list = S.get('bodyLog', []);
+        list.push(entry);
+        sortByTime(list, 'ts');
+        S.set('bodyLog', list);
+        if (entry.kg) S.set('profile.weight', entry.kg);
+        setShowAdd(false);
+        toast(t('saved'));
+        refresh();
+      }
+    }) : null);
+}
+
+function BodyScanModal(props) {
+  var p = S.get('profile', {});
+  var s1 = useState(p.weight || ''); var kg = s1[0], setKg = s1[1];
+  var s2 = useState(''); var fatPct = s2[0], setFatPct = s2[1];
+  var s3 = useState(''); var muscle = s3[0], setMuscle = s3[1];
+  var s4 = useState(''); var water = s4[0], setWater = s4[1];
+
+  return h('div', { className: 'modal-overlay', onClick: props.onClose },
+    h('div', { className: 'modal', onClick: function (e) { e.stopPropagation(); } },
+      h('h3', null, t('add_scan')),
+      h(SettingRow, { label: t('weight') },
+        h(NumField, { value: kg, min: 25, max: 350, onCommit: setKg })),
+      h(SettingRow, { label: t('fat_pct') },
+        h(NumField, { value: fatPct, min: 3, max: 70, onCommit: setFatPct })),
+      h(SettingRow, { label: t('muscle_kg') },
+        h(NumField, { value: muscle, min: 10, max: 120, onCommit: setMuscle })),
+      h(SettingRow, { label: t('water_pct') },
+        h(NumField, { value: water, min: 20, max: 80, onCommit: setWater })),
+      h('div', { className: 'modal-btns' },
+        h('button', {
+          className: 'btn btn-primary btn-sm',
+          onClick: function () {
+            var entry = normaliseBody({
+              ts: Date.now(),
+              kg: parseFloat(kg) || null,
+              fatPct: parseFloat(fatPct) || null,
+              muscleKg: parseFloat(muscle) || null,
+              waterPct: parseFloat(water) || null,
+              height: S.get('profile.height', null)
+            });
+            if (!entry.kg) { toast(t('weight')); return; }
+            props.onSave(entry);
+          }
+        }, t('save')),
+        h('button', { className: 'btn btn-outline btn-sm', onClick: props.onClose }, t('cancel')))));
+}
+
+/* ---------------------------------------------------------------------
+ * Workout log
+ * ------------------------------------------------------------------- */
+
+function WorkoutCard() {
+  var st = useState(false); var showAdd = st[0], setShowAdd = st[1];
+  var list = S.get('workouts', []);
+
+  var rows = [];
+  for (var i = list.length - 1; i >= 0 && rows.length < 15; i--) {
+    (function (w) {
+      var wt = workoutType(w.type);
+      var z = hrZone(w.maxHr);
+      var fasted = null;
+      var hist = S.get('history', []);
+      for (var j = 0; j < hist.length; j++) {
+        if (w.ts >= hist[j].start && w.ts <= hist[j].end) {
+          fasted = (w.ts - hist[j].start) / 3600000;
+          break;
+        }
+      }
+      rows.push(h('div', { key: 'wk' + w.id, className: 'row' },
+        h('span', { style: { fontSize: '19px' } }, wt.emoji),
+        h('div', { className: 'row-main' },
+          h('div', { className: 'row-title' },
+            (isRTL() ? wt.ar : wt.en)
+            + (w.distanceKm ? ' · ' + num(w.distanceKm) + ' ' + t('km') : '')
+            + (w.durationMs ? ' · ' + fmtShort(w.durationMs) : '')),
+          h('div', { className: 'row-sub' },
+            fmtDate(w.ts) + ' ' + fmtTimeOfDay(w.ts)
+            + (w.calories ? ' · 🔥 ' + num(w.calories) : '')
+            + (w.maxHr ? ' · ❤️ ' + num(w.maxHr) : '')
+            + (z ? ' · ' + t('zone_' + z.level) : '')
+            + (fasted !== null ? ' · ' + t('fasted_workout') + ' ' + num(Math.floor(fasted)) + t('hour_short') : ''))),
+        h('button', {
+          className: 'icon-btn danger',
+          onClick: function () {
+            var kept = [];
+            var all = S.get('workouts', []);
+            for (var x = 0; x < all.length; x++) if (all[x].id !== w.id) kept.push(all[x]);
+            S.set('workouts', kept);
+            toast(t('deleted'));
+            refresh();
+          }
+        }, '🗑')));
+    })(list[i]);
+  }
+
+  return h(Card, {
+    title: t('workouts'), icon: '🏋️',
+    right: h('button', {
+      className: 'btn btn-sm btn-outline',
+      onClick: function () { setShowAdd(true); }
+    }, t('add_workout'))
+  },
+    rows.length ? rows : h(Empty, { text: t('no_workouts') }),
+    showAdd ? h(WorkoutModal, {
+      onClose: function () { setShowAdd(false); },
+      onSave: function (w) {
+        var all = S.get('workouts', []);
+        all.push(w);
+        sortByTime(all, 'ts');
+        S.set('workouts', all);
+        setShowAdd(false);
+        toast(t('saved'));
+        refresh();
+      }
+    }) : null);
+}
+
+function WorkoutModal(props) {
+  var s0 = useState('cycle'); var type = s0[0], setType = s0[1];
+  var s1 = useState(''); var dist = s1[0], setDist = s1[1];
+  var s2 = useState(''); var mins = s2[0], setMins = s2[1];
+  var s3 = useState(''); var cals = s3[0], setCals = s3[1];
+  var s4 = useState(''); var avg = s4[0], setAvg = s4[1];
+  var s5 = useState(''); var mx = s5[0], setMx = s5[1];
+
+  var typeBtns = [];
+  for (var i = 0; i < WORKOUT_TYPES.length; i++) {
+    (function (wt) {
+      typeBtns.push(h('button', {
+        key: 'wt' + wt.k,
+        className: 'goal-btn' + (type === wt.k ? ' active' : ''),
+        onClick: function () { setType(wt.k); }
+      }, wt.emoji + ' ' + (isRTL() ? wt.ar : wt.en)));
+    })(WORKOUT_TYPES[i]);
+  }
+
+  return h('div', { className: 'modal-overlay', onClick: props.onClose },
+    h('div', { className: 'modal', onClick: function (e) { e.stopPropagation(); } },
+      h('h3', null, t('add_workout')),
+      h('div', { className: 'goal-selector' }, typeBtns),
+      h(SettingRow, { label: t('distance_km') },
+        h(NumField, { value: dist, min: 0, max: 500, onCommit: setDist })),
+      h(SettingRow, { label: t('duration_min') },
+        h(NumField, { value: mins, min: 0, max: 1440, onCommit: setMins })),
+      h(SettingRow, { label: t('calories_burned') },
+        h(NumField, { value: cals, min: 0, max: 10000, onCommit: setCals })),
+      h(SettingRow, { label: t('avg_hr') },
+        h(NumField, { value: avg, min: 30, max: 230, onCommit: setAvg })),
+      h(SettingRow, { label: t('max_hr') },
+        h(NumField, { value: mx, min: 30, max: 230, onCommit: setMx })),
+      h('div', { className: 'modal-btns' },
+        h('button', {
+          className: 'btn btn-primary btn-sm',
+          onClick: function () {
+            props.onSave({
+              id: uid(), ts: Date.now(), type: type,
+              distanceKm: parseFloat(dist) || null,
+              durationMs: (parseFloat(mins) || 0) * 60000 || null,
+              calories: parseFloat(cals) || null,
+              avgHr: parseFloat(avg) || null,
+              maxHr: parseFloat(mx) || null
+            });
+          }
+        }, t('save')),
+        h('button', { className: 'btn btn-outline btn-sm', onClick: props.onClose }, t('cancel')))));
 }
 
 /* ---------------------------------------------------------------------
@@ -1104,6 +1366,38 @@ function SettingsPage() {
           }
         }))),
 
+    h('div', { className: 'section-title' }, t('sleep')),
+    h(Card, { flat: true },
+      h(SettingRow, { label: t('wake_time') },
+        h(TextField, {
+          value: S.get('settings.wakeTime', '09:00'),
+          placeholder: '09:00',
+          onCommit: function (v) { S.set('settings.wakeTime', v); refresh(); }
+        })),
+      h(SettingRow, { label: t('sleep_target') },
+        h(NumField, {
+          value: S.get('settings.sleepTarget', 7.5), min: 4, max: 12,
+          onCommit: function (v) { S.set('settings.sleepTarget', v); refresh(); }
+        })),
+      h(SettingRow, { label: t('bedtime') },
+        h('span', { className: 'row-end' }, stimulantCutoff('caffeine').bed)),
+      h(SettingRow, { label: t('caffeine_cutoff') },
+        h('span', { className: 'row-end', style: { color: '#f5a623' } },
+          stimulantCutoff('caffeine').cutoff))),
+
+    h('div', { className: 'section-title' }, t('eating_window')),
+    h(Card, { flat: true },
+      h(SettingRow, { label: t('window_start') },
+        h(TextField, {
+          value: S.get('settings.windowStart', '17:00'), placeholder: '17:00',
+          onCommit: function (v) { S.set('settings.windowStart', v); refresh(); }
+        })),
+      h(SettingRow, { label: t('window_end') },
+        h(TextField, {
+          value: S.get('settings.windowEnd', '21:00'), placeholder: '21:00',
+          onCommit: function (v) { S.set('settings.windowEnd', v); refresh(); }
+        }))),
+
     h('div', { className: 'section-title' }, t('data')),
     h(Card, { flat: true },
       h(SettingRow, { label: t('export_data') },
@@ -1143,9 +1437,21 @@ function SettingsPage() {
           value: importText,
           onChange: function (e) { setImportText(e.target.value); }
         }),
-        h('div', { className: 'modal-btns' },
+        h('div', { className: 'modal-btns', style: { flexDirection: 'column' } },
           h('button', {
-            className: 'btn btn-primary btn-sm',
+            className: 'btn btn-primary btn-block btn-sm',
+            onClick: function () {
+              var added = S.mergeJson(importText);
+              if (added < 0) { toast('JSON ✗'); return; }
+              setShowImport(false);
+              recomputeStats();
+              N.syncFast();
+              toast(num(added) + ' ' + t('merged_records'));
+              refresh();
+            }
+          }, t('import_merge')),
+          h('button', {
+            className: 'btn btn-danger btn-block btn-sm',
             onClick: function () {
               if (S.importJson(importText)) {
                 setShowImport(false);
@@ -1157,11 +1463,12 @@ function SettingsPage() {
               }
               refresh();
             }
-          }, t('confirm')),
+          }, t('import_replace')),
           h('button', {
-            className: 'btn btn-outline btn-sm',
+            className: 'btn btn-outline btn-block btn-sm',
             onClick: function () { setShowImport(false); }
-          }, t('cancel'))))) : null,
+          }, t('cancel'))),
+        h('div', { className: 'alert-box' }, '⚠️ ' + t('import_replace_warn')))) : null,
 
     confirmReset ? h('div', { className: 'modal-overlay', onClick: function () { setConfirmReset(false); } },
       h('div', { className: 'modal', onClick: function (e) { e.stopPropagation(); } },
@@ -1209,6 +1516,7 @@ function ActivityView(props) {
     h('div', { className: 'subview-body' },
       h(PulseCard, null),
       h(RouteCard, null),
+      h(WorkoutCard, null),
       h(SensorInventoryCard, null)));
 }
 
