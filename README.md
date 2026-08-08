@@ -98,6 +98,21 @@ bash build_apk.sh
 السكربت بيعمل: أيقونات → `aapt package` (مع توليد `R.java`) → `javac` →
 `d8` → إضافة `classes.dex` → `zipalign` → `apksigner`. من غير Gradle ولا Capacitor.
 
+### نسخة تتثبت جنب نسخة قديمة — Side-by-side build
+
+لو فيه نسخة قديمة متثبتة بنفس اسم الحزمة لكن موقّعة بمفتاح تاني، أندرويد بيرفض
+التثبيت بـ**"App not installed as package conflicts with an existing package"**.
+ده قيد أمان، مش عطل — أندرويد مبيسمحش باستبدال تطبيق بمفتاح مختلف. الحل من غير
+مسح النسخة القديمة:
+
+```bash
+APP_ID=com.sayemfit.app4 APP_LABEL="Aboud Sayem 4" \
+OUT=aboud-sayem-v4-side.apk bash build_apk.sh
+```
+
+`--rename-manifest-package` بتغيّر **اسم الحزمة المثبّتة بس**؛ `R.java` وأسماء
+الكلاسات بتفضل على `com.sayemfit.app`، فمفيش أي تعديل في الكود.
+
 فيه كمان GitHub Actions workflow (`.github/workflows/build-apk.yml`) بيبني الـAPK
 ويرفعه كـartifact على كل push.
 

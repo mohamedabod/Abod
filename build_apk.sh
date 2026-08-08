@@ -5,9 +5,20 @@
 #   bash build_apk.sh              debug-signed release APK
 #   ANDROID_HOME=/path bash build_apk.sh
 #
-# Output: app-release.apk
+# Side-by-side build (installs next to an existing copy signed with a
+# different key, instead of hitting "package conflicts with an existing
+# package"):
+#
+#   APP_ID=com.sayemfit.app4 APP_LABEL="Aboud Sayem 4" \
+#   OUT=app-release-v4side.apk bash build_apk.sh
+#
+# Output: app-release.apk (or $OUT)
 # =====================================================================
 set -euo pipefail
+
+APP_ID="${APP_ID:-}"
+APP_LABEL="${APP_LABEL:-}"
+OUT="${OUT:-app-release.apk}"
 
 BASEDIR="$(cd "$(dirname "$0")" && pwd)"
 BUILD="$BASEDIR/build"
@@ -65,10 +76,31 @@ fi
 python3 tools/make_icons.py res >/dev/null
 echo "icons      : ok"
 
+# A different label needs a patched copy of res/ so the two installs are
+# distinguishable on the launcher.
+RES_DIR="res"
+if [ -n "$APP_LABEL" ]; then
+  RES_DIR="$BUILD/res"
+  cp -r res "$RES_DIR"
+  sed -i "s|<string name=\"app_name\">[^<]*</string>|<string name=\"app_name\">$APP_LABEL</string>|" \
+    "$RES_DIR/values/strings.xml"
+  echo "label      : $APP_LABEL"
+fi
+
+# --rename-manifest-package changes only the installed application id.
+# R.java and the component class names keep the original Java package, so no
+# source changes are needed for a side-by-side build.
+RENAME_ARGS=""
+if [ -n "$APP_ID" ]; then
+  RENAME_ARGS="--rename-manifest-package $APP_ID"
+  echo "app id     : $APP_ID"
+fi
+
 # --------------------------------------------------------- resources
 # -m -J generates R.java, which the notification code needs.
-"$AAPT" package -f -m -J "$GEN" \
-  -M AndroidManifest.xml -S res -A assets \
+# shellcheck disable=SC2086
+"$AAPT" package -f -m -J "$GEN" $RENAME_ARGS \
+  -M AndroidManifest.xml -S "$RES_DIR" -A assets \
   -I "$PLATFORM" -F "$BUILD/app-unsigned.apk"
 echo "resources  : packaged"
 
@@ -99,9 +131,9 @@ fi
 "$ZIPALIGN" -f 4 "$BUILD/app-unsigned.apk" "$BUILD/app-aligned.apk"
 "$APKSIGNER" sign --ks "$KEYSTORE" --ks-key-alias sayemfit \
   --ks-pass "pass:$STOREPASS" --key-pass "pass:$STOREPASS" \
-  --out "$BASEDIR/app-release.apk" "$BUILD/app-aligned.apk"
-"$APKSIGNER" verify "$BASEDIR/app-release.apk"
+  --out "$BASEDIR/$OUT" "$BUILD/app-aligned.apk"
+"$APKSIGNER" verify "$BASEDIR/$OUT"
 
 echo
-echo "SUCCESS -> $BASEDIR/app-release.apk"
-ls -lh "$BASEDIR/app-release.apk"
+echo "SUCCESS -> $BASEDIR/$OUT"
+ls -lh "$BASEDIR/$OUT"
