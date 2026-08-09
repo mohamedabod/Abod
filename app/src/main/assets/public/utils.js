@@ -6,7 +6,7 @@
  * no destructuring, no classes, no async/await. See README.
  * ===================================================================== */
 
-var APP_VERSION = '5.0.1';
+var APP_VERSION = '5.1';
 var STORE_KEY = 'sayem_v4';
 var LEGACY_KEY = 'sayem_v3';
 
@@ -95,6 +95,7 @@ var S = {
         arabicDigits: false,
         defaultGoal: 20,
         disclaimerSeen: false,
+        onboarded: false,
         // OMAD-shaped defaults: one evening meal, which is the pattern the
         // logged history actually shows.
         windowStart: '17:00',
@@ -533,6 +534,21 @@ var LANG = {
     spo2: 'الأكسجين', spo2_avg: 'متوسط الأكسجين', health_trends: 'مؤشراتك',
     no_health_data: 'مفيش بيانات — اربط Health Connect وزامن',
     hc_error: 'المزامنة فشلت',
+    onb_skip: 'تخطي', onb_next: 'التالي', onb_back: 'رجوع', onb_start: 'يلا نبدأ',
+    onb_step: 'خطوة', onb_of: 'من',
+    onb_w_title: 'أهلاً بيك في عبود صايم',
+    onb_w_desc: 'مدير صيام متقطع وممتد: عدّاد بيعيش أيام، سجل حقيقي، ربط سوار، وقراءة من مستشعرات موبايلك. دقيقة واحدة نظبّط فيها التطبيق عليك.',
+    onb_p_title: 'مين إنت؟',
+    onb_p_desc: 'دي الأرقام اللي التطبيق بيحسب بيها سعراتك ومؤشراتك. تقدر تغيّرها في أي وقت من الإعدادات.',
+    onb_g_title: 'نظام صيامك',
+    onb_g_desc: 'اختار هدفك الافتراضي ونافذة الأكل بتاعتك. المدرب هيبني نصايحه على ده.',
+    onb_perm_title: 'الأذونات',
+    onb_perm_desc: 'محتاج أذونات عشان أعد خطواتك وأربط السوار وأبعتلك تنبيهات المراحل. كلها اختيارية والتطبيق بيشتغل من غيرها بإمكانيات أقل.',
+    onb_battery: 'استثناء موفّر البطارية',
+    onb_battery_why: 'من غيره النظام هيقتل عدّاد الخطوات ووصلة السوار في نص الصيام الطويل. ده أهم إعداد على أجهزة هواوي وشاومي.',
+    onb_done_title: 'كده تمام',
+    onb_done_desc: 'ابدأ أول صيام من الشاشة الرئيسية. لو عندك بيانات قديمة، تقدر تستوردها بالدمج من الإعدادات.',
+
     hc_empty_short: 'Health Connect فاضية — محتاج تطبيق جسر',
     hc_empty_title: 'الاتصال تمام، بس الخزنة فاضية',
     hc_empty_body: 'التطبيق قرا من Health Connect ومالقاش أي بيانات. ده مش عطل — ده معناه إن مفيش أي تطبيق بيكتب بيانات هواوي جواها. تطبيق Huawei Health نفسه مش بيدعم Health Connect ومش هيظهر في قايمة الأذونات أبداً. محتاج تطبيق جسر (زي Health Sync) تربطه: Huawei Health ← Health Connect، وتسيبه يزامن، وبعدها ارجع اضغط زامن هنا. للتأكد: افتح Health Connect ← Browse data وشوف فيه بيانات فعلاً.',
@@ -746,6 +762,21 @@ var LANG = {
     spo2: 'Oxygen', spo2_avg: 'Average SpO2', health_trends: 'Your metrics',
     no_health_data: 'No data — connect Health Connect and sync',
     hc_error: 'Sync failed',
+    onb_skip: 'Skip', onb_next: 'Next', onb_back: 'Back', onb_start: 'Get started',
+    onb_step: 'Step', onb_of: 'of',
+    onb_w_title: 'Welcome to Aboud Sayem',
+    onb_w_desc: 'An intermittent and extended fasting tracker: a clock that survives days, a real history, a band link, and readings from your phone sensors. One minute to set it up for you.',
+    onb_p_title: 'About you',
+    onb_p_desc: 'These are the numbers every calorie and metric is derived from. You can change them any time in settings.',
+    onb_g_title: 'Your fasting pattern',
+    onb_g_desc: 'Pick a default goal and your eating window. The coach builds its advice on this.',
+    onb_perm_title: 'Permissions',
+    onb_perm_desc: 'Needed to count steps, link the band and send phase alerts. All optional — the app works without them, with less.',
+    onb_battery: 'Battery optimisation exemption',
+    onb_battery_why: 'Without it the system kills step counting and the band link mid-fast. This is the single most important setting on Huawei and Xiaomi devices.',
+    onb_done_title: 'All set',
+    onb_done_desc: 'Start your first fast from the home screen. If you have data elsewhere, import and merge it from settings.',
+
     hc_empty_short: 'Health Connect is empty — a bridge app is needed',
     hc_empty_title: 'Connected, but the store is empty',
     hc_empty_body: 'The read succeeded and Health Connect returned nothing. That is not a fault here — it means no app is writing Huawei data into it. Huawei Health does not support Health Connect and will never appear in its permission list. Install a bridge app (such as Health Sync), point it Huawei Health -> Health Connect, let it sync, then press sync here. To confirm: open Health Connect > Browse data and check that anything is stored.',

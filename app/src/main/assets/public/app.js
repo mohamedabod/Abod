@@ -229,9 +229,12 @@ function setGoal(g) {
  * ------------------------------------------------------------------- */
 
 function Card(props) {
-  return h('div', { className: props.flat ? 'card-flat' : 'card', style: props.style },
+  return h('div', {
+    className: (props.flat ? 'card-flat' : 'card') + ' anim' + (props.delay ? ' anim-' + props.delay : ''),
+    style: props.style
+  },
     props.title ? h('div', { className: 'card-title' },
-      props.icon ? h('span', null, props.icon) : null,
+      props.icon ? h(Icon, { name: props.icon, size: 18 }) : null,
       h('span', null, props.title),
       props.right ? h('span', { style: { marginInlineStart: 'auto' } }, props.right) : null
     ) : null,
@@ -262,6 +265,88 @@ function SettingRow(props) {
 
 function Empty(props) {
   return h('div', { className: 'empty' }, props.text);
+}
+
+/* ---------------------------------------------------------------------
+ * Icons
+ *
+ * Emoji were the loudest "amateur app" tell: they render differently on
+ * every device, cannot take the accent colour, and sit off the baseline.
+ * These are stroke paths on a 24px grid, inheriting currentColor.
+ * Emoji survive only where they are content rather than UI — the mood
+ * faces and the drink list.
+ * ------------------------------------------------------------------- */
+
+var ICONS = {
+  timer: ['M10 2h4', 'M12 5.5a8 8 0 1 1 0 16 8 8 0 0 1 0-16Z', 'M12 9.5v4.3l3 1.7'],
+  meals: ['M6 3v6a2.5 2.5 0 0 0 5 0V3', 'M8.5 11v10',
+    'M17 3c1.9 0 3 1.9 3 4s-1.1 4-3 4-3-1.9-3-4 1.1-4 3-4Z', 'M17 11v10'],
+  droplet: ['M12 3.2c3.2 3.7 6 6.6 6 10.2a6 6 0 1 1-12 0c0-3.6 2.8-6.5 6-10.2Z'],
+  chart: ['M3 20.5h18', 'M7 20.5v-6.5', 'M12 20.5V8.5', 'M17 20.5v-9.5'],
+  coach: ['M9 18h6', 'M10 21.5h4',
+    'M12 2.5a6.5 6.5 0 0 0-4 11.6c.7.6 1 1.4 1 2.4h6c0-1 .3-1.8 1-2.4A6.5 6.5 0 0 0 12 2.5Z'],
+  settings: ['M4 21v-6', 'M4 11V3', 'M12 21v-9', 'M12 8V3', 'M20 21v-4', 'M20 13V3',
+    'M1.5 15h5', 'M9.5 8h5', 'M17.5 17h5'],
+  heart: ['M20.4 5.9a5.2 5.2 0 0 0-7.4 0L12 6.9l-1-1a5.2 5.2 0 0 0-7.4 7.4L12 21.8l8.4-8.5a5.2 5.2 0 0 0 0-7.4Z'],
+  activity: ['M22 12h-4l-3 8.5L9 3.5 6 12H2'],
+  route: ['M9 20.5 3 22.5V6l6-2m0 16.5 6-2m-6 2V4m6 14.5 6 2V6l-6-2m0 16.5V4'],
+  camera: ['M21 20.5H3a2 2 0 0 1-2-2V8.5a2 2 0 0 1 2-2h3.5l1.7-3h7.6l1.7 3H21a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2Z',
+    'M12 16.5a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z'],
+  image: ['M21 19.5H3a2 2 0 0 1-2-2v-11a2 2 0 0 1 2-2h18a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2Z',
+    'M8.5 10.5a1.8 1.8 0 1 0 0-3.6 1.8 1.8 0 0 0 0 3.6Z', 'M23 15.5 17 10 3 19.5'],
+  plus: ['M12 5v14', 'M5 12h14'],
+  minus: ['M5 12h14'],
+  trash: ['M3.5 6h17', 'M8.5 6V3.5h7V6', 'M18.5 6l-1 14.5h-11L5.5 6', 'M10 10.5v6', 'M14 10.5v6'],
+  check: ['M20 6.5 9 17.5l-5-5'],
+  close: ['M18 6 6 18', 'M6 6l12 12'],
+  back: ['M19 12H5', 'M11 18l-6-6 6-6'],
+  bluetooth: ['M6.5 7 17.5 17.5 12 23V1l5.5 5.5L6.5 17'],
+  moon: ['M20.8 13a8.8 8.8 0 1 1-9.8-9.8A6.9 6.9 0 0 0 20.8 13Z'],
+  body: ['M12 7.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5Z', 'M12 8v7', 'M6.5 11h11',
+    'M8.5 21.5 12 15l3.5 6.5'],
+  flame: ['M12 22a7 7 0 0 0 7-7c0-4.2-3.2-6.3-4.7-9.3-.7 2.6-2 3.2-3.1 4.7C10 8 9 6.4 9 4.7 6.9 6.8 5 9.4 5 15a7 7 0 0 0 7 7Z'],
+  link: ['M10.5 13.5a5 5 0 0 0 7.4.4l2.6-2.6a5 5 0 0 0-7-7l-1.5 1.5',
+    'M13.5 10.5a5 5 0 0 0-7.4-.4l-2.6 2.6a5 5 0 0 0 7 7l1.5-1.5'],
+  play: ['M6.5 4.3 19 12 6.5 19.7V4.3Z'],
+  pause: ['M8.5 5v14', 'M15.5 5v14'],
+  stop: ['M6.5 6.5h11v11h-11Z'],
+  dumbbell: ['M6.5 6.5v11', 'M17.5 6.5v11', 'M3 9.5v5', 'M21 9.5v5', 'M6.5 12h11'],
+  building: ['M4 21.5V5a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v16.5', 'M14 21.5V11h4a2 2 0 0 1 2 2v8.5',
+    'M2 21.5h20', 'M8 7h2', 'M8 11h2', 'M8 15h2'],
+  clock: ['M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Z', 'M12 7v5.2l3.4 2'],
+  sparkles: ['M12 3v4', 'M12 17v4', 'M3 12h4', 'M17 12h4', 'M6.3 6.3 9 9', 'M15 15l2.7 2.7',
+    'M17.7 6.3 15 9', 'M9 15l-2.7 2.7'],
+  save: ['M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4', 'M7.5 10.5 12 15l4.5-4.5', 'M12 15V3'],
+  upload: ['M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4', 'M16.5 7.5 12 3 7.5 7.5', 'M12 3v12'],
+  share: ['M18 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z', 'M6 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z',
+    'M18 22a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z', 'M8.6 13.5l6.8 4', 'M15.4 6.5l-6.8 4'],
+  pill: ['M10.5 20.5a5 5 0 0 1-7-7l6-6a5 5 0 0 1 7 7l-6 6Z', 'M8 8l8 8'],
+  battery: ['M17 7H3a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2Z', 'M22 11v2'],
+  shield: ['M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z', 'M12 8.5v6', 'M9 11.5h6'],
+  ban: ['M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Z', 'M5.6 5.6l12.8 12.8'],
+  trophy: ['M8 21h8', 'M12 17.5V21', 'M6 4h12v5a6 6 0 0 1-12 0V4Z',
+    'M6 6H3.5v1.5A3.5 3.5 0 0 0 7 11', 'M18 6h2.5v1.5A3.5 3.5 0 0 1 17 11'],
+  sensor: ['M12 14a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z', 'M8.5 8.5a5 5 0 0 0 0 7', 'M15.5 8.5a5 5 0 0 1 0 7',
+    'M5.5 5.5a9 9 0 0 0 0 13', 'M18.5 5.5a9 9 0 0 1 0 13'],
+  scale: ['M4 21.5h16', 'M12 3v18.5', 'M12 3 4 9h16L12 3Z']
+};
+
+function Icon(props) {
+  var size = props.size || 20;
+  var paths = ICONS[props.name];
+  if (!paths) return null;
+  var children = [];
+  for (var i = 0; i < paths.length; i++) {
+    children.push(h('path', { key: 'p' + i, d: paths[i] }));
+  }
+  return h('svg', {
+    className: 'ic' + (props.inline ? ' ic-inline' : '') + (props.className ? ' ' + props.className : ''),
+    width: size, height: size, viewBox: '0 0 24 24', fill: 'none',
+    stroke: 'currentColor', strokeWidth: props.weight || 1.8,
+    strokeLinecap: 'round', strokeLinejoin: 'round',
+    style: props.color ? { color: props.color } : null,
+    'aria-hidden': 'true'
+  }, children);
 }
 
 /**
@@ -407,17 +492,17 @@ function HomePage() {
   if (!cf.active) {
     controls = h('div', { className: 'btn-group' },
       h('button', { className: 'btn btn-primary', onClick: function () { startFast(Date.now(), goal); } },
-        '▶  ' + t('start_fasting')),
+        h(Icon,{name:'play',size:17}), t('start_fasting')),
       h('button', { className: 'btn btn-outline', onClick: function () { setShowStart(true); } },
-        '🕐  ' + t('set_start_time')));
+        h(Icon,{name:'clock',size:17}), t('set_start_time')));
   } else if (cf.pausedAt) {
     controls = h('div', { className: 'btn-group' },
-      h('button', { className: 'btn btn-green', onClick: resumeFast }, '▶  ' + t('resume')),
-      h('button', { className: 'btn btn-danger', onClick: stopFast }, '■  ' + t('stop')));
+      h('button', { className: 'btn btn-green', onClick: resumeFast }, h(Icon,{name:'play',size:17}), t('resume')),
+      h('button', { className: 'btn btn-danger', onClick: stopFast }, h(Icon,{name:'stop',size:17}), t('stop')));
   } else {
     controls = h('div', { className: 'btn-group' },
-      h('button', { className: 'btn btn-gold', onClick: pauseFast }, '❚❚  ' + t('pause')),
-      h('button', { className: 'btn btn-danger', onClick: stopFast }, '■  ' + t('stop')));
+      h('button', { className: 'btn btn-gold', onClick: pauseFast }, h(Icon,{name:'pause',size:17}), t('pause')),
+      h('button', { className: 'btn btn-danger', onClick: stopFast }, h(Icon,{name:'stop',size:17}), t('stop')));
   }
 
   var stateLabel = !cf.active ? t('idle_state') : (cf.pausedAt ? t('paused_state') : t('running_state'));
@@ -444,7 +529,7 @@ function HomePage() {
       controls,
 
       cf.active && hours >= 48
-        ? h('div', { className: 'alert-box' }, '⚠️ ' + t('long_fast_warn'))
+        ? h('div', { className: 'alert-box' }, t('long_fast_warn'))
         : null),
 
     h(LiveCard, null),
@@ -471,7 +556,7 @@ function LiveCard() {
   var levelKey = 'level_' + (SENSORS.level || 'still');
 
   return h(Card, {
-    title: t('activity'), icon: '📊',
+    title: t('activity'), icon: 'activity',
     right: h('button', {
       className: 'btn btn-sm btn-outline',
       onClick: function () { if (_setView) _setView('activity'); }
@@ -480,8 +565,9 @@ function LiveCard() {
     h('div', { className: 'live-row' },
       h('div', { className: 'live-metric' },
         h('div', { className: 'live-val', style: { color: '#e94560' } },
-          h('span', { className: connected && BAND.hr > 0 ? 'hr-pulse' : '' }, '❤️'),
-          ' ', connected && BAND.hr > 0 ? num(BAND.hr) : '--'),
+          h('span', { className: connected && BAND.hr > 0 ? 'hr-pulse' : '' },
+            h(Icon,{name:'heart',size:19,color:'#e94560'})),
+          connected && BAND.hr > 0 ? num(BAND.hr) : '--'),
         h('div', { className: 'live-unit' }, t('heart_rate') + ' (' + t('bpm') + ')')),
       h('div', { className: 'live-metric' },
         h('div', { className: 'live-val', style: { color: '#00e676' } }, num(SENSORS.steps || 0)),
@@ -493,13 +579,13 @@ function LiveCard() {
     h('div', { className: 'chip-row' },
       h('span', { className: 'chip' }, h('span', { className: dotClass }), bandStatusText()),
       connected && BAND.battery >= 0
-        ? h('span', { className: 'chip' }, '🔋 ' + num(BAND.battery) + '%') : null,
-      h('span', { className: 'chip' }, '🔥 ' + num(SENSORS.calories || 0) + ' ' + t('calories')),
-      h('span', { className: 'chip' }, '🚶 ' + t(levelKey)),
+        ? h('span', { className: 'chip' }, h(Icon,{name:'battery',size:13}), num(BAND.battery) + '%') : null,
+      h('span', { className: 'chip' }, h(Icon,{name:'flame',size:13}), num(SENSORS.calories || 0) + ' ' + t('calories')),
+      h('span', { className: 'chip' }, h(Icon,{name:'activity',size:13}), t(levelKey)),
       SENSORS.floors > 0
-        ? h('span', { className: 'chip' }, '🏢 ' + num(SENSORS.floors) + ' ' + t('floors')) : null,
+        ? h('span', { className: 'chip' }, h(Icon,{name:'building',size:13}), num(SENSORS.floors) + ' ' + t('floors')) : null,
       ROUTE.tracking
-        ? h('span', { className: 'chip ok' }, '🗺️ ' + fmtDistance(ROUTE.distanceM)) : null),
+        ? h('span', { className: 'chip ok' }, h(Icon,{name:'route',size:13}), fmtDistance(ROUTE.distanceM)) : null),
 
     h('div', { className: 'btn-group', style: { marginTop: '12px' } },
       !connected ? h('button', { className: 'btn btn-sm btn-outline', onClick: connectBand },
@@ -507,7 +593,7 @@ function LiveCard() {
       h('button', {
         className: 'btn btn-sm btn-outline',
         onClick: function () { if (_setView) _setView('activity'); }
-      }, '❤️ ' + t('pulse_title'))));
+      }, h(Icon,{name:'heart',size:16}), t('pulse_title'))));
 }
 
 function QuickStats() {
@@ -566,14 +652,14 @@ function StartTimeModal(props) {
       h('h3', null, t('set_start_time')),
       h('div', { className: 'time-picker' },
         h('div', { className: 'time-col' },
-          h('button', { className: 'time-btn', onClick: function () { bump('h', 1); } }, '+'),
+          h('button', { className: 'time-btn', onClick: function () { bump('h', 1); } }, h(Icon,{name:'plus',size:18})),
           h('div', { className: 'time-val' }, pad2(hh)),
-          h('button', { className: 'time-btn', onClick: function () { bump('h', -1); } }, '−')),
+          h('button', { className: 'time-btn', onClick: function () { bump('h', -1); } }, h(Icon,{name:'minus',size:18}))),
         h('div', { className: 'time-sep' }, ':'),
         h('div', { className: 'time-col' },
-          h('button', { className: 'time-btn', onClick: function () { bump('m', 5); } }, '+'),
+          h('button', { className: 'time-btn', onClick: function () { bump('m', 5); } }, h(Icon,{name:'plus',size:18})),
           h('div', { className: 'time-val' }, pad2(mm)),
-          h('button', { className: 'time-btn', onClick: function () { bump('m', -5); } }, '−'))),
+          h('button', { className: 'time-btn', onClick: function () { bump('m', -5); } }, h(Icon,{name:'minus',size:18})))),
       h('div', { className: 'card-sub', style: { textAlign: 'center', marginTop: '10px' } },
         t('back_hours')),
       h('div', { className: 'modal-btns' },
@@ -696,15 +782,15 @@ function MealsPage() {
             + (it.cal === null || it.cal === undefined
                 ? '—'
                 : num(Math.round(it.cal * (it.portions || 1))) + ' ' + t('calories')))),
-        h('button', { className: 'icon-btn', onClick: function () { changePortion(it.id, -0.5); } }, '−'),
+        h('button', { className: 'icon-btn', onClick: function () { changePortion(it.id, -0.5); } }, h(Icon,{name:'minus',size:16})),
         h('span', { className: 'row-end' }, '×' + it.portions),
-        h('button', { className: 'icon-btn', onClick: function () { changePortion(it.id, 0.5); } }, '+'),
-        h('button', { className: 'icon-btn danger', onClick: function () { removeMeal(it.id); } }, '🗑')));
+        h('button', { className: 'icon-btn', onClick: function () { changePortion(it.id, 0.5); } }, h(Icon,{name:'plus',size:16})),
+        h('button', { className: 'icon-btn danger', onClick: function () { removeMeal(it.id); } }, h(Icon, { name: 'trash', size: 17 }))));
     })(today[k2]);
   }
 
   return h('div', null,
-    h(Card, { title: t('todays_total'), icon: '🍽️' },
+    h(Card, { title: t('todays_total'), icon: 'meals' },
       h('div', { className: 'stats-grid-4' },
         h(Stat, { value: num(Math.round(tot.cal)), label: t('calories'), tone: 'gold' }),
         h(Stat, { value: num(Math.round(tot.p)) + 'g', label: t('protein'), tone: 'green' }),
@@ -712,7 +798,7 @@ function MealsPage() {
         h(Stat, { value: num(Math.round(tot.f)) + 'g', label: t('fat') })),
       tot.unknown ? h('div', { className: 'chip-row' },
         h('span', { className: 'chip warn' },
-          '⚠️ ' + num(tot.unknown) + ' × ' + t('no_macros'))) : null),
+          num(tot.unknown) + ' × ' + t('no_macros'))) : null),
 
     mealRows.length
       ? h('div', null, h('div', { className: 'section-title' }, t('meals')), mealRows)
@@ -722,7 +808,7 @@ function MealsPage() {
       h('button', {
         className: 'btn btn-sm btn-primary',
         onClick: function () { setShowManual(true); }
-      }, '➕ ' + t('manual_meal'))),
+      }, h(Icon,{name:'plus',size:16}), t('manual_meal'))),
 
     h('div', { className: 'section-title' }, t('search_food')),
     h('input', {
@@ -802,7 +888,7 @@ function LiquidsPage() {
   }
 
   return h('div', null,
-    h(Card, { title: t('water_intake'), icon: '💧' },
+    h(Card, { title: t('water_intake'), icon: 'droplet' },
       h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' } },
         h('span', { style: { fontSize: '24px', fontWeight: 700 } },
           num(water.ml) + ' ', h('span', { style: { fontSize: '12px', color: '#a0a0c0' } }, t('ml'))),
@@ -815,10 +901,10 @@ function LiquidsPage() {
         h('button', { className: 'btn btn-sm btn-outline', onClick: function () { addWater(750); } }, '+750'),
         h('button', { className: 'btn btn-sm btn-outline', onClick: function () { addWater(-250); } }, '−250'))),
 
-    h(Card, { title: t('liquids_allowed'), icon: '✅' }, okRows,
+    h(Card, { title: t('liquids_allowed'), icon: 'check' }, okRows,
       h('div', { className: 'info-box' }, t('electrolytes_note'))),
 
-    h(Card, { title: t('forbidden_drinks'), icon: '⛔' }, noRows,
+    h(Card, { title: t('forbidden_drinks'), icon: 'ban' }, noRows,
       h('div', { className: 'alert-box' }, t('forbidden_list'))));
 }
 
@@ -859,23 +945,23 @@ function ProgressPage() {
         h('div', { className: 'row-main' },
           h('div', { className: 'row-title' },
             fmtShort(e.duration) + ' / ' + num(e.goal) + (isRTL() ? 'س' : 'h') + ' ',
-            e.completed ? h('span', { style: { color: '#00e676' } }, '✓') : null),
+            e.completed ? h(Icon,{name:'check',size:14,color:'#00d97e',className:'ic-inline'}) : null),
           h('div', { className: 'row-sub' },
             fmtDate(e.start) + ' · ' + fmtTimeOfDay(e.start) + ' → ' + fmtTimeOfDay(e.end)
-            + (e.avgHr ? ' · ❤️ ' + num(e.avgHr) : '')
-            + (e.steps ? ' · 🚶 ' + num(e.steps) : ''))),
+            + (e.avgHr ? ' · ' + num(e.avgHr) + ' ' + t('bpm') : '')
+            + (e.steps ? ' · ' + num(e.steps) + ' ' + t('steps') : ''))),
         h('button', {
           className: 'icon-btn danger',
           onClick: function () { deleteHistory(e.id); }
-        }, '🗑')));
+        }, h(Icon, { name: 'trash', size: 17 }))));
     })(hist[k]);
   }
 
   return h('div', null,
-    h(Card, { title: t('last_7_days'), icon: '📈' },
+    h(Card, { title: t('last_7_days'), icon: 'chart' },
       h('div', { className: 'bar-chart' }, bars)),
 
-    h(Card, { title: t('progress'), icon: '🏆' },
+    h(Card, { title: t('progress'), icon: 'trophy' },
       h('div', { className: 'stats-grid' },
         h(Stat, { value: num(stats.currentStreak || 0), label: t('current_streak'), tone: 'gold' }),
         h(Stat, { value: num(stats.bestStreak || 0), label: t('best_streak'), tone: 'green' }),
@@ -893,7 +979,7 @@ function ProgressPage() {
 
     h(BodyCompCard, null),
 
-    h(Card, { title: t('bmi') + ' / ' + t('tdee'), icon: '⚖️' },
+    h(Card, { title: t('bmi') + ' / ' + t('tdee'), icon: 'scale' },
       h('div', { className: 'row-plain' },
         h('span', null, t('bmi')),
         h('span', { className: 'row-end' }, bmi ? num(bmi.toFixed(1)) + ' · ' + bmiLabel(bmi) : '-')),
@@ -967,12 +1053,12 @@ function BodyCompCard() {
             toast(t('deleted'));
             refresh();
           }
-        }, '🗑')));
+        }, h(Icon, { name: 'trash', size: 17 }))));
     })(log[i]);
   }
 
   return h(Card, {
-    title: t('body_comp'), icon: '🧍',
+    title: t('body_comp'), icon: 'body',
     right: h('button', {
       className: 'btn btn-sm btn-outline',
       onClick: function () { setShowAdd(true); }
@@ -994,20 +1080,20 @@ function BodyCompCard() {
       delta ? h('div', { className: 'chip-row' },
         delta.kg !== null
           ? h('span', { className: 'chip' + (delta.kg < 0 ? ' ok' : '') },
-              '⚖️ ' + num(delta.kg > 0 ? '+' + delta.kg : delta.kg) + ' ' + t('weight_unit'))
+              h(Icon,{name:'scale',size:13}), num(delta.kg > 0 ? '+' + delta.kg : delta.kg) + ' ' + t('weight_unit'))
           : null,
         delta.fatKg !== null
           ? h('span', { className: 'chip' + (delta.fatKg < 0 ? ' ok' : ' warn') },
-              '🔻 ' + t('fat_kg') + ' ' + num(delta.fatKg))
+              h(Icon,{name:'flame',size:13}), t('fat_kg') + ' ' + num(delta.fatKg))
           : null,
         delta.muscleKg !== null
           ? h('span', { className: 'chip' + (delta.muscleKg >= 0 ? ' ok' : ' warn') },
-              '💪 ' + t('muscle_kg') + ' ' + num(delta.muscleKg))
+              h(Icon,{name:'dumbbell',size:13}), t('muscle_kg') + ' ' + num(delta.muscleKg))
           : null,
         h('span', { className: 'chip' }, num(delta.days) + ' ' + t('day') + ' ' + t('since_first'))) : null)
       : h(Empty, { text: t('no_scans') }),
 
-    h('div', { className: 'info-box' }, 'ℹ️ ' + t('body_hint')),
+    h('div', { className: 'info-box' }, t('body_hint')),
 
     rows.length ? h('div', null,
       h('div', { className: 'section-title' }, t('body_history')), rows) : null,
@@ -1094,8 +1180,8 @@ function WorkoutCard() {
             + (w.durationMs ? ' · ' + fmtShort(w.durationMs) : '')),
           h('div', { className: 'row-sub' },
             fmtDate(w.ts) + ' ' + fmtTimeOfDay(w.ts)
-            + (w.calories ? ' · 🔥 ' + num(w.calories) : '')
-            + (w.maxHr ? ' · ❤️ ' + num(w.maxHr) : '')
+            + (w.calories ? ' · ' + num(w.calories) + ' ' + t('calories') : '')
+            + (w.maxHr ? ' · ' + num(w.maxHr) + ' ' + t('bpm') : '')
             + (z ? ' · ' + t('zone_' + z.level) : '')
             + (fasted !== null ? ' · ' + t('fasted_workout') + ' ' + num(Math.floor(fasted)) + t('hour_short') : ''))),
         h('button', {
@@ -1108,12 +1194,12 @@ function WorkoutCard() {
             toast(t('deleted'));
             refresh();
           }
-        }, '🗑')));
+        }, h(Icon, { name: 'trash', size: 17 }))));
     })(list[i]);
   }
 
   return h(Card, {
-    title: t('workouts'), icon: '🏋️',
+    title: t('workouts'), icon: 'dumbbell',
     right: h('button', {
       className: 'btn btn-sm btn-outline',
       onClick: function () { setShowAdd(true); }
@@ -1225,16 +1311,16 @@ function CoachPage() {
       h('div', { className: 'refeed-phase' }, t('refeed_phase2')),
       h('div', { className: 'tip-text' }, t('refeed_phase2_desc'))),
     h('div', { className: 'tip-card warn' },
-      h('div', { className: 'tip-title' }, '⛔ ' + t('refeed_rule')),
+      h('div', { className: 'tip-title' }, h(Icon,{name:'ban',size:15}), t('refeed_rule')),
       h('div', { className: 'tip-text' }, t('refeed_rule_desc'))),
     hours >= 48 ? h('div', { className: 'tip-card warn' },
-      h('div', { className: 'tip-title' }, '⚠️ ' + t('refeeding') + ' 48h+'),
+      h('div', { className: 'tip-title' }, t('refeeding') + ' 48h+'),
       h('div', { className: 'tip-text' }, t('refeed_long_warn'))) : null,
 
     h('div', { className: 'section-title' }, t('tips')),
     tipCards,
 
-    h('div', { className: 'alert-box' }, '⚕️ ' + t('disclaimer_text')));
+    h('div', { className: 'alert-box' }, t('disclaimer_text')));
 }
 
 /* ---------------------------------------------------------------------
@@ -1276,13 +1362,13 @@ function SettingsPage() {
       supCards.push(h('div', { key: 'sp' + sup.id, className: 'card-flat' },
         h('div', { className: 'row-title', style: { color: '#f5a623' } }, sup.name),
         h('div', { className: 'row-sub' }, t('dosage') + ': ' + sup.dosage),
-        h('div', { className: 'alert-box' }, '⚠️ ' + t(sup.warning || 'no_double_dose')),
+        h('div', { className: 'alert-box' }, t(sup.warning || 'no_double_dose')),
         h('div', { className: 'btn-group', style: { marginTop: '10px' } },
           h('button', {
             className: 'btn btn-sm ' + (takenToday ? 'btn-outline' : 'btn-green'),
             disabled: takenToday,
             onClick: function () { takeSupplement(sup.id); }
-          }, takenToday ? '✓ ' + t('taken_today') : t('take_now')))));
+          }, takenToday ? [h(Icon,{key:'ck',name:'check',size:15}), t('taken_today')] : t('take_now')))));
     })(sups[i]);
   }
 
@@ -1350,7 +1436,7 @@ function SettingsPage() {
           className: 'btn btn-sm btn-outline',
           onClick: function () { N.call('bandDisconnect', true); setTimeout(pullNative, 300); refresh(); }
         }, t('delete'))) : null,
-      h('div', { className: 'info-box' }, 'ℹ️ ' + t('band_hint'))),
+      h('div', { className: 'info-box' }, t('band_hint'))),
 
     h('div', { className: 'section-title' }, t('activity')),
     h(Card, { flat: true },
@@ -1505,7 +1591,7 @@ function SettingsPage() {
             className: 'btn btn-outline btn-block btn-sm',
             onClick: function () { setShowImport(false); }
           }, t('cancel'))),
-        h('div', { className: 'alert-box' }, '⚠️ ' + t('import_replace_warn')))) : null,
+        h('div', { className: 'alert-box' }, t('import_replace_warn')))) : null,
 
     confirmReset ? h('div', { className: 'modal-overlay', onClick: function () { setConfirmReset(false); } },
       h('div', { className: 'modal', onClick: function (e) { e.stopPropagation(); } },
@@ -1548,7 +1634,7 @@ function takeSupplement(id) {
 function ActivityView(props) {
   return h('div', { className: 'subview' },
     h('div', { className: 'subview-hdr' },
-      h('button', { className: 'back-btn', onClick: props.onClose }, '←'),
+      h('button', { className: 'back-btn', onClick: props.onClose }, h(Icon,{name:'back',size:22})),
       h('span', { className: 'subview-title' }, t('activity_hub'))),
     h('div', { className: 'subview-body' },
       h(HealthConnectCard, null),
@@ -1606,7 +1692,7 @@ function HealthConnectCard() {
 
   var r = HEALTH.lastResult;
 
-  return h(Card, { title: t('hc_title'), icon: '🔗' },
+  return h(Card, { title: t('hc_title'), icon: 'link' },
     h('div', { className: 'chip-row' },
       h('span', { className: chipClass }, label),
       h('span', { className: 'chip' },
@@ -1620,15 +1706,15 @@ function HealthConnectCard() {
       h('span', { className: 'chip ok' }, num(r.days) + ' ' + t('hc_days')),
       h('span', { className: 'chip ok' }, num(r.workouts) + ' ' + t('hc_workouts')),
       h('span', { className: 'chip ok' }, num(r.weights) + ' ' + t('hc_weights'))) : null,
-    r && r.error ? h('div', { className: 'alert-box' }, '⚠️ ' + t('hc_error') + ': ' + r.error) : null,
+    r && r.error ? h('div', { className: 'alert-box' }, t('hc_error') + ': ' + r.error) : null,
 
     // The commonest failure is not an error at all: an empty Health Connect
     // because nothing is writing Huawei data into it.
     r && r.empty ? h('div', { className: 'alert-box' },
-      h('div', { style: { fontWeight: 700, marginBottom: '6px' } }, '⚠️ ' + t('hc_empty_title')),
+      h('div', { style: { fontWeight: 700, marginBottom: '6px' } }, t('hc_empty_title')),
       h('div', null, t('hc_empty_body'))) : null,
 
-    h('div', { className: 'info-box' }, 'ℹ️ ' + t('hc_hint')));
+    h('div', { className: 'info-box' }, t('hc_hint')));
 }
 
 /** Sleep, resting heart rate and SpO2 — everything the band knows but the
@@ -1641,7 +1727,7 @@ function HealthTrendsCard() {
   var days = S.get('healthDays', []);
 
   if (!days.length) {
-    return h(Card, { title: t('health_trends'), icon: '💤' },
+    return h(Card, { title: t('health_trends'), icon: 'moon' },
       h(Empty, { text: t('no_health_data') }));
   }
 
@@ -1666,7 +1752,7 @@ function HealthTrendsCard() {
     })(recent[i]);
   }
 
-  return h(Card, { title: t('health_trends'), icon: '💤' },
+  return h(Card, { title: t('health_trends'), icon: 'moon' },
     h('div', { className: 'stats-grid' },
       h(Stat, {
         value: sleep ? fmtShort(sleep.sleepMs) : '-',
@@ -1713,7 +1799,7 @@ function PulseCard() {
     })(log[i]);
   }
 
-  return h(Card, { title: t('pulse_title'), icon: '❤️' },
+  return h(Card, { title: t('pulse_title'), icon: 'heart' },
     h('div', { className: 'pulse-big' },
       running ? '···' : (PULSE.bpm > 0 ? num(PULSE.bpm) : '--')),
     h('div', { className: 'pulse-sub' }, t('bpm')),
@@ -1735,7 +1821,7 @@ function PulseCard() {
               setTimeout(function () { pullNative(); refresh(); }, 300);
             }
           }, PULSE.bpm > 0 ? t('pulse_again') : t('pulse_start'))),
-    h('div', { className: 'info-box' }, 'ℹ️ ' + t('pulse_disclaimer')),
+    h('div', { className: 'info-box' }, t('pulse_disclaimer')),
     rows.length ? h('div', null,
       h('div', { className: 'section-title' }, t('pulse_log')), rows) : null);
 }
@@ -1777,7 +1863,7 @@ function RouteCard() {
         if (r && r !== 'ok') toast(t('err_' + r) || r);
         setTimeout(function () { pullNative(); refresh(); }, 300);
       }
-    }, '▶  ' + t('route_start'));
+    }, h(Icon,{name:'play',size:16}), t('route_start'));
   } else {
     controls = h('div', { className: 'btn-group', style: { marginTop: 0 } },
       ROUTE.paused
@@ -1812,23 +1898,23 @@ function RouteCard() {
             toast(t('deleted'));
             refresh();
           }
-        }, '🗑')));
+        }, h(Icon, { name: 'trash', size: 17 }))));
     })(routes[i]);
   }
 
-  return h(Card, { title: t('route_title'), icon: '🗺️' },
+  return h(Card, { title: t('route_title'), icon: 'route' },
     h(RouteMap, { path: ROUTE_PATH, live: tracking }),
     h('div', { className: 'stats-grid' },
       h(Stat, { value: fmtDistance(ROUTE.distanceM), label: t('route_distance'), tone: 'green' }),
       h(Stat, { value: fmtShort(ROUTE.elapsedMs), label: t('route_duration'), tone: 'gold' }),
       h(Stat, { value: fmtPace(ROUTE.paceSecPerKm), label: t('min_per_km'), tone: 'blue' })),
     h('div', { className: 'chip-row' },
-      h('span', { className: 'chip' }, '⛰️ ' + num(ROUTE.elevationM) + ' ' + t('meter')),
+      h('span', { className: 'chip' }, h(Icon,{name:'building',size:13}), num(ROUTE.elevationM) + ' ' + t('meter')),
       ROUTE.accuracy >= 0
         ? h('span', { className: 'chip' + (ROUTE.accuracy > 25 ? ' warn' : ' ok') },
-            '📡 ±' + num(ROUTE.accuracy) + ' ' + t('meter'))
+            h(Icon,{name:'sensor',size:13}), '±' + num(ROUTE.accuracy) + ' ' + t('meter'))
         : null,
-      h('span', { className: 'chip' }, '📍 ' + num(ROUTE.points))),
+      h('span', { className: 'chip' }, h(Icon,{name:'route',size:13}), num(ROUTE.points))),
     h('div', { className: 'btn-group' }, controls),
     ROUTE.points > 1 ? h('div', { className: 'btn-group' },
       h('button', {
@@ -1839,7 +1925,7 @@ function RouteCard() {
         className: 'btn btn-sm btn-outline',
         onClick: function () { N.call('routeExportGpx', t('route')); }
       }, t('route_export'))) : null,
-    h('div', { className: 'info-box' }, 'ℹ️ ' + t('route_hint')),
+    h('div', { className: 'info-box' }, t('route_hint')),
     histRows.length ? h('div', null,
       h('div', { className: 'section-title' }, t('route_history')), histRows) : null);
 }
@@ -1875,11 +1961,11 @@ function SensorInventoryCard() {
     (function (k) {
       var on = !!INVENTORY[k];
       cells.push(h('div', { key: 'sn' + k, className: 'sensor-cell' + (on ? '' : ' off') },
-        h('span', null, on ? '✅' : '—'),
+        h(Icon, { name: on ? 'check' : 'close', size: 14 }),
         h('span', null, t('sensor_' + k))));
     })(keys[i]);
   }
-  return h(Card, { title: t('phone_sensors'), icon: '📡' },
+  return h(Card, { title: t('phone_sensors'), icon: 'sensor' },
     h('div', { className: 'stats-grid' },
       h(Stat, { value: num(SENSORS.steps || 0), label: t('steps_label'), tone: 'green' }),
       h(Stat, { value: num(SENSORS.floors || 0), label: t('floors'), tone: 'gold' }),
@@ -1912,7 +1998,7 @@ function CheckInCard() {
 
   var trend = checkinTrend(7);
 
-  return h(Card, { title: t('checkin'), icon: '🫀' },
+  return h(Card, { title: t('checkin'), icon: 'heart' },
     h(Scale, { name: 'mood', label: t('mood'), value: mood, icons: MOOD_ICONS, onChange: setMood }),
     h(Scale, { name: 'energy', label: t('energy'), value: energy, icons: LEVEL_ICONS, onChange: setEnergy }),
     h(Scale, { name: 'hunger', label: t('hunger'), value: hunger, icons: LEVEL_ICONS, onChange: setHunger }),
@@ -1920,8 +2006,8 @@ function CheckInCard() {
       h('button', { className: 'btn btn-sm btn-primary', onClick: save }, t('checkin_save'))),
     trend ? h('div', { className: 'chip-row' },
       h('span', { className: 'chip' }, '😊 ' + num(trend.mood.toFixed(1))),
-      h('span', { className: 'chip' }, '⚡ ' + num(trend.energy.toFixed(1))),
-      h('span', { className: 'chip' }, '🍽️ ' + num(trend.hunger.toFixed(1))),
+      h('span', { className: 'chip' }, h(Icon,{name:'activity',size:13}), num(trend.energy.toFixed(1))),
+      h('span', { className: 'chip' }, h(Icon,{name:'meals',size:13}), num(trend.hunger.toFixed(1))),
       h('span', { className: 'chip' }, num(trend.count) + ' × ' + t('checkin'))) : null);
 }
 
@@ -1993,11 +2079,11 @@ function ManualMealModal(props) {
         h('button', {
           className: 'btn btn-sm btn-outline',
           onClick: function () { grabPhoto('camera'); }
-        }, '📷 ' + t('take_photo')),
+        }, h(Icon,{name:'camera',size:16}), t('take_photo')),
         h('button', {
           className: 'btn btn-sm btn-outline',
           onClick: function () { grabPhoto('gallery'); }
-        }, '🖼️ ' + t('from_gallery'))),
+        }, h(Icon,{name:'image',size:16}), t('from_gallery'))),
       thumb ? h('img', { className: 'photo-preview', src: thumb, alt: '' }) : null,
       thumb ? h('div', { className: 'btn-group' },
         h('button', {
@@ -2013,16 +2099,156 @@ function ManualMealModal(props) {
 }
 
 /* ---------------------------------------------------------------------
+ * First-run onboarding
+ *
+ * Replaces dropping the user straight into a settings-heavy home screen.
+ * Four steps: the medical notice, who they are, how they fast, and the
+ * permissions — each explaining why it is being asked for.
+ * ------------------------------------------------------------------- */
+
+function Onboarding(props) {
+  var st = useState(0); var step = st[0], setStep = st[1];
+  var p = S.get('profile', {});
+
+  function setProfile(key, val) {
+    S.set('profile.' + key, val);
+    if (key === 'weight') N.call('setWeight', parseFloat(val) || 70);
+    refresh();
+  }
+
+  function finish() {
+    S.set('settings.onboarded', true);
+    S.set('settings.disclaimerSeen', true);
+    props.onDone();
+  }
+
+  var body;
+  if (step === 0) {
+    body = h('div', null,
+      h('div', { className: 'onb-hero' }, h(Icon, { name: 'timer', size: 76, weight: 1.3 })),
+      h('div', { className: 'onb-title' }, t('onb_w_title')),
+      h('div', { className: 'onb-desc' }, t('onb_w_desc')),
+      h('div', { className: 'alert-box' },
+        h('div', { style: { fontWeight: 700, marginBottom: '6px' } }, t('disclaimer')),
+        h('div', null, t('disclaimer_text'))));
+  } else if (step === 1) {
+    body = h('div', null,
+      h('div', { className: 'onb-title' }, t('onb_p_title')),
+      h('div', { className: 'onb-desc' }, t('onb_p_desc')),
+      h('div', { style: { height: '14px' } }),
+      h(Card, { flat: true },
+        h(SettingRow, { label: t('name') },
+          h(TextField, { value: p.name || '', onCommit: function (v) { setProfile('name', v); } })),
+        h(SettingRow, { label: t('weight') },
+          h(NumField, { value: p.weight, min: 25, max: 350, onCommit: function (v) { setProfile('weight', v); } })),
+        h(SettingRow, { label: t('height') },
+          h(NumField, { value: p.height, min: 90, max: 250, onCommit: function (v) { setProfile('height', v); } })),
+        h(SettingRow, { label: t('age') },
+          h(NumField, { value: p.age, min: 10, max: 110, onCommit: function (v) { setProfile('age', v); } })),
+        h(SettingRow, { label: t('gender') },
+          h('select', {
+            className: 'setting-input', value: p.gender,
+            onChange: function (e) { setProfile('gender', e.target.value); }
+          },
+            h('option', { value: 'male' }, t('male')),
+            h('option', { value: 'female' }, t('female'))))));
+  } else if (step === 2) {
+    var goalBtns = [];
+    var current = S.get('settings.defaultGoal', 20);
+    for (var i = 0; i < GOAL_OPTIONS.length; i++) {
+      (function (g) {
+        goalBtns.push(h('button', {
+          key: 'og' + g,
+          className: 'goal-btn' + (current === g ? ' active' : ''),
+          onClick: function () {
+            S.set('settings.defaultGoal', g);
+            S.set('currentFast.goal', g);
+            refresh();
+          }
+        }, num(g) + (isRTL() ? 'س' : 'h')));
+      })(GOAL_OPTIONS[i]);
+    }
+    body = h('div', null,
+      h('div', { className: 'onb-title' }, t('onb_g_title')),
+      h('div', { className: 'onb-desc' }, t('onb_g_desc')),
+      h('div', { style: { height: '14px' } }),
+      h(Card, { flat: true },
+        h('div', { className: 'section-title', style: { marginTop: 0 } }, t('fasting_goal')),
+        h('div', { className: 'goal-selector' }, goalBtns),
+        h('div', { style: { height: '14px' } }),
+        h(SettingRow, { label: t('window_start') },
+          h(TextField, {
+            value: S.get('settings.windowStart', '17:00'), placeholder: '17:00',
+            onCommit: function (v) { S.set('settings.windowStart', v); refresh(); }
+          })),
+        h(SettingRow, { label: t('window_end') },
+          h(TextField, {
+            value: S.get('settings.windowEnd', '21:00'), placeholder: '21:00',
+            onCommit: function (v) { S.set('settings.windowEnd', v); refresh(); }
+          })),
+        h(SettingRow, { label: t('wake_time') },
+          h(TextField, {
+            value: S.get('settings.wakeTime', '09:00'), placeholder: '09:00',
+            onCommit: function (v) { S.set('settings.wakeTime', v); refresh(); }
+          }))));
+  } else {
+    body = h('div', null,
+      h('div', { className: 'onb-title' }, t('onb_perm_title')),
+      h('div', { className: 'onb-desc' }, t('onb_perm_desc')),
+      h('div', { style: { height: '14px' } }),
+      h(Card, { flat: true },
+        h(SettingRow, { label: t('permissions'), hint: t('perm_activity') },
+          h('button', {
+            className: 'btn btn-sm btn-primary',
+            onClick: function () { N.call('requestPerms'); }
+          }, t('grant_permissions'))),
+        h(SettingRow, { label: t('onb_battery'), hint: t('onb_battery_why') },
+          h('button', {
+            className: 'btn btn-sm btn-outline',
+            onClick: function () { N.call('openBatterySettings'); }
+          }, t('confirm')))),
+      h('div', { className: 'info-box' }, t('band_hint')),
+      h('div', { style: { height: '10px' } }),
+      h('div', { className: 'onb-title', style: { fontSize: '19px' } }, t('onb_done_title')),
+      h('div', { className: 'onb-desc' }, t('onb_done_desc')));
+  }
+
+  var dots = [];
+  for (var d = 0; d < 4; d++) {
+    dots.push(h('span', { key: 'dot' + d, className: 'onb-dot' + (d === step ? ' on' : '') }));
+  }
+
+  return h('div', { className: 'onb' },
+    h('div', { className: 'onb-body' },
+      h('div', { className: 'onb-step' },
+        t('onb_step') + ' ' + num(step + 1) + ' ' + t('onb_of') + ' ' + num(4)),
+      body),
+    h('div', { className: 'onb-dots' }, dots),
+    h('div', { style: { display: 'flex', gap: '8px' } },
+      step > 0 ? h('button', {
+        className: 'btn btn-outline btn-sm',
+        onClick: function () { setStep(step - 1); }
+      }, t('onb_back')) : h('button', {
+        className: 'btn btn-ghost btn-sm',
+        onClick: finish
+      }, t('onb_skip')),
+      h('button', {
+        className: 'btn btn-primary btn-block',
+        onClick: function () { if (step < 3) setStep(step + 1); else finish(); }
+      }, step < 3 ? t('onb_next') : t('onb_start'))));
+}
+
+/* ---------------------------------------------------------------------
  * Shell
  * ------------------------------------------------------------------- */
 
 var TABS = [
-  { id: 'home', icon: '⏱️', label: 'home' },
-  { id: 'meals', icon: '🍽️', label: 'meals' },
-  { id: 'liquids', icon: '💧', label: 'liquids' },
-  { id: 'progress', icon: '📈', label: 'progress' },
-  { id: 'coach', icon: '🧠', label: 'coach' },
-  { id: 'settings', icon: '⚙️', label: 'settings' }
+  { id: 'home', icon: 'timer', label: 'home' },
+  { id: 'meals', icon: 'meals', label: 'meals' },
+  { id: 'liquids', icon: 'droplet', label: 'liquids' },
+  { id: 'progress', icon: 'chart', label: 'progress' },
+  { id: 'coach', icon: 'coach', label: 'coach' },
+  { id: 'settings', icon: 'settings', label: 'settings' }
 ];
 
 var _setTab = null;
@@ -2036,8 +2262,9 @@ function App() {
   var vw = useState(null); var view = vw[0]; _setView = vw[1];
   _curTab = tab;
   _curView = view;
-  var dc = useState(!S.get('settings.disclaimerSeen', false));
-  var showDisclaimer = dc[0], setShowDisclaimer = dc[1];
+  // Existing installs already accepted the notice, so they skip onboarding.
+  var dc = useState(!S.get('settings.onboarded', false) && !S.get('settings.disclaimerSeen', false));
+  var showOnboarding = dc[0], setShowOnboarding = dc[1];
 
   // 1 Hz tick while a fast runs; idle otherwise so we do not spin for nothing.
   useEffect(function () {
@@ -2075,7 +2302,7 @@ function App() {
         className: 'bnav-item' + (tab === item.id ? ' active' : ''),
         onClick: function () { _setTab(item.id); }
       },
-        h('span', { className: 'bnav-icon' }, item.icon),
+        h('span', { className: 'bnav-ico' }, h(Icon, { name: item.icon, size: 21 })),
         h('span', null, t(item.label))));
     })(TABS[i]);
   }
@@ -2084,10 +2311,11 @@ function App() {
   var headerRight = [];
   if (cf.active) {
     headerRight.push(h('span', { key: 'hf', className: 'hdr-chip' },
-      '⏱ ' + fmtShort(fastElapsed(cf))));
+      h(Icon, { name: 'timer', size: 13 }), fmtShort(fastElapsed(cf))));
   }
   if (BAND.status === 'connected' && BAND.hr > 0) {
-    headerRight.push(h('span', { key: 'hb', className: 'hdr-chip' }, '❤️ ' + num(BAND.hr)));
+    headerRight.push(h('span', { key: 'hb', className: 'hdr-chip' },
+      h(Icon, { name: 'heart', size: 13, color: '#e94560' }), num(BAND.hr)));
   }
 
   return h(React.Fragment, null,
@@ -2101,18 +2329,9 @@ function App() {
       ? h(ActivityView, { onClose: function () { _setView(null); } })
       : null,
 
-    showDisclaimer ? h('div', { className: 'modal-overlay' },
-      h('div', { className: 'modal' },
-        h('h3', null, '⚕️ ' + t('disclaimer')),
-        h('div', { className: 'tip-text' }, t('disclaimer_text')),
-        h('div', { className: 'modal-btns' },
-          h('button', {
-            className: 'btn btn-primary btn-sm',
-            onClick: function () {
-              S.set('settings.disclaimerSeen', true);
-              setShowDisclaimer(false);
-            }
-          }, t('understood'))))) : null);
+    showOnboarding ? h(Onboarding, {
+      onDone: function () { setShowOnboarding(false); }
+    }) : null);
 }
 
 /**

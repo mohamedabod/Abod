@@ -1,0 +1,6 @@
+Cairo — SIL Open Font License 1.1
+Copyright (c) The Cairo Project Authors (https://github.com/Gue3bara/Cairo)
+
+Bundled here (Arabic and Latin subsets, variable weight) so the app renders
+Arabic properly with no network access at runtime.
+Full licence: https://openfontlicense.org/
