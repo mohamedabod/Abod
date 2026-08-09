@@ -6,7 +6,7 @@
  * no destructuring, no classes, no async/await. See README.
  * ===================================================================== */
 
-var APP_VERSION = '4.2';
+var APP_VERSION = '5.0.1';
 var STORE_KEY = 'sayem_v4';
 var LEGACY_KEY = 'sayem_v3';
 
@@ -533,6 +533,10 @@ var LANG = {
     spo2: 'الأكسجين', spo2_avg: 'متوسط الأكسجين', health_trends: 'مؤشراتك',
     no_health_data: 'مفيش بيانات — اربط Health Connect وزامن',
     hc_error: 'المزامنة فشلت',
+    hc_empty_short: 'Health Connect فاضية — محتاج تطبيق جسر',
+    hc_empty_title: 'الاتصال تمام، بس الخزنة فاضية',
+    hc_empty_body: 'التطبيق قرا من Health Connect ومالقاش أي بيانات. ده مش عطل — ده معناه إن مفيش أي تطبيق بيكتب بيانات هواوي جواها. تطبيق Huawei Health نفسه مش بيدعم Health Connect ومش هيظهر في قايمة الأذونات أبداً. محتاج تطبيق جسر (زي Health Sync) تربطه: Huawei Health ← Health Connect، وتسيبه يزامن، وبعدها ارجع اضغط زامن هنا. للتأكد: افتح Health Connect ← Browse data وشوف فيه بيانات فعلاً.',
+
 
 
     workouts: 'التمارين', add_workout: 'سجّل تمرين', workout_type: 'النوع',
@@ -742,6 +746,10 @@ var LANG = {
     spo2: 'Oxygen', spo2_avg: 'Average SpO2', health_trends: 'Your metrics',
     no_health_data: 'No data — connect Health Connect and sync',
     hc_error: 'Sync failed',
+    hc_empty_short: 'Health Connect is empty — a bridge app is needed',
+    hc_empty_title: 'Connected, but the store is empty',
+    hc_empty_body: 'The read succeeded and Health Connect returned nothing. That is not a fault here — it means no app is writing Huawei data into it. Huawei Health does not support Health Connect and will never appear in its permission list. Install a bridge app (such as Health Sync), point it Huawei Health -> Health Connect, let it sync, then press sync here. To confirm: open Health Connect > Browse data and check that anything is stored.',
+
 
 
     workouts: 'Workouts', add_workout: 'Log a workout', workout_type: 'Type',
@@ -1778,6 +1786,23 @@ function applyHealthSync(payload) {
 
   S.set('health', m(S.get('health', {}), { lastSync: payload.syncedAt || Date.now() }));
   return res;
+}
+
+/**
+ * True when a sync succeeded but Health Connect held nothing at all.
+ *
+ * This is the normal state for a Huawei user who has not installed a bridge
+ * app: permissions are granted, the read works, and the store is simply
+ * empty. Reporting "0 days" would read as a bug in this app instead of a
+ * missing data source.
+ */
+function healthPayloadEmpty(payload) {
+  if (!payload || !payload.ok) return false;
+  var counts = [payload.days, payload.spo2, payload.weights, payload.bodyFat, payload.workouts];
+  for (var i = 0; i < counts.length; i++) {
+    if (counts[i] && counts[i].length) return false;
+  }
+  return true;
 }
 
 /** The most recent day that actually carries a sleep figure. */

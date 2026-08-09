@@ -53,9 +53,14 @@ window.__onNative = function (type, data) {
   } else if (type === 'health') {
     HEALTH.syncing = false;
     HEALTH.lastResult = applyHealthSync(data);
+    HEALTH.lastResult.empty = healthPayloadEmpty(data);
     recomputeStats();
     if (HEALTH.lastResult.error) {
       toast(t('hc_error') + ': ' + HEALTH.lastResult.error);
+    } else if (HEALTH.lastResult.empty) {
+      // Connected and permitted, but nothing is in the store: the user has
+      // no bridge app writing Huawei data into Health Connect yet.
+      toast(t('hc_empty_short'));
     } else {
       toast(t('hc_result') + ' — '
         + num(HEALTH.lastResult.days) + ' ' + t('hc_days') + ' · '
@@ -1611,11 +1616,17 @@ function HealthConnectCard() {
 
     actions.length ? h('div', { className: 'btn-group' }, actions) : null,
 
-    r && !r.error ? h('div', { className: 'chip-row' },
+    r && !r.error && !r.empty ? h('div', { className: 'chip-row' },
       h('span', { className: 'chip ok' }, num(r.days) + ' ' + t('hc_days')),
       h('span', { className: 'chip ok' }, num(r.workouts) + ' ' + t('hc_workouts')),
       h('span', { className: 'chip ok' }, num(r.weights) + ' ' + t('hc_weights'))) : null,
     r && r.error ? h('div', { className: 'alert-box' }, '⚠️ ' + t('hc_error') + ': ' + r.error) : null,
+
+    // The commonest failure is not an error at all: an empty Health Connect
+    // because nothing is writing Huawei data into it.
+    r && r.empty ? h('div', { className: 'alert-box' },
+      h('div', { style: { fontWeight: 700, marginBottom: '6px' } }, '⚠️ ' + t('hc_empty_title')),
+      h('div', null, t('hc_empty_body'))) : null,
 
     h('div', { className: 'info-box' }, 'ℹ️ ' + t('hc_hint')));
 }
