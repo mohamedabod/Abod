@@ -6,7 +6,7 @@
  * no destructuring, no classes, no async/await. See README.
  * ===================================================================== */
 
-var APP_VERSION = '5.2';
+var APP_VERSION = '6.0';
 var STORE_KEY = 'sayem_v4';
 var LEGACY_KEY = 'sayem_v3';
 
@@ -73,6 +73,8 @@ var S = {
       bodyLog: [],
       healthDays: [],
       health: { lastSync: 0, status: '', granted: 0 },
+      electrolytes: { date: '', sodium: 0, potassium: 0, magnesium: 0 },
+      backup: { lastAt: 0, lastPath: '' },
       water: { date: '', ml: 0, target: 3000 },
       profile: {
         // age stays null until the user sets it: a guessed age silently
@@ -96,6 +98,9 @@ var S = {
         defaultGoal: 20,
         disclaimerSeen: false,
         onboarded: false,
+        plan: 'custom',
+        proteinPerKgLean: 2.0,
+        autoBackup: true,
         // OMAD-shaped defaults: one evening meal, which is the pattern the
         // logged history actually shows.
         windowStart: '17:00',
@@ -198,6 +203,8 @@ var S = {
     if (!d.bodyLog) d.bodyLog = [];
     if (!d.healthDays) d.healthDays = [];
     if (!d.health) d.health = def.health;
+    if (!d.electrolytes) d.electrolytes = def.electrolytes;
+    if (!d.backup) d.backup = def.backup;
     if (!d.supplements) d.supplements = def.supplements;
     if (!d.profile.weightLog) d.profile.weightLog = [];
     return d;
@@ -539,6 +546,36 @@ var LANG = {
     spo2: 'الأكسجين', spo2_avg: 'متوسط الأكسجين', health_trends: 'مؤشراتك',
     no_health_data: 'مفيش بيانات — اربط Health Connect وزامن',
     hc_error: 'المزامنة فشلت',
+    protein_target: 'هدف البروتين', protein_left: 'فاضل', protein_done: 'وصلت لهدفك',
+    protein_basis_lean: 'محسوب من كتلتك الصافية', protein_basis_weight: 'محسوب من وزنك',
+    protein_hint: 'مع وجبة واحدة في اليوم، البروتين أصعب رقم توصله — وهو اللي بيحمي عضلك.',
+    per_kg: 'جم/كجم',
+
+    electrolytes: 'الأملاح', sodium: 'صوديوم', potassium: 'بوتاسيوم', magnesium: 'مغنيسيوم',
+    mg: 'مجم', add_source: 'أضف مصدر', electrolytes_reset: 'تصفير',
+    electrolytes_why: 'في الصيام الممتد الأملاح أهم من السعرات. أغلب الصداع والدوخة سببها صوديوم ناقص مش أكل ناقص.',
+
+    plan: 'خطة الصيام', plan_adherence: 'الالتزام', plan_days: 'أيام الصيام',
+    plan_none: 'مفيش خطة — الأهداف يدوية', plan_last14: 'آخر ١٤ يوم',
+    plan_applied: 'الخطة اتفعّلت',
+
+    week_compare: 'الأسبوع ده مقابل اللي فاته', vs_last_week: 'عن الأسبوع اللي فات',
+    no_prev_week: 'محتاج أسبوع كامل قبل ما نقارن',
+    fast_hours: 'ساعات الصيام', avg_fast: 'متوسط الصيام', avg_steps: 'متوسط الخطوات',
+
+    hr_vs_fast: 'النبض مقابل الصيام',
+    hr_src_resting: 'نبض الراحة اليومي', hr_src_session: 'متوسط نبض كل جلسة',
+    hr_vs_fast_hint: 'كل نقطة يوم: المحور الأفقي ساعات صيامك، والرأسي نبضك. لو النبض بيقل مع الساعات، ده تأقلم كويس. لو بيزيد فجأة، غالباً أملاح أو إجهاد.',
+    no_hr_data: 'مفيش بيانات نبض كفاية لسه',
+
+    sleep_est: 'نوم تقديري', sleep_from_phone: 'من الموبايل', sleep_from_hc: 'من السوار',
+    sleep_est_hint: 'تقدير من سكون الموبايل والإضاءة. مش دقة السوار، بس بيسد الفجوة.',
+
+    widget: 'ويدجت الشاشة الرئيسية',
+    widget_hint: 'اضغط مطوّلاً على الشاشة الرئيسية ← ويدجتس ← عبود صايم.',
+    auto_backup: 'نسخة احتياطية تلقائية', auto_backup_hint: 'ملف JSON كل أسبوع في مساحة التطبيق',
+    last_backup: 'آخر نسخة',
+
     reminders: 'التنبيهات', rem_water: 'تذكير بالمياه', rem_water_hint: 'كل ساعتين أثناء الصيام',
     rem_motivation: 'رسايل تحفيز', rem_motivation_hint: 'عند ٢٥٪ و٥٠٪ و٧٥٪ من الهدف، ولما تكسر رقمك',
     rem_window: 'نافذة الأكل', rem_window_hint: 'لما تفتح، وقبل ما تقفل بنص ساعة',
@@ -780,6 +817,36 @@ var LANG = {
     spo2: 'Oxygen', spo2_avg: 'Average SpO2', health_trends: 'Your metrics',
     no_health_data: 'No data — connect Health Connect and sync',
     hc_error: 'Sync failed',
+    protein_target: 'Protein target', protein_left: 'left', protein_done: 'Target reached',
+    protein_basis_lean: 'from your lean mass', protein_basis_weight: 'from your weight',
+    protein_hint: 'On one meal a day, protein is the hardest number to reach — and it is what protects muscle.',
+    per_kg: 'g/kg',
+
+    electrolytes: 'Electrolytes', sodium: 'Sodium', potassium: 'Potassium', magnesium: 'Magnesium',
+    mg: 'mg', add_source: 'Add a source', electrolytes_reset: 'Reset',
+    electrolytes_why: 'On an extended fast electrolytes matter more than calories. Most headaches and dizziness are low sodium, not low food.',
+
+    plan: 'Fasting plan', plan_adherence: 'Adherence', plan_days: 'Fasting days',
+    plan_none: 'No plan — goals are manual', plan_last14: 'last 14 days',
+    plan_applied: 'Plan applied',
+
+    week_compare: 'This week vs last', vs_last_week: 'vs last week',
+    no_prev_week: 'Needs a full previous week to compare',
+    fast_hours: 'Fasted hours', avg_fast: 'Average fast', avg_steps: 'Average steps',
+
+    hr_vs_fast: 'Heart rate vs fasting',
+    hr_src_resting: 'daily resting HR', hr_src_session: 'per-session average HR',
+    hr_vs_fast_hint: 'Each dot is a day: fasted hours across, heart rate up. Falling HR as hours rise means good adaptation. A sudden rise usually means electrolytes or strain.',
+    no_hr_data: 'Not enough heart-rate data yet',
+
+    sleep_est: 'Estimated sleep', sleep_from_phone: 'from phone', sleep_from_hc: 'from band',
+    sleep_est_hint: 'Estimated from phone stillness and light. Not band accuracy, but it fills the gap.',
+
+    widget: 'Home screen widget',
+    widget_hint: 'Long-press the home screen > Widgets > Aboud Sayem.',
+    auto_backup: 'Automatic backup', auto_backup_hint: 'A JSON file weekly in app storage',
+    last_backup: 'Last backup',
+
     reminders: 'Reminders', rem_water: 'Water reminder', rem_water_hint: 'Every 2 hours while fasting',
     rem_motivation: 'Encouragement', rem_motivation_hint: 'At 25%, 50%, 75% of the goal, and on a new record',
     rem_window: 'Eating window', rem_window_hint: 'When it opens, and 30 minutes before it closes',
@@ -976,7 +1043,7 @@ function calcBMRLean(leanKg) {
 
 /** Best available resting-energy estimate, with its source named. */
 function bestBMR(profile) {
-  var body = latestBody();
+  var body = latestBodyWith('muscleKg');
   if (body && body.muscleKg) {
     return { value: Math.round(calcBMRLean(body.muscleKg)), source: 'lean' };
   }
@@ -1005,6 +1072,22 @@ function bestTDEE(profile) {
 function latestBody() {
   var log = S.get('bodyLog', []);
   return log.length ? log[log.length - 1] : null;
+}
+
+/**
+ * Most recent entry that actually carries `field`.
+ *
+ * Scans arrive from different sources: a full InBody has muscle mass, a scale
+ * reading synced through Health Connect has only weight. Reading the newest
+ * entry alone meant one scale reading silently discarded a known lean mass,
+ * downgrading both the protein target and the BMR to weaker formulas.
+ */
+function latestBodyWith(field) {
+  var log = S.get('bodyLog', []);
+  for (var i = log.length - 1; i >= 0; i--) {
+    if (log[i][field] !== null && log[i][field] !== undefined) return log[i];
+  }
+  return null;
 }
 
 /**
@@ -1712,6 +1795,296 @@ function checkinTrend(n) {
     energy: energy / take.length,
     hunger: hunger / take.length
   };
+}
+
+/* ---------------------------------------------------------------------
+ * Protein target
+ * ------------------------------------------------------------------- */
+
+/**
+ * Daily protein target.
+ *
+ * Lean mass is the better basis when a body scan exists — protein needs track
+ * muscle, not total weight, and using bodyweight overshoots at higher body fat.
+ * OMAD makes this the hardest number to hit, which is why it gets its own
+ * tracker rather than sitting inside a macro row.
+ * @return { grams, basis, perKg }
+ */
+function proteinTarget() {
+  var perKg = parseFloat(S.get('settings.proteinPerKgLean', 2.0)) || 2.0;
+  var body = latestBodyWith('muscleKg');
+  if (body && body.muscleKg) {
+    return { grams: Math.round(body.muscleKg * perKg), basis: 'lean', perKg: perKg };
+  }
+  var kg = S.get('profile.weight', 0);
+  if (!kg) return { grams: 0, basis: 'none', perKg: perKg };
+  // Without a scan, 1.6 g/kg of bodyweight is the conservative equivalent.
+  return { grams: Math.round(kg * 1.6), basis: 'weight', perKg: 1.6 };
+}
+
+/** Today's totals across logged meals, with unknown macros counted separately. */
+function todayMacros() {
+  var todayKey = dayKey(Date.now());
+  var all = S.get('meals', []);
+  var tot = { cal: 0, p: 0, c: 0, f: 0, unknown: 0, count: 0 };
+  for (var i = 0; i < all.length; i++) {
+    var it = all[i];
+    if (dayKey(it.ts) !== todayKey) continue;
+    var mult = it.portions || 1;
+    tot.count++;
+    if (it.cal === null || it.cal === undefined) tot.unknown++;
+    tot.cal += (it.cal || 0) * mult;
+    tot.p += (it.p || 0) * mult;
+    tot.c += (it.c || 0) * mult;
+    tot.f += (it.f || 0) * mult;
+  }
+  return tot;
+}
+
+/* ---------------------------------------------------------------------
+ * Electrolytes
+ * ------------------------------------------------------------------- */
+
+/** Daily targets in mg. Higher than ordinary guidance, by design: an extended
+ *  fast excretes sodium fast, and that is what causes the headaches. */
+var ELECTROLYTE_TARGETS = { sodium: 4000, potassium: 2000, magnesium: 350 };
+
+var ELECTROLYTE_SOURCES = [
+  { k: 'salt_quarter', ar: 'ربع ملعقة ملح', en: '1/4 tsp salt', sodium: 575, potassium: 0, magnesium: 0 },
+  { k: 'salt_half', ar: 'نص ملعقة ملح', en: '1/2 tsp salt', sodium: 1150, potassium: 0, magnesium: 0 },
+  { k: 'lite_salt', ar: 'ملعقة ملح بوتاسيوم', en: '1 tsp potassium salt', sodium: 300, potassium: 900, magnesium: 0 },
+  { k: 'broth', ar: 'كوب مرق عظام', en: 'Cup of bone broth', sodium: 600, potassium: 250, magnesium: 15 },
+  { k: 'mag_supp', ar: 'كبسولة مغنيسيوم', en: 'Magnesium capsule', sodium: 0, potassium: 0, magnesium: 200 },
+  { k: 'electrolyte_mix', ar: 'كيس إلكتروليت', en: 'Electrolyte sachet', sodium: 1000, potassium: 200, magnesium: 60 }
+];
+
+function electrolytesToday() {
+  var e = S.get('electrolytes', {});
+  var today = dayKey(Date.now());
+  if (e.date !== today) {
+    e = { date: today, sodium: 0, potassium: 0, magnesium: 0 };
+    S.set('electrolytes', e);
+  }
+  return e;
+}
+
+function addElectrolytes(src) {
+  var e = electrolytesToday();
+  e.sodium += src.sodium || 0;
+  e.potassium += src.potassium || 0;
+  e.magnesium += src.magnesium || 0;
+  S.set('electrolytes', e);
+}
+
+/* ---------------------------------------------------------------------
+ * Fasting plans
+ * ------------------------------------------------------------------- */
+
+var FASTING_PLANS = [
+  { k: 'custom', ar: 'مخصص', en: 'Custom', goal: 0, window: null, days: null },
+  { k: '16_8', ar: '16:8', en: '16:8', goal: 16, window: ['13:00', '21:00'], days: null },
+  { k: '18_6', ar: '18:6', en: '18:6', goal: 18, window: ['15:00', '21:00'], days: null },
+  { k: '20_4', ar: '20:4', en: '20:4', goal: 20, window: ['17:00', '21:00'], days: null },
+  { k: 'omad', ar: 'وجبة واحدة', en: 'OMAD', goal: 23, window: ['18:00', '19:00'], days: null },
+  // 0 = Sunday. Two fasting days a week, the classic 5:2 split.
+  { k: '5_2', ar: '5:2', en: '5:2', goal: 24, window: ['18:00', '21:00'], days: [1, 4] },
+  { k: 'adf', ar: 'يوم بيوم', en: 'Alternate day', goal: 36, window: ['18:00', '21:00'], days: [0, 2, 4] }
+];
+
+function planByKey(k) {
+  for (var i = 0; i < FASTING_PLANS.length; i++) {
+    if (FASTING_PLANS[i].k === k) return FASTING_PLANS[i];
+  }
+  return FASTING_PLANS[0];
+}
+
+function applyPlan(k) {
+  var p = planByKey(k);
+  S.set('settings.plan', k);
+  if (p.goal) {
+    S.set('settings.defaultGoal', p.goal);
+    S.set('currentFast.goal', p.goal);
+  }
+  if (p.window) {
+    S.set('settings.windowStart', p.window[0]);
+    S.set('settings.windowEnd', p.window[1]);
+  }
+  return p;
+}
+
+/**
+ * Adherence over the last 14 days: of the days the plan asks you to fast, how
+ * many actually have a completed fast. A plan with no fixed days counts every
+ * day as a target.
+ */
+function planAdherence() {
+  var p = planByKey(S.get('settings.plan', 'custom'));
+  if (p.k === 'custom') return null;
+  var hist = S.get('history', []);
+  var done = {};
+  for (var i = 0; i < hist.length; i++) {
+    if (hist[i].completed) done[dayKey(hist[i].end || hist[i].start)] = true;
+  }
+  var target = 0, hit = 0;
+  for (var d = 13; d >= 0; d--) {
+    var ts = startOfDay(Date.now() - d * 86400000);
+    var dow = new Date(ts).getDay();
+    if (p.days && p.days.indexOf(dow) < 0) continue;
+    target++;
+    if (done[dayKey(ts)]) hit++;
+  }
+  if (!target) return null;
+  return { plan: p, target: target, hit: hit, pct: Math.round(hit / target * 100) };
+}
+
+/* ---------------------------------------------------------------------
+ * Week over week
+ * ------------------------------------------------------------------- */
+
+function sumRange(fromTs, toTs) {
+  var hist = S.get('history', []);
+  var days = S.get('healthDays', []);
+  var out = { fastMs: 0, sessions: 0, steps: 0, stepDays: 0, sleepMs: 0, sleepDays: 0 };
+  var i;
+  for (i = 0; i < hist.length; i++) {
+    var end = hist[i].end || hist[i].start;
+    if (end < fromTs || end >= toTs) continue;
+    out.fastMs += hist[i].duration || 0;
+    out.sessions++;
+  }
+  for (i = 0; i < days.length; i++) {
+    var ts = new Date(days[i].date + 'T12:00:00').getTime();
+    if (isNaN(ts) || ts < fromTs || ts >= toTs) continue;
+    if (days[i].steps) { out.steps += days[i].steps; out.stepDays++; }
+    if (days[i].sleepMs) { out.sleepMs += days[i].sleepMs; out.sleepDays++; }
+  }
+  return out;
+}
+
+/** This week against the one before it, as deltas rather than raw numbers. */
+function weekCompare() {
+  var now = Date.now();
+  var weekMs = 7 * 86400000;
+  var cur = sumRange(now - weekMs, now + 1);
+  var prev = sumRange(now - 2 * weekMs, now - weekMs);
+
+  function avg(total, n) { return n ? total / n : 0; }
+
+  var weights = S.get('profile.weightLog', []);
+  var wCur = null, wPrev = null;
+  for (var i = weights.length - 1; i >= 0; i--) {
+    if (wCur === null && weights[i].ts >= now - weekMs) wCur = weights[i].kg;
+    if (wPrev === null && weights[i].ts < now - weekMs) { wPrev = weights[i].kg; break; }
+  }
+
+  return {
+    fastHours: { cur: cur.fastMs / 3600000, prev: prev.fastMs / 3600000 },
+    sessions: { cur: cur.sessions, prev: prev.sessions },
+    avgFast: { cur: avg(cur.fastMs, cur.sessions), prev: avg(prev.fastMs, prev.sessions) },
+    steps: { cur: avg(cur.steps, cur.stepDays), prev: avg(prev.steps, prev.stepDays) },
+    sleep: { cur: avg(cur.sleepMs, cur.sleepDays), prev: avg(prev.sleepMs, prev.sleepDays) },
+    weight: { cur: wCur, prev: wPrev },
+    hasPrev: prev.sessions > 0 || prev.stepDays > 0
+  };
+}
+
+/* ---------------------------------------------------------------------
+ * Heart rate against fasting
+ * ------------------------------------------------------------------- */
+
+/**
+ * Pairs each day's resting heart rate with how many hours were fasted that
+ * day. Falls back to per-session average HR when no resting data exists, so
+ * the chart still says something for a band-only user.
+ * @return { points: [{h, bpm, date}], source }
+ */
+function hrVsFasting() {
+  var days = S.get('healthDays', []);
+  var hist = S.get('history', []);
+  var byDay = {};
+  var i;
+  for (i = 0; i < hist.length; i++) {
+    var k = dayKey(hist[i].end || hist[i].start);
+    byDay[k] = (byDay[k] || 0) + (hist[i].duration || 0) / 3600000;
+  }
+
+  var points = [];
+  for (i = 0; i < days.length; i++) {
+    if (!days[i].restingHr) continue;
+    var iso = days[i].date;
+    var parts = iso.split('-');
+    var key = parts[0] + '-' + pad2(parseInt(parts[1], 10)) + '-' + pad2(parseInt(parts[2], 10));
+    points.push({ h: byDay[key] || 0, bpm: days[i].restingHr, date: iso });
+  }
+  if (points.length >= 3) return { points: points, source: 'resting' };
+
+  points = [];
+  for (i = 0; i < hist.length; i++) {
+    if (!hist[i].avgHr) continue;
+    points.push({
+      h: (hist[i].duration || 0) / 3600000,
+      bpm: hist[i].avgHr,
+      date: dayKey(hist[i].end || hist[i].start)
+    });
+  }
+  return { points: points, source: 'session' };
+}
+
+/* ---------------------------------------------------------------------
+ * Sleep estimated by the phone
+ * ------------------------------------------------------------------- */
+
+/**
+ * Folds phone-estimated sleep blocks into the daily rows, but never over a
+ * figure that came from Health Connect — a wrist sensor beats stillness.
+ */
+function applySleepEstimate(blocks) {
+  if (!blocks || !blocks.length) return 0;
+  var days = S.get('healthDays', []);
+  var index = {};
+  var i;
+  for (i = 0; i < days.length; i++) index[days[i].date] = i;
+
+  var added = 0;
+  for (i = 0; i < blocks.length; i++) {
+    var b = blocks[i];
+    if (!b.start || !b.end || b.end <= b.start) continue;
+    // A block is credited to the morning it ended on.
+    var d = new Date(b.end);
+    var iso = d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate());
+    var ms = b.end - b.start;
+    if (index[iso] === undefined) {
+      days.push({ date: iso, sleepMs: ms, sleepSource: 'phone' });
+      index[iso] = days.length - 1;
+      added++;
+    } else {
+      var row = days[index[iso]];
+      if (!row.sleepMs || row.sleepSource === 'phone') {
+        row.sleepMs = ms;
+        row.sleepSource = 'phone';
+        added++;
+      }
+    }
+  }
+  days.sort(function (a, b2) { return a.date < b2.date ? -1 : 1; });
+  S.set('healthDays', days);
+  return added;
+}
+
+/* ---------------------------------------------------------------------
+ * Automatic backup
+ * ------------------------------------------------------------------- */
+
+/** Writes a JSON snapshot to app storage at most once a week. */
+function maybeAutoBackup() {
+  if (!N.ok()) return null;
+  if (!S.get('settings.autoBackup', true)) return null;
+  var last = S.get('backup.lastAt', 0);
+  if (Date.now() - last < 7 * 86400000) return null;
+  var name = 'sayem-auto-' + dayKey(Date.now()) + '.json';
+  var path = N.call('saveExport', name, exportJson());
+  S.set('backup', { lastAt: Date.now(), lastPath: path || '' });
+  return path;
 }
 
 /* ---------------------------------------------------------------------

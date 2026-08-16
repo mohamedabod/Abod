@@ -64,6 +64,13 @@ public class SensorTracker implements SensorEventListener {
     private int floors;
     private float lux = -1f;
 
+    /** Consecutive still, dark minutes — the basis of the sleep estimate. */
+    private int stillRun;
+    private long stillRunStart;
+    public static final String P_SLEEP_BLOCKS = "sleep_blocks";
+    private static final int SLEEP_MIN_CYCLES = 180;   // 3 hours
+    private static final float SLEEP_MAX_LUX = 12f;
+
     private final Runnable startSampling = new SampleStartTask(this);
     private final Runnable stopSampling = new SampleStopTask(this);
 
@@ -258,6 +265,8 @@ public class SensorTracker implements SensorEventListener {
             cadence = stepsNow - stepsAtCycleStart;
         }
 
+        trackSleep();
+
         float minutes = CYCLE_MS / 60000f;
         if (!"still".equals(level)) {
             prefs.edit().putInt(AppCore.K_ACTIVE_MIN, activeMinutes() + Math.round(minutes)).apply();
@@ -267,6 +276,56 @@ public class SensorTracker implements SensorEventListener {
 
         core.emit("sensors", stateJson());
         handler.postDelayed(startSampling, CYCLE_MS - SAMPLE_MS);
+    }
+
+    /**
+     * Sleep estimated from the phone alone: a long unbroken run of stillness in
+     * the dark. Nothing like a wrist sensor for accuracy, but it fills the gap
+     * left by Huawei keeping the band's own sleep data locked away. Blocks
+     * shorter than three hours are discarded as sitting still, not sleeping.
+     */
+    private void trackSleep() {
+        boolean quiet = "still".equals(level) && (lux < 0 || lux <= SLEEP_MAX_LUX);
+        if (quiet) {
+            if (stillRun == 0) stillRunStart = System.currentTimeMillis() - CYCLE_MS;
+            stillRun++;
+            return;
+        }
+        if (stillRun >= SLEEP_MIN_CYCLES) {
+            long end = System.currentTimeMillis();
+            String blocks = prefs.getString(P_SLEEP_BLOCKS, "");
+            String entry = stillRunStart + ":" + end;
+            blocks = blocks.length() == 0 ? entry : blocks + "," + entry;
+            // Keep a fortnight at most; the UI never looks further back.
+            String[] parts = blocks.split(",");
+            if (parts.length > 14) {
+                StringBuilder sb = new StringBuilder();
+                for (int i = parts.length - 14; i < parts.length; i++) {
+                    if (sb.length() > 0) sb.append(',');
+                    sb.append(parts[i]);
+                }
+                blocks = sb.toString();
+            }
+            prefs.edit().putString(P_SLEEP_BLOCKS, blocks).apply();
+            core.emit("sleep", "{\"start\":" + stillRunStart + ",\"end\":" + end + "}");
+        }
+        stillRun = 0;
+    }
+
+    /** Recorded sleep blocks as JSON, for the UI to merge. */
+    public String sleepJson() {
+        StringBuilder sb = new StringBuilder("[");
+        String blocks = prefs.getString(P_SLEEP_BLOCKS, "");
+        if (blocks.length() > 0) {
+            String[] parts = blocks.split(",");
+            for (int i = 0; i < parts.length; i++) {
+                String[] pair = parts[i].split(":");
+                if (pair.length != 2) continue;
+                if (sb.length() > 1) sb.append(',');
+                sb.append("{\"start\":").append(pair[0]).append(",\"end\":").append(pair[1]).append('}');
+            }
+        }
+        return sb.append(']').toString();
     }
 
     private void persist() {

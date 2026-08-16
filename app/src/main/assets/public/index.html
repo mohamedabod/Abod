@@ -115,8 +115,12 @@ button,input,select,textarea{font-family:inherit;font-size:inherit;color:inherit
   line-height:1.7;padding:0 var(--s2)}
 .phase-next{text-align:center;font-size:var(--fs-xs);color:var(--text-3);margin-top:6px}
 
+.timeline-wrap{position:relative;margin:var(--s4) 0 6px}
 .timeline{display:flex;height:8px;border-radius:var(--r-pill);overflow:hidden;
-  background:var(--line);margin:var(--s4) 0 6px;gap:2px}
+  background:var(--line);gap:2px}
+/* Where you are right now, not just which phases are behind you. */
+.timeline-marker{position:absolute;top:-4px;width:3px;height:16px;border-radius:2px;
+  background:#fff;box-shadow:0 0 8px rgba(255,255,255,.5);transition:inset-inline-start .5s var(--ease)}
 .timeline-seg{flex:1;background:var(--line);transition:background .45s var(--ease)}
 .timeline-labels{display:flex;justify-content:space-between;font-size:9.5px;color:var(--text-3);
   margin-bottom:var(--s1);font-weight:600}
@@ -137,7 +141,13 @@ button,input,select,textarea{font-family:inherit;font-size:inherit;color:inherit
 .btn-block{width:100%}
 .btn-group{display:flex;gap:var(--s2);justify-content:center;flex-wrap:wrap;margin-top:var(--s4)}
 
-.goal-selector{display:flex;gap:6px;justify-content:center;margin:var(--s3) 0 0;flex-wrap:wrap}
+/* One scrollable row rather than a wrap that leaves a stranded second line.
+   "safe center" centres it when everything fits and falls back to start-aligned
+   when it overflows, so the first chip is never scrolled out of reach. */
+.goal-selector{display:flex;gap:6px;justify-content:safe center;margin:var(--s3) 0 0;
+  flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;padding:2px 0}
+.goal-selector::-webkit-scrollbar{display:none}
+.goal-btn{flex:0 0 auto}
 .goal-btn{padding:7px 14px;border:1px solid var(--line);border-radius:var(--r-pill);
   background:var(--surface-2);color:var(--text-2);font-size:var(--fs-sm);font-weight:700;
   cursor:pointer;transition:all .2s var(--ease)}

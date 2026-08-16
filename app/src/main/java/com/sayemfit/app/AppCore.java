@@ -43,7 +43,6 @@ public class AppCore {
     private BleManager ble;
     private SensorTracker sensors;
     private RouteTracker route;
-    private PulseCamera pulse;
     private NativeListener listener;
 
     private AppCore() {
@@ -61,7 +60,6 @@ public class AppCore {
         ble = new BleManager(ctx, this);
         sensors = new SensorTracker(ctx, this);
         route = new RouteTracker(ctx, this);
-        pulse = new PulseCamera(ctx, this);
     }
 
     public Context context() {
@@ -82,15 +80,6 @@ public class AppCore {
 
     public RouteTracker route() {
         return route;
-    }
-
-    public PulseCamera pulse() {
-        return pulse;
-    }
-
-    /** A finished camera pulse reading; JS decides where to log it. */
-    public void recordPulse(int bpm) {
-        emit("pulseResult", "{\"bpm\":" + bpm + ",\"ts\":" + System.currentTimeMillis() + "}");
     }
 
     public void setListener(NativeListener l) {

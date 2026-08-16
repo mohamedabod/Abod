@@ -20,7 +20,6 @@ var SENSORS = { steps: 0, activeMinutes: 0, calories: 0, cadence: 0, level: 'sti
 var PERMS = { bluetooth: false, activity: false, location: false, camera: false, notifications: false };
 var ROUTE = { tracking: false, paused: false, points: 0, distanceM: 0, elapsedMs: 0, paceSecPerKm: 0, elevationM: 0, accuracy: -1, error: '', hasPermission: false };
 var ROUTE_PATH = [];
-var PULSE = { status: 'idle', running: false, progress: 0, bpm: 0, quality: 0 };
 var INVENTORY = {};
 var HEALTH = { status: '', granted: 0, total: 11, syncing: false, lastResult: null };
 
@@ -39,10 +38,8 @@ window.__onNative = function (type, data) {
   } else if (type === 'route') {
     ROUTE = m(ROUTE, data || {});
     if (ROUTE.tracking && ROUTE.points > 1) ROUTE_PATH = N.routePath(300);
-  } else if (type === 'pulse') {
-    PULSE = m(PULSE, data || {});
-  } else if (type === 'pulseResult') {
-    logPulse(data && data.bpm, 'camera');
+  } else if (type === 'sleep') {
+    if (applySleepEstimate([data])) recomputeStats();
   } else if (type === 'photo') {
     if (_photoTarget) _photoTarget(data && data.id ? data.id : '');
   } else if (type === 'healthState') {
@@ -84,18 +81,6 @@ function pullNative() {
   SENSORS = m(SENSORS, N.sensorsState());
   PERMS = m(PERMS, N.permsState());
   ROUTE = m(ROUTE, N.routeState());
-  PULSE = m(PULSE, N.pulseState());
-}
-
-/** Records one heart-rate reading, from the camera or the band. */
-function logPulse(bpm, source) {
-  if (!bpm || bpm <= 0) return;
-  var log = S.get('pulseLog', []);
-  log.push({ ts: Date.now(), bpm: bpm, source: source || 'camera' });
-  if (log.length > 400) log = log.slice(log.length - 400);
-  S.set('pulseLog', log);
-  recordHeartRate(bpm);
-  N.call('vibrate', 40);
 }
 
 /**
@@ -533,8 +518,19 @@ function PhaseTimeline(props) {
     }));
     labels.push(h('span', { key: 'lb' + i }, p.from + (isRTL() ? 'س' : 'h')));
   }
+  // Position across the whole 0-72h strip, clamped to the last segment.
+  var span = PHASES[PHASES.length - 1].from;
+  var pos = Math.max(0, Math.min(1, hours / span));
+
   return h('div', null,
-    h('div', { className: 'timeline' }, segs),
+    h('div', { className: 'timeline-wrap' },
+      h('div', { className: 'timeline' }, segs),
+      props.hours > 0
+        ? h('div', {
+            className: 'timeline-marker',
+            style: { insetInlineStart: 'calc(' + (pos * 100).toFixed(1) + '% - 1.5px)' }
+          })
+        : null),
     h('div', { className: 'timeline-labels' }, labels));
 }
 
@@ -676,13 +672,7 @@ function LiveCard() {
       ROUTE.tracking
         ? h('span', { className: 'chip ok' }, h(Icon,{name:'route',size:13}), fmtDistance(ROUTE.distanceM)) : null),
 
-    h('div', { className: 'btn-group', style: { marginTop: '12px' } },
-      !connected ? h('button', { className: 'btn btn-sm btn-outline', onClick: connectBand },
-        busy ? t('connecting') : t('connect_band')) : null,
-      h('button', {
-        className: 'btn btn-sm btn-outline',
-        onClick: function () { if (_setView) _setView('activity'); }
-      }, h(Icon,{name:'heart',size:16}), t('pulse_title'))));
+    null);
 }
 
 function QuickStats() {
@@ -844,6 +834,44 @@ function photoSrc(id) {
   return data;
 }
 
+/**
+ * Protein progress. Sits above the calorie totals on purpose: on one meal a
+ * day this is the number that decides whether weight lost is fat or muscle.
+ */
+function ProteinCard() {
+  var target = proteinTarget();
+  var tot = todayMacros();
+  if (!target.grams) return null;
+  var pct = Math.min(100, Math.round(tot.p / target.grams * 100));
+  var left = Math.max(0, target.grams - Math.round(tot.p));
+
+  return h(Card, { title: t('protein_target'), icon: 'dumbbell' },
+    h('div', { style: { display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' } },
+      h('span', { style: { fontSize: '26px', fontWeight: 700 } },
+        num(Math.round(tot.p)),
+        h('span', { style: { fontSize: '13px', color: '#9e9ebf' } }, ' / ' + num(target.grams) + 'g')),
+      h('span', { className: 'row-end', style: { color: pct >= 100 ? '#00d97e' : '#f5a623' } },
+        pct >= 100 ? t('protein_done') : num(left) + 'g ' + t('protein_left'))),
+    h('div', { className: 'water-bar' },
+      h('div', {
+        className: 'water-fill',
+        style: {
+          width: pct + '%',
+          background: pct >= 100
+            ? 'linear-gradient(90deg,#00d97e,#00bcd4)'
+            : 'linear-gradient(90deg,#e94560,#f5a623)'
+        }
+      })),
+    h('div', { className: 'chip-row' },
+      h('span', { className: 'chip' },
+        t(target.basis === 'lean' ? 'protein_basis_lean' : 'protein_basis_weight')),
+      h('span', { className: 'chip' }, num(target.perKg) + ' ' + t('per_kg')),
+      tot.unknown
+        ? h('span', { className: 'chip warn' }, num(tot.unknown) + ' × ' + t('no_macros'))
+        : null),
+    h('div', { className: 'info-box' }, t('protein_hint')));
+}
+
 function MealsPage() {
   var s1 = useState(''); var q = s1[0], setQ = s1[1];
   var s2 = useState(null); var pending = s2[0], setPending = s2[1];
@@ -953,6 +981,7 @@ function MealsPage() {
   }
 
   return h('div', null,
+    h(ProteinCard, null),
     h(Card, { title: t('todays_total'), icon: 'meals' },
       h('div', { className: 'stats-grid-4' },
         h(Stat, { value: num(Math.round(tot.cal)), label: t('calories'), tone: 'gold' }),
@@ -1019,6 +1048,49 @@ function MealsPage() {
  * Liquids + water
  * ------------------------------------------------------------------- */
 
+function ElectrolytesCard() {
+  var e = electrolytesToday();
+
+  function bar(key, colour) {
+    var have = e[key] || 0;
+    var target = ELECTROLYTE_TARGETS[key];
+    var pct = Math.min(100, Math.round(have / target * 100));
+    return h('div', { key: 'el' + key, style: { marginBottom: '10px' } },
+      h('div', { style: { display: 'flex', justifyContent: 'space-between', fontSize: '12.5px' } },
+        h('span', null, t(key)),
+        h('span', { style: { color: '#9e9ebf', fontWeight: 600 } },
+          num(have) + ' / ' + num(target) + ' ' + t('mg'))),
+      h('div', { className: 'water-bar', style: { margin: '5px 0 0' } },
+        h('div', { className: 'water-fill', style: { width: pct + '%', background: colour } })));
+  }
+
+  var sources = [];
+  for (var i = 0; i < ELECTROLYTE_SOURCES.length; i++) {
+    (function (src) {
+      sources.push(h('button', {
+        key: 'es' + src.k, className: 'goal-btn',
+        onClick: function () { addElectrolytes(src); refresh(); }
+      }, isRTL() ? src.ar : src.en));
+    })(ELECTROLYTE_SOURCES[i]);
+  }
+
+  return h(Card, { title: t('electrolytes'), icon: 'flame' },
+    bar('sodium', 'linear-gradient(90deg,#e94560,#f5a623)'),
+    bar('potassium', 'linear-gradient(90deg,#3d8bfd,#00bcd4)'),
+    bar('magnesium', 'linear-gradient(90deg,#a259ff,#3d8bfd)'),
+    h('div', { className: 'section-title', style: { marginTop: '12px' } }, t('add_source')),
+    h('div', { className: 'goal-selector' }, sources),
+    h('div', { className: 'btn-group' },
+      h('button', {
+        className: 'btn btn-sm btn-outline',
+        onClick: function () {
+          S.set('electrolytes', { date: dayKey(Date.now()), sodium: 0, potassium: 0, magnesium: 0 });
+          refresh();
+        }
+      }, t('electrolytes_reset'))),
+    h('div', { className: 'info-box' }, t('electrolytes_why')));
+}
+
 function LiquidsPage() {
   var water = S.get('water', { date: '', ml: 0, target: 3000 });
   var todayKey = dayKey(Date.now());
@@ -1064,6 +1136,8 @@ function LiquidsPage() {
         h('button', { className: 'btn btn-sm btn-outline', onClick: function () { addWater(750); } }, '+750'),
         h('button', { className: 'btn btn-sm btn-outline', onClick: function () { addWater(-250); } }, '−250'))),
 
+    h(ElectrolytesCard, null),
+
     h(Card, { title: t('liquids_allowed'), icon: 'check' }, okRows,
       h('div', { className: 'info-box' }, t('electrolytes_note'))),
 
@@ -1074,6 +1148,106 @@ function LiquidsPage() {
 /* ---------------------------------------------------------------------
  * Progress
  * ------------------------------------------------------------------- */
+
+/** Deltas, not raw numbers: the trend is the thing worth showing weekly. */
+function WeekCompareCard() {
+  var w = weekCompare();
+
+  function delta(cur, prev, fmt, higherIsBetter) {
+    if (!prev) return h('span', { className: 'row-end' }, fmt(cur));
+    var diff = cur - prev;
+    var better = higherIsBetter ? diff > 0 : diff < 0;
+    var flat = Math.abs(diff) < 0.001;
+    return h('span', { className: 'row-end' },
+      fmt(cur),
+      h('span', {
+        style: {
+          marginInlineStart: '8px',
+          color: flat ? '#6b6b8c' : (better ? '#00d97e' : '#f5a623'),
+          fontSize: '11px'
+        }
+      }, flat ? '—' : (diff > 0 ? '+' : '') + fmt(diff)));
+  }
+
+  function hours(v) { return num(Math.abs(v) >= 10 ? Math.round(v) : v.toFixed(1)) + t('hour_short'); }
+  function dur(v) { return fmtShort(Math.abs(v)); }
+  function steps(v) { return num(Math.round(v)); }
+
+  if (!w.hasPrev) {
+    return h(Card, { title: t('week_compare'), icon: 'chart' },
+      h(Empty, { text: t('no_prev_week') }));
+  }
+
+  return h(Card, { title: t('week_compare'), icon: 'chart' },
+    h('div', { className: 'row-plain' },
+      h('span', null, t('fast_hours')),
+      delta(w.fastHours.cur, w.fastHours.prev, hours, true)),
+    h('div', { className: 'row-plain' },
+      h('span', null, t('total_sessions')),
+      delta(w.sessions.cur, w.sessions.prev, function (v) { return num(Math.round(v)); }, true)),
+    h('div', { className: 'row-plain' },
+      h('span', null, t('avg_fast')),
+      delta(w.avgFast.cur, w.avgFast.prev, dur, true)),
+    w.steps.prev ? h('div', { className: 'row-plain' },
+      h('span', null, t('avg_steps')),
+      delta(w.steps.cur, w.steps.prev, steps, true)) : null,
+    w.sleep.prev ? h('div', { className: 'row-plain' },
+      h('span', null, t('sleep_avg')),
+      delta(w.sleep.cur, w.sleep.prev, dur, true)) : null,
+    w.weight.cur && w.weight.prev ? h('div', { className: 'row-plain' },
+      h('span', null, t('weight')),
+      delta(w.weight.cur, w.weight.prev,
+        function (v) { return num(v.toFixed(1)) + ' ' + t('weight_unit'); }, false)) : null,
+    h('div', { className: 'chip-row' },
+      h('span', { className: 'chip' }, t('vs_last_week'))));
+}
+
+/** Scatter of heart rate against fasted hours — one dot per day. */
+function HrFastingCard() {
+  var data = hrVsFasting();
+  if (!data.points.length) {
+    return h(Card, { title: t('hr_vs_fast'), icon: 'heart' },
+      h(Empty, { text: t('no_hr_data') }));
+  }
+
+  var w = 320, hh = 180, pad = 26;
+  var maxH = 1, minBpm = 999, maxBpm = 0;
+  var i;
+  for (i = 0; i < data.points.length; i++) {
+    var p = data.points[i];
+    if (p.h > maxH) maxH = p.h;
+    if (p.bpm < minBpm) minBpm = p.bpm;
+    if (p.bpm > maxBpm) maxBpm = p.bpm;
+  }
+  if (maxBpm - minBpm < 6) { minBpm -= 3; maxBpm += 3; }
+
+  var dots = [];
+  for (i = 0; i < data.points.length; i++) {
+    (function (p, idx) {
+      var x = pad + (p.h / maxH) * (w - pad * 2);
+      var y = hh - pad - ((p.bpm - minBpm) / (maxBpm - minBpm)) * (hh - pad * 2);
+      dots.push(h('circle', {
+        key: 'hp' + idx, cx: x.toFixed(1), cy: y.toFixed(1), r: 4.5,
+        fill: '#e94560', fillOpacity: 0.85
+      }));
+    })(data.points[i], i);
+  }
+
+  return h(Card, { title: t('hr_vs_fast'), icon: 'heart' },
+    h('div', { className: 'map-box', style: { height: '190px' } },
+      h('svg', { width: '100%', height: '100%', viewBox: '0 0 ' + w + ' ' + hh },
+        h('line', { x1: pad, y1: hh - pad, x2: w - pad, y2: hh - pad, stroke: '#282844', strokeWidth: 1 }),
+        h('line', { x1: pad, y1: pad, x2: pad, y2: hh - pad, stroke: '#282844', strokeWidth: 1 }),
+        h('text', { x: w - pad, y: hh - 8, fill: '#6b6b8c', fontSize: 10, textAnchor: 'end' },
+          num(Math.round(maxH)) + t('hour_short')),
+        h('text', { x: 4, y: pad + 4, fill: '#6b6b8c', fontSize: 10 }, num(Math.round(maxBpm))),
+        h('text', { x: 4, y: hh - pad, fill: '#6b6b8c', fontSize: 10 }, num(Math.round(minBpm))),
+        dots)),
+    h('div', { className: 'chip-row' },
+      h('span', { className: 'chip' }, t('hr_src_' + data.source)),
+      h('span', { className: 'chip' }, num(data.points.length) + ' ' + t('hc_days'))),
+    h('div', { className: 'info-box' }, t('hr_vs_fast_hint')));
+}
 
 function ProgressPage() {
   var p = S.get('profile', {});
@@ -1138,7 +1312,11 @@ function ProgressPage() {
         }),
         h(Stat, { value: stats.longest ? fmtShort(stats.longest) : '-', label: t('longest_fast'), tone: 'gold' }))),
 
+    h(WeekCompareCard, null),
+
     h(HealthTrendsCard, null),
+
+    h(HrFastingCard, null),
 
     h(BodyCompCard, null),
 
@@ -1490,6 +1668,58 @@ function CoachPage() {
  * Settings
  * ------------------------------------------------------------------- */
 
+/** Preset schedules, with adherence measured against the days each plan asks
+ *  for rather than against every day. */
+function PlanCard() {
+  var current = S.get('settings.plan', 'custom');
+  var adherence = planAdherence();
+
+  var btns = [];
+  for (var i = 0; i < FASTING_PLANS.length; i++) {
+    (function (p) {
+      btns.push(h('button', {
+        key: 'pl' + p.k,
+        className: 'goal-btn' + (current === p.k ? ' active' : ''),
+        onClick: function () {
+          var applied = applyPlan(p.k);
+          syncReminders();
+          toast(t('plan_applied') + ' — ' + (isRTL() ? applied.ar : applied.en));
+          refresh();
+        }
+      }, isRTL() ? p.ar : p.en));
+    })(FASTING_PLANS[i]);
+  }
+
+  var plan = planByKey(current);
+  var dayNames = isRTL() ? WEEKDAYS_AR : WEEKDAYS_EN;
+  var days = '';
+  if (plan.days) {
+    var parts = [];
+    for (var d = 0; d < plan.days.length; d++) parts.push(dayNames[plan.days[d]]);
+    days = parts.join(' · ');
+  }
+
+  return h(Card, { flat: true },
+    h('div', { className: 'goal-selector', style: { marginTop: 0 } }, btns),
+    plan.k === 'custom'
+      ? h('div', { className: 'card-sub', style: { marginTop: '12px', textAlign: 'center' } },
+          t('plan_none'))
+      : h('div', null,
+          h('div', { className: 'chip-row', style: { justifyContent: 'center' } },
+            h('span', { className: 'chip' },
+              t('fasting_goal') + ': ' + num(plan.goal) + t('hour_short')),
+            plan.window
+              ? h('span', { className: 'chip' }, plan.window[0] + ' - ' + plan.window[1])
+              : null,
+            days ? h('span', { className: 'chip' }, t('plan_days') + ': ' + days) : null),
+          adherence
+            ? h('div', { className: 'stats-grid', style: { marginTop: '12px' } },
+                h(Stat, { value: num(adherence.pct) + '%', label: t('plan_adherence'), tone: 'green' }),
+                h(Stat, { value: num(adherence.hit) + '/' + num(adherence.target), label: t('plan_last14') }),
+                h(Stat, { value: num(plan.goal) + t('hour_short'), label: t('fasting_goal'), tone: 'gold' }))
+            : null));
+}
+
 function SettingsPage() {
   var s1 = useState(false); var showImport = s1[0], setShowImport = s1[1];
   var s2 = useState(''); var importText = s2[0], setImportText = s2[1];
@@ -1652,6 +1882,9 @@ function SettingsPage() {
           }
         }))),
 
+    h('div', { className: 'section-title' }, t('plan')),
+    h(PlanCard, null),
+
     h('div', { className: 'section-title' }, t('sleep')),
     h(Card, { flat: true },
       h(SettingRow, { label: t('wake_time') },
@@ -1733,6 +1966,23 @@ function SettingsPage() {
           className: 'btn btn-sm btn-danger',
           onClick: function () { setConfirmReset(true); }
         }, t('delete'))),
+      h(SettingRow, { label: t('auto_backup'), hint: t('auto_backup_hint') },
+        h(Switch, {
+          on: S.get('settings.autoBackup', true),
+          onChange: function () {
+            S.set('settings.autoBackup', !S.get('settings.autoBackup', true));
+            refresh();
+          }
+        })),
+      S.get('backup.lastAt', 0)
+        ? h(SettingRow, { label: t('last_backup') },
+            h('span', { className: 'row-end' }, fmtDate(S.get('backup.lastAt', 0))))
+        : null,
+      h(SettingRow, { label: t('widget'), hint: t('widget_hint') },
+        h('button', {
+          className: 'btn btn-sm btn-outline',
+          onClick: function () { N.call('refreshWidget'); toast(t('saved')); }
+        }, t('confirm'))),
       h(SettingRow, { label: t('app_version') },
         h('span', { className: 'row-end' }, 'v' + APP_VERSION + (N.ok() ? '' : ' (web)')))),
 
@@ -1822,7 +2072,6 @@ function ActivityView(props) {
       h('span', { className: 'subview-title' }, t('activity_hub'))),
     h('div', { className: 'subview-body' },
       h(HealthConnectCard, null),
-      h(PulseCard, null),
       h(RouteCard, null),
       h(WorkoutCard, null),
       h(SensorInventoryCard, null)));
@@ -1953,61 +2202,6 @@ function HealthTrendsCard() {
     h('div', { className: 'bar-chart' }, bars),
     sleepAvg ? h('div', { className: 'chip-row' },
       h('span', { className: 'chip' }, t('sleep_avg') + ': ' + fmtShort(sleepAvg))) : null);
-}
-
-function PulseCard() {
-  var running = PULSE.running;
-  var status = PULSE.status;
-
-  var hint = t('pulse_howto');
-  if (running && status === 'warmup') hint = t('pulse_warmup');
-  else if (running && status === 'measuring') hint = t('pulse_measuring');
-  else if (status === 'weak_signal') hint = t('pulse_weak');
-  else if (status === 'no_permission') hint = t('err_no_permission');
-  else if (status === 'no_camera') hint = t('err_no_camera');
-
-  if (running && PULSE.quality === 0) hint = t('pulse_quality_low');
-  else if (running && PULSE.quality === 1) hint = t('pulse_quality_high');
-
-  var log = S.get('pulseLog', []);
-  var rows = [];
-  for (var i = log.length - 1; i >= 0 && rows.length < 6; i--) {
-    (function (e) {
-      rows.push(h('div', { key: 'pl' + e.ts, className: 'row-plain' },
-        h('span', { style: { fontSize: '13px' } },
-          num(e.bpm) + ' ' + t('bpm'),
-          h('span', { style: { color: '#6c6c8a', fontSize: '11px' } },
-            '  ' + t('pulse_source_' + (e.source === 'band' ? 'band' : 'camera')))),
-        h('span', { className: 'row-end', style: { fontSize: '11px' } },
-          fmtDate(e.ts) + ' ' + fmtTimeOfDay(e.ts))));
-    })(log[i]);
-  }
-
-  return h(Card, { title: t('pulse_title'), icon: 'heart' },
-    h('div', { className: 'pulse-big' },
-      running ? '···' : (PULSE.bpm > 0 ? num(PULSE.bpm) : '--')),
-    h('div', { className: 'pulse-sub' }, t('bpm')),
-    running ? h('div', { className: 'progress-track' },
-      h('div', { className: 'progress-fill', style: { width: PULSE.progress + '%' } })) : null,
-    h('div', { className: 'card-sub', style: { marginTop: '10px', textAlign: 'center' } }, hint),
-    h('div', { className: 'btn-group' },
-      running
-        ? h('button', {
-            className: 'btn btn-sm btn-outline',
-            onClick: function () { N.call('pulseCancel'); setTimeout(pullNative, 200); refresh(); }
-          }, t('pulse_cancel'))
-        : h('button', {
-            className: 'btn btn-sm btn-primary',
-            onClick: function () {
-              if (!N.ok()) { toast(t('no_native')); return; }
-              var r = N.call('pulseStart');
-              if (r && r !== 'ok') toast(t('err_' + r) || r);
-              setTimeout(function () { pullNative(); refresh(); }, 300);
-            }
-          }, PULSE.bpm > 0 ? t('pulse_again') : t('pulse_start'))),
-    h('div', { className: 'info-box' }, t('pulse_disclaimer')),
-    rows.length ? h('div', null,
-      h('div', { className: 'section-title' }, t('pulse_log')), rows) : null);
 }
 
 function RouteCard() {
@@ -2561,6 +2755,9 @@ window.__onBack = function () {
   N.call('healthRefresh');
   recomputeStats();
   syncReminders();
+  if (applySleepEstimate(N.parse(N.call('sleepEstimate'), []))) recomputeStats();
+  maybeAutoBackup();
+  N.call('refreshWidget');
 
   var root = ReactDOM.createRoot(document.getElementById('root'));
   root.render(h(App, null));

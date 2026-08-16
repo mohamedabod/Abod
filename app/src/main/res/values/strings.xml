@@ -3,4 +3,5 @@
     <string name="app_name">Aboud Sayem</string>
     <string name="channel_fast">Fasting session</string>
     <string name="channel_alerts">Fasting alerts</string>
+    <string name="widget_label">Fasting timer</string>
 </resources>

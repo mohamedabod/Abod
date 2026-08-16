@@ -102,6 +102,18 @@
             android:exported="false" />
 
         <receiver
+            android:name=".FastWidget"
+            android:exported="true"
+            android:label="@string/widget_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_info" />
+        </receiver>
+
+        <receiver
             android:name=".BootReceiver"
             android:exported="true"
             android:enabled="true">

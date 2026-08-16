@@ -111,6 +111,7 @@ public class FastingService extends Service {
             scheduleAlarm();
         }
         notifyManager().notify(NOTIF_ID, buildOngoing());
+        FastWidget.refresh(this);
         handler.removeCallbacks(ticker);
         handler.postDelayed(ticker, REFRESH_MS);
     }
@@ -301,6 +302,7 @@ public class FastingService extends Service {
 
     private void shutdown() {
         handler.removeCallbacks(ticker);
+        FastWidget.refresh(this);
         core.sensors().stop();
         if (Build.VERSION.SDK_INT >= 24) {
             stopForeground(Service.STOP_FOREGROUND_REMOVE);
