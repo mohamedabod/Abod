@@ -6,7 +6,7 @@
  * no destructuring, no classes, no async/await. See README.
  * ===================================================================== */
 
-var APP_VERSION = '6.0';
+var APP_VERSION = '6.1';
 var STORE_KEY = 'sayem_v4';
 var LEGACY_KEY = 'sayem_v3';
 
@@ -546,6 +546,10 @@ var LANG = {
     spo2: 'الأكسجين', spo2_avg: 'متوسط الأكسجين', health_trends: 'مؤشراتك',
     no_health_data: 'مفيش بيانات — اربط Health Connect وزامن',
     hc_error: 'المزامنة فشلت',
+    sleep_metric: 'النوم', fast_today: 'صيام النهاردة', avg_7: 'متوسط ٧ أيام', last_14: 'آخر ١٤ يوم',
+    dashboard: 'لوحتك', tap_for_detail: 'اضغط لتفاصيل أكتر', no_series: 'مفيش بيانات كفاية للرسم',
+    live: 'مباشر', latest: 'آخر قراءة',
+
     protein_target: 'هدف البروتين', protein_left: 'فاضل', protein_done: 'وصلت لهدفك',
     protein_basis_lean: 'محسوب من كتلتك الصافية', protein_basis_weight: 'محسوب من وزنك',
     protein_hint: 'مع وجبة واحدة في اليوم، البروتين أصعب رقم توصله — وهو اللي بيحمي عضلك.',
@@ -817,6 +821,10 @@ var LANG = {
     spo2: 'Oxygen', spo2_avg: 'Average SpO2', health_trends: 'Your metrics',
     no_health_data: 'No data — connect Health Connect and sync',
     hc_error: 'Sync failed',
+    sleep_metric: 'Sleep', fast_today: "Today's fast", avg_7: '7-day average', last_14: 'Last 14 days',
+    dashboard: 'Your day', tap_for_detail: 'Tap for detail', no_series: 'Not enough data to chart',
+    live: 'live', latest: 'latest',
+
     protein_target: 'Protein target', protein_left: 'left', protein_done: 'Target reached',
     protein_basis_lean: 'from your lean mass', protein_basis_weight: 'from your weight',
     protein_hint: 'On one meal a day, protein is the hardest number to reach — and it is what protects muscle.',
@@ -1796,6 +1804,107 @@ function checkinTrend(n) {
     hunger: hunger / take.length
   };
 }
+
+/* ---------------------------------------------------------------------
+ * Daily series for the dashboard
+ *
+ * Every tile and every detail chart reads from here, so a metric is drawn the
+ * same way wherever it appears. Missing days stay null rather than zero: a day
+ * with no reading is not a day with a reading of nothing.
+ * ------------------------------------------------------------------- */
+
+/** The last `n` calendar days, oldest first. */
+function lastDays(n) {
+  var out = [];
+  for (var d = n - 1; d >= 0; d--) {
+    var ts = startOfDay(Date.now() - d * 86400000);
+    out.push({ ts: ts, key: dayKey(ts), label: String(new Date(ts).getDate()) });
+  }
+  return out;
+}
+
+/** Fasted hours credited to the day each fast ended on. */
+function seriesFastHours(n) {
+  var hist = S.get('history', []);
+  var byDay = {};
+  var i;
+  for (i = 0; i < hist.length; i++) {
+    var k = dayKey(hist[i].end || hist[i].start);
+    byDay[k] = (byDay[k] || 0) + (hist[i].duration || 0) / 3600000;
+  }
+  var days = lastDays(n), values = [], labels = [];
+  for (i = 0; i < days.length; i++) {
+    values.push(byDay[days[i].key] === undefined ? null : Math.round(byDay[days[i].key] * 10) / 10);
+    labels.push(days[i].label);
+  }
+  return { values: values, labels: labels, days: days };
+}
+
+/** Any numeric field off the Health Connect daily rows. */
+function seriesHealth(field, n) {
+  var rows = S.get('healthDays', []);
+  var byDay = {};
+  var i;
+  for (i = 0; i < rows.length; i++) {
+    var parts = rows[i].date.split('-');
+    if (parts.length !== 3) continue;
+    var k = parts[0] + '-' + pad2(parseInt(parts[1], 10)) + '-' + pad2(parseInt(parts[2], 10));
+    if (rows[i][field] !== null && rows[i][field] !== undefined) byDay[k] = rows[i][field];
+  }
+  var days = lastDays(n), values = [], labels = [];
+  for (i = 0; i < days.length; i++) {
+    values.push(byDay[days[i].key] === undefined ? null : byDay[days[i].key]);
+    labels.push(days[i].label);
+  }
+  return { values: values, labels: labels, days: days };
+}
+
+/** Weight, carried forward so the line is continuous between weigh-ins. */
+function seriesWeight(n) {
+  var log = S.get('profile.weightLog', []);
+  var days = lastDays(n), values = [], labels = [];
+  var i, j;
+  for (i = 0; i < days.length; i++) {
+    var latest = null;
+    for (j = 0; j < log.length; j++) {
+      if (log[j].ts <= days[i].ts + 86399999) latest = log[j].kg;
+    }
+    values.push(latest);
+    labels.push(days[i].label);
+  }
+  return { values: values, labels: labels, days: days };
+}
+
+/** Most recent non-null entry of a series. */
+function lastValue(series) {
+  for (var i = series.values.length - 1; i >= 0; i--) {
+    if (series.values[i] !== null && series.values[i] !== undefined) return series.values[i];
+  }
+  return null;
+}
+
+/** Mean of the non-null entries. */
+function meanValue(series) {
+  var sum = 0, n = 0;
+  for (var i = 0; i < series.values.length; i++) {
+    var v = series.values[i];
+    if (v === null || v === undefined) continue;
+    sum += v; n++;
+  }
+  return n ? sum / n : null;
+}
+
+/** Colour per metric, used by both the tile and its detail view. */
+var METRIC_COLORS = {
+  fast: '#e94560',
+  steps: '#00d97e',
+  sleep: '#a259ff',
+  hr: '#ff4d5e',
+  protein: '#f5a623',
+  water: '#3d8bfd',
+  weight: '#00bcd4',
+  electrolytes: '#f5a623'
+};
 
 /* ---------------------------------------------------------------------
  * Protein target

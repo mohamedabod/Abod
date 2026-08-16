@@ -178,6 +178,9 @@ button,input,select,textarea{font-family:inherit;font-size:inherit;color:inherit
   transition:height .5s var(--ease)}
 .bar.dim{background:var(--surface-3);min-height:4px}
 .bar-label{font-size:9.5px;color:var(--text-3);font-weight:600}
+.bar-wrap{position:relative}
+.bar-avg{position:absolute;inset-inline:0;height:0;border-top:1px dashed rgba(255,255,255,.28);
+  pointer-events:none}
 
 /* ---------- rows ---------- */
 .row{display:flex;align-items:center;gap:var(--s2);padding:12px 14px;background:var(--surface-2);
@@ -363,6 +366,52 @@ select.setting-input{width:136px;text-align:start}
 .onb-dot.on{background:var(--primary);width:20px;border-radius:var(--r-pill)}
 .onb-hero{display:flex;align-items:center;justify-content:center;padding:var(--s6) 0}
 .onb-hero .ic{color:var(--primary);filter:drop-shadow(0 0 26px rgba(233,69,96,.35))}
+
+
+/* ---------- dashboard tiles ----------
+   The structural change: a grid of small metric tiles that each open a
+   detail view, instead of one long column of tall cards. This is what
+   separates a dashboard from a scrolling report. */
+.tile-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:var(--s2)}
+.tile{background:var(--surface);border:1px solid var(--line-soft);border-radius:var(--r-lg);
+  padding:13px 14px;text-align:start;cursor:pointer;position:relative;overflow:hidden;
+  display:flex;flex-direction:column;gap:2px;min-height:112px;
+  transition:transform .14s var(--ease),border-color .2s}
+.tile:active{transform:scale(.975);border-color:var(--line)}
+.tile-head{display:flex;align-items:center;gap:6px;color:var(--text-3);
+  font-size:var(--fs-xs);font-weight:700}
+.tile-head .ic{width:14px;height:14px}
+.tile-val{font-size:23px;font-weight:700;letter-spacing:-.7px;line-height:1.15;
+  font-variant-numeric:tabular-nums;margin-top:2px}
+.tile-unit{font-size:var(--fs-xs);color:var(--text-3);font-weight:600;margin-inline-start:3px}
+.tile-sub{font-size:10px;color:var(--text-3);font-weight:600}
+.tile-spark{margin-top:auto;height:30px;width:100%;opacity:.95}
+.tile-empty .tile-val{color:var(--text-3)}
+
+/* ---------- charts ---------- */
+.chart-box{width:100%;overflow:hidden}
+.chart-legend{display:flex;gap:var(--s3);flex-wrap:wrap;font-size:var(--fs-xs);
+  color:var(--text-3);font-weight:600;margin-top:var(--s2)}
+.chart-legend i{display:inline-block;width:9px;height:9px;border-radius:3px;
+  margin-inline-end:5px;vertical-align:-1px}
+
+/* ---------- detail sheet ---------- */
+.sheet{position:fixed;inset:0;background:var(--bg);z-index:70;display:flex;flex-direction:column;
+  animation:slideUp .3s var(--ease)}
+.sheet-hdr{height:calc(var(--header-h) + var(--safe-t));padding-top:var(--safe-t);flex-shrink:0;
+  display:flex;align-items:center;gap:var(--s2);padding-inline:var(--s3);
+  background:var(--surface);border-bottom:1px solid var(--line-soft)}
+.sheet-body{flex:1;overflow-y:auto;padding:var(--s4);
+  padding-bottom:calc(var(--safe-b) + var(--s6))}
+.sheet-hero{text-align:center;padding:var(--s4) 0 var(--s2)}
+.sheet-hero-val{font-size:44px;font-weight:700;letter-spacing:-1.6px;line-height:1.1;
+  font-variant-numeric:tabular-nums}
+.sheet-hero-label{font-size:var(--fs-sm);color:var(--text-3);font-weight:600;margin-top:2px}
+
+/* ---------- hero timer, trimmed ---------- */
+.hero{background:radial-gradient(120% 80% at 50% 0%,rgba(233,69,96,.10),transparent 60%),
+  var(--surface);border:1px solid var(--line-soft);border-radius:24px;
+  padding:var(--s4) var(--s4) var(--s5);margin-bottom:var(--s3);box-shadow:var(--shadow)}
 
 ::-webkit-scrollbar{width:0;height:0}
 </style>

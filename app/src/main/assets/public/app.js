@@ -478,6 +478,163 @@ function Scale(props) {
 }
 
 /* ---------------------------------------------------------------------
+ * Charts
+ *
+ * Bars and dots read as a homework plot. A filled gradient area with a
+ * stroked line on top is what a health app looks like, and it survives being
+ * shrunk to a 30px sparkline inside a tile.
+ * ------------------------------------------------------------------- */
+
+var _gradSeq = 0;
+
+/** Area + line chart. `values` may contain nulls for missing days. */
+function AreaChart(props) {
+  var values = props.values || [];
+  var w = props.width || 320;
+  var hh = props.height || 150;
+  var pad = props.pad === undefined ? 10 : props.pad;
+  var colour = props.color || '#e94560';
+
+  var real = [];
+  var i;
+  for (i = 0; i < values.length; i++) {
+    if (values[i] !== null && values[i] !== undefined) real.push(values[i]);
+  }
+  if (real.length < 2) return null;
+
+  var min = Math.min.apply(null, real);
+  var max = Math.max.apply(null, real);
+  if (max - min < 0.0001) { max = min + 1; }
+  // Breathing room so the line never sits on the frame.
+  var span = max - min;
+  min -= span * 0.15;
+  max += span * 0.15;
+
+  var stepX = values.length > 1 ? (w - pad * 2) / (values.length - 1) : 0;
+  function px(idx) { return pad + idx * stepX; }
+  function py(v) { return hh - pad - ((v - min) / (max - min)) * (hh - pad * 2); }
+
+  var line = '', area = '', started = false, lastX = pad, firstX = pad;
+  for (i = 0; i < values.length; i++) {
+    var v = values[i];
+    if (v === null || v === undefined) continue;
+    var x = px(i), y = py(v);
+    if (!started) { line += 'M' + x.toFixed(1) + ' ' + y.toFixed(1); firstX = x; started = true; }
+    else line += 'L' + x.toFixed(1) + ' ' + y.toFixed(1);
+    lastX = x;
+  }
+  area = line + 'L' + lastX.toFixed(1) + ' ' + (hh - pad).toFixed(1)
+    + 'L' + firstX.toFixed(1) + ' ' + (hh - pad).toFixed(1) + 'Z';
+
+  var gid = 'g' + (++_gradSeq);
+  var dots = [];
+  if (props.dots !== false) {
+    for (i = values.length - 1; i >= 0; i--) {
+      if (values[i] === null || values[i] === undefined) continue;
+      dots.push(h('circle', {
+        key: 'd', cx: px(i).toFixed(1), cy: py(values[i]).toFixed(1),
+        r: 3.5, fill: colour, stroke: '#0e0e18', strokeWidth: 2
+      }));
+      break;
+    }
+  }
+
+  return h('svg', {
+    className: 'chart-box', width: '100%', height: hh,
+    viewBox: '0 0 ' + w + ' ' + hh, preserveAspectRatio: 'none'
+  },
+    h('defs', null,
+      h('linearGradient', { id: gid, x1: '0', y1: '0', x2: '0', y2: '1' },
+        h('stop', { offset: '0%', stopColor: colour, stopOpacity: 0.38 }),
+        h('stop', { offset: '100%', stopColor: colour, stopOpacity: 0 }))),
+    h('path', { d: area, fill: 'url(#' + gid + ')' }),
+    h('path', {
+      d: line, fill: 'none', stroke: colour, strokeWidth: props.stroke || 2,
+      strokeLinecap: 'round', strokeLinejoin: 'round',
+      vectorEffect: 'non-scaling-stroke'
+    }),
+    dots);
+}
+
+/** Rounded bar series, used where each day is a discrete total. */
+function BarSeries(props) {
+  var values = props.values || [];
+  var labels = props.labels || [];
+  var colour = props.color || '#e94560';
+  var hh = props.height || 120;
+  if (!values.length) return null;
+
+  var max = 1;
+  var i;
+  for (i = 0; i < values.length; i++) if ((values[i] || 0) > max) max = values[i];
+
+  var cols = [];
+  for (i = 0; i < values.length; i++) {
+    (function (v, idx) {
+      var pct = v ? Math.max(5, Math.round(v / max * 100)) : 3;
+      cols.push(h('div', { key: 'bs' + idx, className: 'bar-col' },
+        h('div', {
+          className: 'bar' + (v ? '' : ' dim'),
+          style: { height: pct + '%', background: v ? colour : undefined }
+        }),
+        labels[idx] !== undefined
+          ? h('div', { className: 'bar-label' }, labels[idx]) : null));
+    })(values[i], i);
+  }
+
+  // Bars are measured from zero, which is the honest baseline but flattens a
+  // narrow range. The average line is what makes each day readable against it.
+  var avgLine = null;
+  if (props.avg) {
+    var avgPct = Math.max(0, Math.min(100, props.avg / max * 100));
+    avgLine = h('div', {
+      className: 'bar-avg',
+      style: { bottom: 'calc(' + avgPct.toFixed(1) + '% + 15px)' }
+    });
+  }
+
+  return h('div', { className: 'bar-wrap' },
+    h('div', { className: 'bar-chart', style: { height: hh + 'px' } }, cols),
+    avgLine);
+}
+
+/* ---------------------------------------------------------------------
+ * Dashboard tiles
+ * ------------------------------------------------------------------- */
+
+function MetricTile(props) {
+  var hasValue = props.value !== null && props.value !== undefined && props.value !== '';
+  return h('button', {
+    className: 'tile anim' + (hasValue ? '' : ' tile-empty'),
+    onClick: props.onClick
+  },
+    h('div', { className: 'tile-head' },
+      h(Icon, { name: props.icon, size: 14 }),
+      h('span', null, props.label)),
+    h('div', { className: 'tile-val', style: { color: hasValue ? props.color : undefined } },
+      hasValue ? props.value : '—',
+      props.unit ? h('span', { className: 'tile-unit' }, props.unit) : null),
+    props.sub ? h('div', { className: 'tile-sub' }, props.sub) : null,
+    props.spark && props.spark.length > 1
+      ? h('div', { className: 'tile-spark' },
+          h(AreaChart, {
+            values: props.spark, color: props.color, width: 150, height: 30,
+            pad: 3, stroke: 1.8, dots: false
+          }))
+      : null);
+}
+
+/** Full-screen detail for one metric, opened from a tile. */
+function DetailSheet(props) {
+  return h('div', { className: 'sheet' },
+    h('div', { className: 'sheet-hdr' },
+      h('button', { className: 'back-btn', onClick: props.onClose },
+        h(Icon, { name: 'back', size: 22 })),
+      h('span', { className: 'subview-title' }, props.title)),
+    h('div', { className: 'sheet-body' }, props.children));
+}
+
+/* ---------------------------------------------------------------------
  * Timer ring
  * ------------------------------------------------------------------- */
 
@@ -581,7 +738,7 @@ function HomePage() {
   var stateLabel = !cf.active ? t('idle_state') : (cf.pausedAt ? t('paused_state') : t('running_state'));
 
   return h('div', null,
-    h(Card, null,
+    h('div', { className: 'hero anim' },
       h(Ring, { pct: pct, color: phase.color },
         h('div', { className: 'timer-time' }, fmtClock(ms)),
         cf.active
@@ -611,8 +768,8 @@ function HomePage() {
         ? h('div', { className: 'alert-box' }, t('long_fast_warn'))
         : null),
 
-    h(LiveCard, null),
-    h(QuickStats, null),
+    h('div', { className: 'section-title' }, t('dashboard')),
+    h(Dashboard, null),
 
     showStart ? h(StartTimeModal, {
       goal: goal,
@@ -627,60 +784,224 @@ function HomePage() {
     }) : null);
 }
 
-/** Band + phone-sensor live panel. */
-function LiveCard() {
-  var connected = BAND.status === 'connected';
-  var busy = BAND.status === 'scanning' || BAND.status === 'connecting'
-    || BAND.status === 'discovering' || BAND.status === 'reconnecting';
+/* ---------------------------------------------------------------------
+ * Dashboard
+ * ------------------------------------------------------------------- */
 
-  var dotClass = 'dot';
-  if (connected) dotClass += ' ok';
-  else if (busy) dotClass += ' warn';
-  else if (BAND.status && BAND.status.indexOf('err') === 0) dotClass += ' bad';
+var _setDetail = null;
+var _curDetail = null;
 
-  var levelKey = 'level_' + (SENSORS.level || 'still');
+function Dashboard() {
+  var fastS = seriesFastHours(14);
+  var stepsS = seriesHealth('steps', 14);
+  var sleepS = seriesHealth('sleepMs', 14);
+  var hrS = seriesHealth('restingHr', 14);
+  var weightS = seriesWeight(14);
 
-  return h(Card, {
-    title: t('activity'), icon: 'activity',
-    right: h('button', {
-      className: 'btn btn-sm btn-outline',
-      onClick: function () { if (_setView) _setView('activity'); }
-    }, t('open_activity'))
-  },
-    h('div', { className: 'live-row' },
-      h('div', { className: 'live-metric' },
-        h('div', { className: 'live-val', style: { color: '#e94560' } },
-          h('span', { className: connected && BAND.hr > 0 ? 'hr-pulse' : '' },
-            h(Icon,{name:'heart',size:19,color:'#e94560'})),
-          connected && BAND.hr > 0 ? num(BAND.hr) : '--'),
-        h('div', { className: 'live-unit' }, t('heart_rate') + ' (' + t('bpm') + ')')),
-      h('div', { className: 'live-metric' },
-        h('div', { className: 'live-val', style: { color: '#00e676' } }, num(SENSORS.steps || 0)),
-        h('div', { className: 'live-unit' }, t('steps_label'))),
-      h('div', { className: 'live-metric' },
-        h('div', { className: 'live-val', style: { color: '#f5a623' } }, num(SENSORS.activeMinutes || 0)),
-        h('div', { className: 'live-unit' }, t('active_minutes')))),
+  var macros = todayMacros();
+  var target = proteinTarget();
+  var water = S.get('water', {});
+  var el = electrolytesToday();
+  var connected = BAND.status === 'connected' && BAND.hr > 0;
 
-    h('div', { className: 'chip-row' },
-      h('span', { className: 'chip' }, h('span', { className: dotClass }), bandStatusText()),
-      connected && BAND.battery >= 0
-        ? h('span', { className: 'chip' }, h(Icon,{name:'battery',size:13}), num(BAND.battery) + '%') : null,
-      h('span', { className: 'chip' }, h(Icon,{name:'flame',size:13}), num(SENSORS.calories || 0) + ' ' + t('calories')),
-      h('span', { className: 'chip' }, h(Icon,{name:'activity',size:13}), t(levelKey)),
-      SENSORS.floors > 0
-        ? h('span', { className: 'chip' }, h(Icon,{name:'building',size:13}), num(SENSORS.floors) + ' ' + t('floors')) : null,
-      ROUTE.tracking
-        ? h('span', { className: 'chip ok' }, h(Icon,{name:'route',size:13}), fmtDistance(ROUTE.distanceM)) : null),
+  // Live step count beats yesterday's synced total for "today".
+  var stepsToday = SENSORS.steps || lastValue(stepsS);
+  var sleepLast = lastValue(sleepS);
+  var hrLatest = connected ? BAND.hr : lastValue(hrS);
+  var weightLatest = lastValue(weightS);
+  var sodiumPct = Math.round((el.sodium || 0) / ELECTROLYTE_TARGETS.sodium * 100);
 
-    null);
+  function open(k) { if (_setDetail) _setDetail(k); }
+
+  return h('div', { className: 'tile-grid' },
+    h(MetricTile, {
+      icon: 'timer', label: t('fast_today'), color: METRIC_COLORS.fast,
+      value: lastValue(fastS) === null ? null : num(lastValue(fastS)),
+      unit: t('hour_short'), spark: fastS.values,
+      sub: meanValue(fastS) ? t('avg_7') + ' ' + num(meanValue(fastS).toFixed(1)) : null,
+      onClick: function () { open('fast'); }
+    }),
+    h(MetricTile, {
+      icon: 'activity', label: t('steps_label'), color: METRIC_COLORS.steps,
+      value: stepsToday ? num(stepsToday) : null, spark: stepsS.values,
+      sub: SENSORS.floors ? num(SENSORS.floors) + ' ' + t('floors') : null,
+      onClick: function () { open('steps'); }
+    }),
+    h(MetricTile, {
+      icon: 'moon', label: t('sleep_metric'), color: METRIC_COLORS.sleep,
+      value: sleepLast ? num((sleepLast / 3600000).toFixed(1)) : null,
+      unit: t('hour_short'), spark: sleepS.values,
+      sub: meanValue(sleepS) ? t('avg_7') + ' ' + fmtShort(meanValue(sleepS)) : null,
+      onClick: function () { open('sleep'); }
+    }),
+    h(MetricTile, {
+      icon: 'heart', label: connected ? t('heart_rate') : t('resting_hr'),
+      color: METRIC_COLORS.hr,
+      value: hrLatest ? num(hrLatest) : null, unit: t('bpm'), spark: hrS.values,
+      sub: connected ? t('live') : (lastValue(hrS) ? t('latest') : null),
+      onClick: function () { open('hr'); }
+    }),
+    h(MetricTile, {
+      icon: 'dumbbell', label: t('protein'), color: METRIC_COLORS.protein,
+      value: target.grams ? num(Math.round(macros.p)) : null,
+      unit: target.grams ? '/ ' + num(target.grams) + 'g' : null,
+      sub: target.grams
+        ? num(Math.max(0, target.grams - Math.round(macros.p))) + 'g ' + t('protein_left')
+        : null,
+      onClick: function () { open('protein'); }
+    }),
+    h(MetricTile, {
+      icon: 'droplet', label: t('water'), color: METRIC_COLORS.water,
+      value: water.ml ? num(water.ml) : null, unit: t('ml'),
+      sub: num(Math.round((water.ml || 0) / (water.target || 3000) * 100)) + '% '
+        + t('of_goal'),
+      onClick: function () { open('water'); }
+    }),
+    h(MetricTile, {
+      icon: 'scale', label: t('weight'), color: METRIC_COLORS.weight,
+      value: weightLatest ? num(weightLatest.toFixed(1)) : null,
+      unit: t('weight_unit'), spark: weightS.values,
+      sub: (function () {
+        var d = bodyDelta();
+        return d && d.kg !== null ? (d.kg > 0 ? '+' : '') + num(d.kg) + ' ' + t('weight_unit') : null;
+      })(),
+      onClick: function () { open('weight'); }
+    }),
+    h(MetricTile, {
+      icon: 'flame', label: t('electrolytes'), color: METRIC_COLORS.electrolytes,
+      value: el.sodium ? num(sodiumPct) : null, unit: '%',
+      sub: t('sodium') + ' ' + num(el.sodium || 0) + ' ' + t('mg'),
+      onClick: function () { open('electrolytes'); }
+    }));
 }
 
-function QuickStats() {
-  var stats = S.get('stats', {});
-  return h('div', { className: 'stats-grid' },
-    h(Stat, { value: num(stats.currentStreak || 0), label: t('current_streak'), tone: 'gold' }),
-    h(Stat, { value: num(stats.bestStreak || 0), label: t('best_streak'), tone: 'green' }),
-    h(Stat, { value: num(stats.totalSessions || 0), label: t('total_sessions'), tone: 'blue' }));
+/** One metric, full screen, with the chart the tile only hints at. */
+function MetricDetail(props) {
+  var k = props.metric;
+  var title = '', hero = null, unit = '', colour = '#e94560', body = null;
+
+  function chartCard(series, colr, kind, fmt) {
+    var enough = 0;
+    for (var i = 0; i < series.values.length; i++) {
+      if (series.values[i] !== null && series.values[i] !== undefined) enough++;
+    }
+    if (enough < 2) return h(Card, null, h(Empty, { text: t('no_series') }));
+    return h(Card, { title: t('last_14'), icon: 'chart' },
+      kind === 'bar'
+        ? h(BarSeries, {
+            values: series.values, labels: series.labels, color: colr, height: 130,
+            avg: meanValue(series)
+          })
+        : h(AreaChart, { values: series.values, color: colr, height: 160 }),
+      h('div', { className: 'chart-legend' },
+        h('span', null, h('i', { style: { background: colr } }),
+          t('avg_7') + ': ' + (meanValue(series) === null ? '—' : fmt(meanValue(series))))));
+  }
+
+  if (k === 'fast') {
+    var fastS = seriesFastHours(14);
+    var stats = S.get('stats', {});
+    title = t('fast_hours');
+    colour = METRIC_COLORS.fast;
+    hero = lastValue(fastS) === null ? '—' : num(lastValue(fastS));
+    unit = t('hour_short');
+    body = h('div', null,
+      chartCard(fastS, colour, 'bar', function (v) { return num(v.toFixed(1)) + t('hour_short'); }),
+      h(Card, { title: t('progress'), icon: 'trophy' },
+        h('div', { className: 'stats-grid' },
+          h(Stat, { value: num(stats.currentStreak || 0), label: t('current_streak'), tone: 'gold' }),
+          h(Stat, { value: num(stats.bestStreak || 0), label: t('best_streak'), tone: 'green' }),
+          h(Stat, { value: num(stats.totalHours || 0), label: t('total_hours'), tone: 'blue' }))),
+      h(PlanCard, null));
+
+  } else if (k === 'steps') {
+    var stepsS = seriesHealth('steps', 14);
+    title = t('steps_label');
+    colour = METRIC_COLORS.steps;
+    hero = num(SENSORS.steps || lastValue(stepsS) || 0);
+    body = h('div', null,
+      chartCard(stepsS, colour, 'bar', function (v) { return num(Math.round(v)); }),
+      h(Card, { title: t('activity'), icon: 'activity' },
+        h('div', { className: 'stats-grid' },
+          h(Stat, { value: num(SENSORS.activeMinutes || 0), label: t('active_minutes'), tone: 'gold' }),
+          h(Stat, { value: num(SENSORS.floors || 0), label: t('floors'), tone: 'green' }),
+          h(Stat, { value: num(SENSORS.calories || 0), label: t('calories_burned'), tone: 'blue' })),
+        h('div', { className: 'chip-row' },
+          h('span', { className: 'chip' }, t('activity_level_now') + ': '
+            + t('level_' + (SENSORS.level || 'still'))))));
+
+  } else if (k === 'sleep') {
+    var sleepS = seriesHealth('sleepMs', 14);
+    var shown = { values: [], labels: sleepS.labels };
+    for (var si = 0; si < sleepS.values.length; si++) {
+      shown.values.push(sleepS.values[si] === null ? null : sleepS.values[si] / 3600000);
+    }
+    title = t('sleep_metric');
+    colour = METRIC_COLORS.sleep;
+    hero = lastValue(sleepS) ? num((lastValue(sleepS) / 3600000).toFixed(1)) : '—';
+    unit = t('hour_short');
+    body = h('div', null,
+      chartCard(shown, colour, 'bar', function (v) { return num(v.toFixed(1)) + t('hour_short'); }),
+      h(Card, null, h('div', { className: 'card-sub' }, t('sleep_est_hint'))));
+
+  } else if (k === 'hr') {
+    var hrS = seriesHealth('restingHr', 14);
+    title = t('resting_hr');
+    colour = METRIC_COLORS.hr;
+    hero = BAND.status === 'connected' && BAND.hr > 0 ? num(BAND.hr) : (lastValue(hrS) ? num(lastValue(hrS)) : '—');
+    unit = t('bpm');
+    body = h('div', null,
+      chartCard(hrS, colour, 'area', function (v) { return num(Math.round(v)) + ' ' + t('bpm'); }),
+      h(HrFastingCard, null));
+
+  } else if (k === 'protein') {
+    title = t('protein_target');
+    colour = METRIC_COLORS.protein;
+    var mac = todayMacros();
+    hero = num(Math.round(mac.p));
+    unit = 'g';
+    body = h('div', null,
+      h(ProteinCard, null),
+      h(Card, { title: t('todays_total'), icon: 'meals' },
+        h('div', { className: 'stats-grid-4' },
+          h(Stat, { value: num(Math.round(mac.cal)), label: t('calories'), tone: 'gold' }),
+          h(Stat, { value: num(Math.round(mac.p)) + 'g', label: t('protein'), tone: 'green' }),
+          h(Stat, { value: num(Math.round(mac.c)) + 'g', label: t('carbs'), tone: 'blue' }),
+          h(Stat, { value: num(Math.round(mac.f)) + 'g', label: t('fat') }))));
+
+  } else if (k === 'water') {
+    var w = S.get('water', {});
+    title = t('water_intake');
+    colour = METRIC_COLORS.water;
+    hero = num(w.ml || 0);
+    unit = t('ml');
+    body = h(LiquidsPage, null);
+
+  } else if (k === 'weight') {
+    var weightS = seriesWeight(14);
+    title = t('weight');
+    colour = METRIC_COLORS.weight;
+    hero = lastValue(weightS) ? num(lastValue(weightS).toFixed(1)) : '—';
+    unit = t('weight_unit');
+    body = h('div', null,
+      chartCard(weightS, colour, 'area', function (v) { return num(v.toFixed(1)) + ' ' + t('weight_unit'); }),
+      h(BodyCompCard, null));
+
+  } else {
+    var el2 = electrolytesToday();
+    title = t('electrolytes');
+    colour = METRIC_COLORS.electrolytes;
+    hero = num(el2.sodium || 0);
+    unit = t('mg');
+    body = h(ElectrolytesCard, null);
+  }
+
+  return h(DetailSheet, { title: title, onClose: props.onClose },
+    h('div', { className: 'sheet-hero' },
+      h('div', { className: 'sheet-hero-val', style: { color: colour } },
+        hero, unit ? h('span', { className: 'tile-unit' }, unit) : null),
+      h('div', { className: 'sheet-hero-label' }, title)),
+    body);
 }
 
 function bandStatusText() {
@@ -1234,14 +1555,14 @@ function HrFastingCard() {
   }
 
   return h(Card, { title: t('hr_vs_fast'), icon: 'heart' },
-    h('div', { className: 'map-box', style: { height: '190px' } },
+    h('div', { className: 'map-box', style: { height: '200px', direction: 'ltr' } },
       h('svg', { width: '100%', height: '100%', viewBox: '0 0 ' + w + ' ' + hh },
         h('line', { x1: pad, y1: hh - pad, x2: w - pad, y2: hh - pad, stroke: '#282844', strokeWidth: 1 }),
         h('line', { x1: pad, y1: pad, x2: pad, y2: hh - pad, stroke: '#282844', strokeWidth: 1 }),
         h('text', { x: w - pad, y: hh - 8, fill: '#6b6b8c', fontSize: 10, textAnchor: 'end' },
           num(Math.round(maxH)) + t('hour_short')),
-        h('text', { x: 4, y: pad + 4, fill: '#6b6b8c', fontSize: 10 }, num(Math.round(maxBpm))),
-        h('text', { x: 4, y: hh - pad, fill: '#6b6b8c', fontSize: 10 }, num(Math.round(minBpm))),
+        h('text', { x: 2, y: pad - 4, fill: '#6b6b8c', fontSize: 10 }, num(Math.round(maxBpm))),
+        h('text', { x: 2, y: hh - pad + 12, fill: '#6b6b8c', fontSize: 10 }, num(Math.round(minBpm))),
         dots)),
     h('div', { className: 'chip-row' },
       h('span', { className: 'chip' }, t('hr_src_' + data.source)),
@@ -2638,8 +2959,10 @@ function App() {
   var v = useState(0); _bump = v[1];
   var tb = useState('home'); var tab = tb[0]; _setTab = tb[1];
   var vw = useState(null); var view = vw[0]; _setView = vw[1];
+  var dt = useState(null); var detail = dt[0]; _setDetail = dt[1];
   _curTab = tab;
   _curView = view;
+  _curDetail = detail;
   // Existing installs already accepted the notice, so they skip onboarding.
   var dc = useState(!S.get('settings.onboarded', false) && !S.get('settings.disclaimerSeen', false));
   var showOnboarding = dc[0], setShowOnboarding = dc[1];
@@ -2707,6 +3030,10 @@ function App() {
       ? h(ActivityView, { onClose: function () { _setView(null); } })
       : null,
 
+    detail
+      ? h(MetricDetail, { metric: detail, onClose: function () { _setDetail(null); } })
+      : null,
+
     showOnboarding ? h(Onboarding, {
       onDone: function () { setShowOnboarding(false); }
     }) : null);
@@ -2724,6 +3051,10 @@ window.__onBack = function () {
     var evt = document.createEvent('MouseEvents');
     evt.initEvent('click', true, true);
     overlay.dispatchEvent(evt);
+    return;
+  }
+  if (_setDetail && _curDetail) {
+    _setDetail(null);
     return;
   }
   if (_setView && _curView) {
