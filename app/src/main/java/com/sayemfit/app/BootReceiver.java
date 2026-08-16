@@ -11,6 +11,8 @@ public class BootReceiver extends BroadcastReceiver {
     public void onReceive(Context context, Intent intent) {
         AppCore core = AppCore.get();
         core.init(context);
+        // Alarms are cleared by a reboot; re-arm every daily reminder.
+        Reminders.scheduleAll(context);
         if (!core.isFasting()) return;
         FastingService.start(context);
     }

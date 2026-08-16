@@ -124,6 +124,8 @@ public class AppCore {
             e.putBoolean(K_GOAL_DONE, false);
         }
         e.apply();
+        // Encouragement milestones are per-fast, so clear them with the fast.
+        if (!active) Reminders.resetFastState(prefs);
     }
 
     public boolean isFasting() {

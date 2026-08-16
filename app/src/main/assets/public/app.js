@@ -137,6 +137,34 @@ function toast(msg) {
   _notifTimer = setTimeout(function () { el.className = 'notif'; }, 2600);
 }
 
+/**
+ * Pushes reminder settings into the native scheduler.
+ *
+ * Called after anything that changes what a reminder should say or when it
+ * should fire — including stats, since the encouragement copy quotes the
+ * personal best and the current streak.
+ */
+function syncReminders() {
+  if (!N.ok()) return;
+  var r = S.get('settings.reminders', {});
+  var stats = S.get('stats', {});
+  N.call('setReminderConfig', JSON.stringify({
+    water: r.water !== false,
+    motivation: r.motivation !== false,
+    window: r.window !== false,
+    checkin: r.checkin !== false,
+    supplement: !!r.supplement,
+    nudge: !!r.nudge,
+    windowStart: S.get('settings.windowStart', '17:00'),
+    windowEnd: S.get('settings.windowEnd', '21:00'),
+    checkinTime: r.checkinTime || '20:00',
+    supplementTime: r.supplementTime || '18:00',
+    nudgeTime: r.nudgeTime || '22:00',
+    bestFastMs: stats.longest || 0,
+    streak: stats.currentStreak || 0
+  }));
+}
+
 /* ---------------------------------------------------------------------
  * Fast actions
  * ------------------------------------------------------------------- */
@@ -210,8 +238,27 @@ function stopFast() {
   S.set('currentFast', m(S.defaults().currentFast, { goal: goal }));
   recomputeStats();
   N.syncFast();
+  syncReminders();
   N.call('vibrate', 60);
   toast(t('fast_ended') + ' — ' + fmtShort(dur));
+  refresh();
+}
+
+/** Retimes a running fast to a corrected start moment. */
+function adjustFastStart(ts) {
+  var cf = S.get('currentFast', {});
+  if (!cf.active) return;
+  if (cf.pausedAt) {
+    // Paused: the clock is banked, so move the banked total instead. Time
+    // spent paused must not be counted as fasted.
+    cf.elapsed = Math.max(0, cf.pausedAt - ts);
+  } else {
+    cf.startTime = ts;
+    cf.elapsed = 0;
+  }
+  S.set('currentFast', cf);
+  N.syncFast();
+  toast(t('saved'));
   refresh();
 }
 
@@ -253,6 +300,35 @@ function Switch(props) {
     onClick: props.onChange,
     'aria-pressed': props.on ? 'true' : 'false'
   }, h('span', { className: 'switch-knob' }));
+}
+
+/** One reminder: an on/off switch, and a time field when it is a daily one. */
+function ReminderToggle(props) {
+  var r = S.get('settings.reminders', {});
+  var on = props.k === 'supplement' || props.k === 'nudge'
+    ? !!r[props.k]
+    : r[props.k] !== false;
+
+  function set(key, value) {
+    var next = m({}, S.get('settings.reminders', {}));
+    next[key] = value;
+    S.set('settings.reminders', next);
+    syncReminders();
+    refresh();
+  }
+
+  return h('div', { className: 'row' },
+    h('div', { className: 'row-main' },
+      h('div', { className: 'row-title' }, props.label),
+      props.hint ? h('div', { className: 'row-sub' }, props.hint) : null),
+    props.timeKey && on
+      ? h(TextField, {
+          value: r[props.timeKey] || '20:00',
+          placeholder: '20:00',
+          onCommit: function (v) { set(props.timeKey, v); }
+        })
+      : null,
+    h(Switch, { on: on, onChange: function () { set(props.k, !on); } }));
 }
 
 function SettingRow(props) {
@@ -468,6 +544,7 @@ function PhaseTimeline(props) {
 
 function HomePage() {
   var st = useState(false); var showStart = st[0], setShowStart = st[1];
+  var se = useState(false); var showEdit = se[0], setShowEdit = se[1];
   var cf = S.get('currentFast', {});
   var ms = fastElapsed(cf);
   var hours = ms / 3600000;
@@ -528,6 +605,12 @@ function HomePage() {
       h('div', { className: 'goal-selector' }, goalBtns),
       controls,
 
+      cf.active ? h('div', { className: 'btn-group', style: { marginTop: '10px' } },
+        h('button', {
+          className: 'btn btn-sm btn-ghost',
+          onClick: function () { setShowEdit(true); }
+        }, h(Icon, { name: 'clock', size: 15 }), t('edit_start'))) : null,
+
       cf.active && hours >= 48
         ? h('div', { className: 'alert-box' }, t('long_fast_warn'))
         : null),
@@ -539,6 +622,12 @@ function HomePage() {
       goal: goal,
       onClose: function () { setShowStart(false); },
       onPick: function (ts) { setShowStart(false); startFast(ts, goal); }
+    }) : null,
+
+    showEdit ? h(StartTimeModal, {
+      title: t('edit_start'),
+      onClose: function () { setShowEdit(false); },
+      onPick: function (ts) { setShowEdit(false); adjustFastStart(ts); }
     }) : null);
 }
 
@@ -628,42 +717,116 @@ function connectBand() {
 }
 
 /** Modal: start a fast that actually began earlier (backdated). */
+/**
+ * Start-time picker.
+ *
+ * The previous version only had +/- buttons, and minutes moved in steps of
+ * five — so an exact time like 23:07 was simply not expressible. Hours and
+ * minutes are now typed directly, with the steppers kept for nudging, an
+ * explicit today/yesterday choice instead of a silent rollback, quick
+ * "N hours ago" chips, and a live preview of the resulting fast length.
+ */
 function StartTimeModal(props) {
   var now = new Date();
-  var st1 = useState(now.getHours()); var hh = st1[0], setHH = st1[1];
-  var st2 = useState(now.getMinutes()); var mm = st2[0], setMM = st2[1];
+  var st1 = useState(pad2(now.getHours())); var hh = st1[0], setHH = st1[1];
+  var st2 = useState(pad2(now.getMinutes())); var mm = st2[0], setMM = st2[1];
+  var st3 = useState(0); var dayBack = st3[0], setDayBack = st3[1];
 
-  function bump(which, delta) {
-    if (which === 'h') setHH((hh + delta + 24) % 24);
-    else setMM((mm + delta + 60) % 60);
+  function clampInt(raw, max) {
+    var v = parseInt(raw, 10);
+    if (isNaN(v) || v < 0) v = 0;
+    if (v > max) v = max;
+    return v;
   }
 
-  function confirm() {
+  function computeTs() {
     var d = new Date();
-    d.setHours(hh, mm, 0, 0);
-    var ts = d.getTime();
-    // A time later than "now" means the user meant yesterday.
-    if (ts > Date.now()) ts -= 86400000;
-    props.onPick(ts);
+    d.setHours(clampInt(hh, 23), clampInt(mm, 59), 0, 0);
+    return d.getTime() - dayBack * 86400000;
+  }
+
+  function setFromHoursAgo(hours) {
+    var d = new Date(Date.now() - hours * 3600000);
+    setHH(pad2(d.getHours()));
+    setMM(pad2(d.getMinutes()));
+    setDayBack(d.getDate() === new Date().getDate() ? 0 : 1);
+  }
+
+  var ts = computeTs();
+  var future = ts > Date.now();
+  var elapsed = Date.now() - ts;
+
+  function field(value, setter, max, label) {
+    return h('div', { className: 'time-col' },
+      h('button', {
+        className: 'time-btn',
+        onClick: function () { setter(pad2((clampInt(value, max) + 1) % (max + 1))); }
+      }, h(Icon, { name: 'plus', size: 17 })),
+      h('input', {
+        className: 'time-input',
+        type: 'number',
+        inputMode: 'numeric',
+        value: value,
+        'aria-label': label,
+        onChange: function (e) { setter(e.target.value.slice(0, 2)); },
+        onBlur: function () { setter(pad2(clampInt(value, max))); }
+      }),
+      h('button', {
+        className: 'time-btn',
+        onClick: function () { setter(pad2((clampInt(value, max) + max) % (max + 1))); }
+      }, h(Icon, { name: 'minus', size: 17 })));
+  }
+
+  var quick = [1, 3, 6, 12, 16, 20];
+  var quickBtns = [];
+  for (var i = 0; i < quick.length; i++) {
+    (function (n) {
+      quickBtns.push(h('button', {
+        key: 'q' + n, className: 'goal-btn',
+        onClick: function () { setFromHoursAgo(n); }
+      }, num(n) + (isRTL() ? 'س' : 'h')));
+    })(quick[i]);
   }
 
   return h('div', { className: 'modal-overlay', onClick: props.onClose },
     h('div', { className: 'modal', onClick: function (e) { e.stopPropagation(); } },
-      h('h3', null, t('set_start_time')),
+      h('h3', null, props.title || t('set_start_time')),
+
       h('div', { className: 'time-picker' },
-        h('div', { className: 'time-col' },
-          h('button', { className: 'time-btn', onClick: function () { bump('h', 1); } }, h(Icon,{name:'plus',size:18})),
-          h('div', { className: 'time-val' }, pad2(hh)),
-          h('button', { className: 'time-btn', onClick: function () { bump('h', -1); } }, h(Icon,{name:'minus',size:18}))),
+        field(hh, setHH, 23, 'hours'),
         h('div', { className: 'time-sep' }, ':'),
-        h('div', { className: 'time-col' },
-          h('button', { className: 'time-btn', onClick: function () { bump('m', 5); } }, h(Icon,{name:'plus',size:18})),
-          h('div', { className: 'time-val' }, pad2(mm)),
-          h('button', { className: 'time-btn', onClick: function () { bump('m', -5); } }, h(Icon,{name:'minus',size:18})))),
-      h('div', { className: 'card-sub', style: { textAlign: 'center', marginTop: '10px' } },
-        t('back_hours')),
+        field(mm, setMM, 59, 'minutes')),
+
+      h('div', { className: 'goal-selector' },
+        h('button', {
+          className: 'goal-btn' + (dayBack === 0 ? ' active' : ''),
+          onClick: function () { setDayBack(0); }
+        }, t('today')),
+        h('button', {
+          className: 'goal-btn' + (dayBack === 1 ? ' active' : ''),
+          onClick: function () { setDayBack(1); }
+        }, t('yesterday'))),
+
+      h('div', { className: 'section-title', style: { textAlign: 'center' } }, t('quick_pick')),
+      h('div', { className: 'goal-selector' }, quickBtns),
+
+      // A future time almost always means "yesterday". Offer the fix as one
+      // tap instead of leaving a disabled Confirm and no way forward.
+      future
+        ? h('button', {
+            className: 'alert-box',
+            style: { width: '100%', textAlign: 'center', cursor: 'pointer', border: '1px solid rgba(255,77,94,.32)' },
+            onClick: function () { setDayBack(1); }
+          }, t('time_future'))
+        : h('div', { className: 'info-box', style: { textAlign: 'center' } },
+            t('will_be') + ' ' + fmtShort(elapsed)),
+
       h('div', { className: 'modal-btns' },
-        h('button', { className: 'btn btn-primary btn-sm', onClick: confirm }, t('confirm')),
+        h('button', {
+          className: 'btn btn-primary btn-sm',
+          disabled: future,
+          onClick: function () { props.onPick(ts); }
+        }, t('confirm')),
         h('button', { className: 'btn btn-outline btn-sm', onClick: props.onClose }, t('cancel')))));
 }
 
@@ -1513,13 +1676,34 @@ function SettingsPage() {
       h(SettingRow, { label: t('window_start') },
         h(TextField, {
           value: S.get('settings.windowStart', '17:00'), placeholder: '17:00',
-          onCommit: function (v) { S.set('settings.windowStart', v); refresh(); }
+          onCommit: function (v) { S.set('settings.windowStart', v); syncReminders(); refresh(); }
         })),
       h(SettingRow, { label: t('window_end') },
         h(TextField, {
           value: S.get('settings.windowEnd', '21:00'), placeholder: '21:00',
-          onCommit: function (v) { S.set('settings.windowEnd', v); refresh(); }
+          onCommit: function (v) { S.set('settings.windowEnd', v); syncReminders(); refresh(); }
         }))),
+
+    h('div', { className: 'section-title' }, t('reminders')),
+    h(Card, { flat: true },
+      !PERMS.notifications
+        ? h('div', { className: 'alert-box', style: { marginTop: 0, marginBottom: '10px' } },
+            t('rem_need_perm'))
+        : null,
+      h(ReminderToggle, { k: 'water', label: t('rem_water'), hint: t('rem_water_hint') }),
+      h(ReminderToggle, { k: 'motivation', label: t('rem_motivation'), hint: t('rem_motivation_hint') }),
+      h(ReminderToggle, { k: 'window', label: t('rem_window'), hint: t('rem_window_hint') }),
+      h(ReminderToggle, { k: 'checkin', label: t('rem_checkin'), timeKey: 'checkinTime' }),
+      h(ReminderToggle, { k: 'supplement', label: t('rem_supplement'), timeKey: 'supplementTime' }),
+      h(ReminderToggle, { k: 'nudge', label: t('rem_nudge'), hint: t('rem_nudge_hint'), timeKey: 'nudgeTime' }),
+      h(SettingRow, { label: t('rem_test') },
+        h('button', {
+          className: 'btn btn-sm btn-outline',
+          onClick: function () {
+            N.call('testReminder', 'checkin');
+            toast(t('rem_sent'));
+          }
+        }, t('confirm')))),
 
     h('div', { className: 'section-title' }, t('data')),
     h(Card, { flat: true },
@@ -2376,6 +2560,7 @@ window.__onBack = function () {
   INVENTORY = N.inventory();
   N.call('healthRefresh');
   recomputeStats();
+  syncReminders();
 
   var root = ReactDOM.createRoot(document.getElementById('root'));
   root.render(h(App, null));

@@ -90,6 +90,43 @@ public class JsBridge implements NativeListener {
         core.prefs().edit().putBoolean("notify_phase", on).apply();
     }
 
+    /**
+     * Mirrors the reminder settings into native prefs and re-arms the daily
+     * alarms. Sent as JSON because there are a dozen fields and a positional
+     * signature that long is a bug waiting to happen.
+     */
+    @JavascriptInterface
+    public void setReminderConfig(String json) {
+        if (json == null) return;
+        try {
+            org.json.JSONObject o = new org.json.JSONObject(json);
+            android.content.SharedPreferences.Editor e = core.prefs().edit();
+            e.putBoolean(Reminders.P_WATER, o.optBoolean("water", true));
+            e.putBoolean(Reminders.P_MOTIVATION, o.optBoolean("motivation", true));
+            e.putBoolean(Reminders.P_WINDOW, o.optBoolean("window", true));
+            e.putBoolean(Reminders.P_CHECKIN, o.optBoolean("checkin", true));
+            e.putBoolean(Reminders.P_SUPPLEMENT, o.optBoolean("supplement", false));
+            e.putBoolean(Reminders.P_NUDGE, o.optBoolean("nudge", false));
+            e.putString(Reminders.P_WINDOW_START, o.optString("windowStart", "17:00"));
+            e.putString(Reminders.P_WINDOW_END, o.optString("windowEnd", "21:00"));
+            e.putString(Reminders.P_CHECKIN_TIME, o.optString("checkinTime", "20:00"));
+            e.putString(Reminders.P_SUPPLEMENT_TIME, o.optString("supplementTime", "18:00"));
+            e.putString(Reminders.P_NUDGE_TIME, o.optString("nudgeTime", "22:00"));
+            e.putLong(Reminders.P_BEST_FAST, (long) o.optDouble("bestFastMs", 0));
+            e.putInt("streak", o.optInt("streak", 0));
+            e.apply();
+        } catch (org.json.JSONException ignored) {
+            return;
+        }
+        Reminders.scheduleAll(core.context());
+    }
+
+    /** Fires one reminder immediately so the user can see what it looks like. */
+    @JavascriptInterface
+    public void testReminder(String kind) {
+        Reminders.fire(core.context(), kind == null ? Reminders.K_CHECKIN : kind);
+    }
+
     // ---------------- Band ----------------
 
     @JavascriptInterface

@@ -106,6 +106,8 @@ public class FastingService extends Service {
         }
         if (core.isFasting()) {
             checkMilestones();
+            Reminders.maybeWater(this);
+            Reminders.maybeMilestone(this);
             scheduleAlarm();
         }
         notifyManager().notify(NOTIF_ID, buildOngoing());

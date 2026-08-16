@@ -266,7 +266,10 @@ select.setting-input{width:136px;text-align:start}
   overflow-y:auto;animation:pop .26s var(--ease)}
 .modal h3{font-size:var(--fs-lg);margin-bottom:var(--s4);text-align:center;font-weight:700}
 .modal-btns{display:flex;gap:var(--s2);margin-top:var(--s4);justify-content:center}
-.time-picker{display:flex;align-items:center;justify-content:center;gap:var(--s3)}
+/* Clock time is written HH:MM left-to-right in Arabic too, so this row is
+   pinned to LTR — in RTL the hours and minutes would otherwise swap sides
+   and 23:07 would read as 07:23. */
+.time-picker{display:flex;align-items:center;justify-content:center;gap:var(--s3);direction:ltr}
 .time-col{display:flex;flex-direction:column;align-items:center;gap:4px}
 .time-btn{width:48px;height:38px;border:1px solid var(--line);border-radius:var(--r-sm);
   background:var(--surface-2);color:var(--text);cursor:pointer;display:flex;
@@ -274,6 +277,12 @@ select.setting-input{width:136px;text-align:start}
 .time-btn:active{background:var(--primary);border-color:var(--primary)}
 .time-val{font-size:var(--fs-2xl);font-weight:700;padding:6px 0;font-variant-numeric:tabular-nums;
   min-width:56px;text-align:center}
+.time-input{width:66px;padding:6px 0;background:var(--surface-2);border:1px solid var(--line);
+  border-radius:var(--r-sm);color:var(--text);font-size:var(--fs-2xl);font-weight:700;
+  text-align:center;font-variant-numeric:tabular-nums;outline:none;transition:border-color .2s}
+.time-input:focus{border-color:var(--primary)}
+.time-input::-webkit-outer-spin-button,.time-input::-webkit-inner-spin-button{
+  -webkit-appearance:none;margin:0}
 .time-sep{font-size:var(--fs-xl);color:var(--text-3);padding-bottom:6px}
 
 .notif{position:fixed;top:calc(var(--header-h) + var(--safe-t) + 10px);inset-inline:var(--s4);

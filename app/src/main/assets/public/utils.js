@@ -6,7 +6,7 @@
  * no destructuring, no classes, no async/await. See README.
  * ===================================================================== */
 
-var APP_VERSION = '5.1';
+var APP_VERSION = '5.2';
 var STORE_KEY = 'sayem_v4';
 var LEGACY_KEY = 'sayem_v3';
 
@@ -103,7 +103,12 @@ var S = {
         wakeTime: '09:00',
         sleepTarget: 7.5,
         caffeineCutoffH: 8,
-        stimulantCutoffH: 8
+        stimulantCutoffH: 8,
+        reminders: {
+          water: true, motivation: true, window: true, checkin: true,
+          supplement: false, nudge: false,
+          checkinTime: '20:00', supplementTime: '18:00', nudgeTime: '22:00'
+        }
       }
     };
   },
@@ -534,6 +539,19 @@ var LANG = {
     spo2: 'الأكسجين', spo2_avg: 'متوسط الأكسجين', health_trends: 'مؤشراتك',
     no_health_data: 'مفيش بيانات — اربط Health Connect وزامن',
     hc_error: 'المزامنة فشلت',
+    reminders: 'التنبيهات', rem_water: 'تذكير بالمياه', rem_water_hint: 'كل ساعتين أثناء الصيام',
+    rem_motivation: 'رسايل تحفيز', rem_motivation_hint: 'عند ٢٥٪ و٥٠٪ و٧٥٪ من الهدف، ولما تكسر رقمك',
+    rem_window: 'نافذة الأكل', rem_window_hint: 'لما تفتح، وقبل ما تقفل بنص ساعة',
+    rem_checkin: 'تذكير بتسجيل حالتك', rem_supplement: 'تذكير بالمكمل',
+    rem_nudge: 'نبّهني لو مبدأتش صيام', rem_nudge_hint: 'لو الوقت عدّى ولسه مبدأتش',
+    rem_time: 'الميعاد', rem_test: 'جرّب التنبيه', rem_sent: 'اتبعت — بُص فوق',
+    rem_need_perm: 'إذن الإشعارات مقفول — التنبيهات مش هتظهر',
+
+    today: 'النهاردة', yesterday: 'امبارح', hours_ago: 'من كام ساعة؟',
+    edit_start: 'تعديل وقت البداية', will_be: 'يعني صايم من',
+    time_future: 'الوقت ده لسه مجاش — اختار امبارح',
+    hour_unit: 'ساعة', quick_pick: 'اختيار سريع',
+
     onb_skip: 'تخطي', onb_next: 'التالي', onb_back: 'رجوع', onb_start: 'يلا نبدأ',
     onb_step: 'خطوة', onb_of: 'من',
     onb_w_title: 'أهلاً بيك في عبود صايم',
@@ -762,6 +780,19 @@ var LANG = {
     spo2: 'Oxygen', spo2_avg: 'Average SpO2', health_trends: 'Your metrics',
     no_health_data: 'No data — connect Health Connect and sync',
     hc_error: 'Sync failed',
+    reminders: 'Reminders', rem_water: 'Water reminder', rem_water_hint: 'Every 2 hours while fasting',
+    rem_motivation: 'Encouragement', rem_motivation_hint: 'At 25%, 50%, 75% of the goal, and on a new record',
+    rem_window: 'Eating window', rem_window_hint: 'When it opens, and 30 minutes before it closes',
+    rem_checkin: 'Check-in reminder', rem_supplement: 'Supplement reminder',
+    rem_nudge: 'Nudge if no fast started', rem_nudge_hint: 'When the time passes and nothing is running',
+    rem_time: 'Time', rem_test: 'Send a test', rem_sent: 'Sent — check your notifications',
+    rem_need_perm: 'Notification permission is off — reminders will not appear',
+
+    today: 'Today', yesterday: 'Yesterday', hours_ago: 'How long ago?',
+    edit_start: 'Edit start time', will_be: 'That is a fast of',
+    time_future: 'That time has not happened yet — pick yesterday',
+    hour_unit: 'hours', quick_pick: 'Quick pick',
+
     onb_skip: 'Skip', onb_next: 'Next', onb_back: 'Back', onb_start: 'Get started',
     onb_step: 'Step', onb_of: 'of',
     onb_w_title: 'Welcome to Aboud Sayem',
