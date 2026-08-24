@@ -6,7 +6,7 @@
  * no destructuring, no classes, no async/await. See README.
  * ===================================================================== */
 
-var APP_VERSION = '6.1';
+var APP_VERSION = '6.2';
 var STORE_KEY = 'sayem_v4';
 var LEGACY_KEY = 'sayem_v3';
 
@@ -238,6 +238,10 @@ var S = {
 
   save: function () {
     try { localStorage.setItem(STORE_KEY, JSON.stringify(this._d)); } catch (e) {}
+    // Anything that re-reads the data to reach a conclusion — the expert
+    // engine and its notifications — hangs off here rather than off every
+    // call site that happens to write.
+    if (typeof this._onSave === 'function') this._onSave();
   },
 
   reset: function () {
@@ -441,6 +445,11 @@ var LANG = {
     weight_log: 'سجل الوزن', add_weight: 'سجّل وزنك', weight_change: 'التغير',
 
     coach_title: 'المدرب الذكي', analysis: 'التحليل الفسيولوجي', tips: 'نصائح علمية',
+    expert_title: 'قراءة أرقامك', expert_sub: 'تحليل تغذية وتدريب مبني على اللي إنت سجّلته',
+    expert_empty: 'لسه مفيش بيانات كفاية. سجّل وزنك ووجباتك وتمارينك أسبوع، وهنا هتلاقي تحليل مخصوص ليك.',
+    prio_1: 'غيّر ده الأسبوع ده', prio_2: 'يستاهل انتباهك', prio_3: 'محافظة',
+    insight_time: 'ميعاد نصيحة اليوم', insight_time_hint: 'أهم ملاحظة من تحليل أرقامك، مرة في اليوم',
+    rem_protein: 'جرعة البروتين التانية', rem_protein_hint: 'داخل نافذة الأكل لما الهدف كبير على وجبة واحدة',
     exercise_rec: 'التوصية الرياضية', refeeding: 'بروتوكول الإفطار',
     refeed_phase1: 'المرحلة 1: توقظ المعدة',
     refeed_phase1_desc: 'مرق عظام دافئ أو شوربة + ملعقة زيت زيتون بكر. استنى 30 دقيقة.',
@@ -716,6 +725,11 @@ var LANG = {
     weight_log: 'Weight log', add_weight: 'Log weight', weight_change: 'Change',
 
     coach_title: 'Smart coach', analysis: 'Physiological analysis', tips: 'Science tips',
+    expert_title: 'Reading your numbers', expert_sub: 'Nutrition and training analysis from what you logged',
+    expert_empty: 'Not enough data yet. Log your weight, meals and workouts for a week and your own analysis appears here.',
+    prio_1: 'Change this week', prio_2: 'Worth your attention', prio_3: 'Upkeep',
+    insight_time: 'Daily insight time', insight_time_hint: 'The single most useful finding, once a day',
+    rem_protein: 'Second protein dose', rem_protein_hint: 'Inside the eating window when the target is large for one meal',
     exercise_rec: 'Exercise guidance', refeeding: 'Refeeding protocol',
     refeed_phase1: 'Step 1: wake the stomach',
     refeed_phase1_desc: 'Warm bone broth or plain soup + 1 tsp extra virgin olive oil. Wait 30 minutes.',
@@ -1555,6 +1569,303 @@ function coachFor(hours) {
     exercise: (ar ? EXERCISE_AR : EXERCISE_EN)[idx],
     index: idx
   };
+}
+
+
+/* ---------------------------------------------------------------------
+ * Expert engine — nutrition and training analysis
+ *
+ * The coach used to react to the clock and a mood slider. This reads the
+ * user's own numbers the way a nutrition and strength coach would: what the
+ * training actually consists of, how fast weight is moving, whether intake
+ * clears the floor, and whether recovery supports any of it.
+ *
+ * Every rule states the reasoning, not just the verdict, and stays silent
+ * when the data is too thin to justify it. Fitness guidance, not medical
+ * advice — the app's medical notice still stands.
+ * ------------------------------------------------------------------- */
+
+/** Days in the last `n` where every logged meal had known calories. */
+function completeCalorieDays(n) {
+  var meals = S.get('meals', []);
+  var byDay = {};
+  var i;
+  for (i = 0; i < meals.length; i++) {
+    var age = Date.now() - meals[i].ts;
+    if (age > n * 86400000 || age < 0) continue;
+    var k = dayKey(meals[i].ts);
+    if (!byDay[k]) byDay[k] = { cal: 0, p: 0, unknown: 0 };
+    var mult = meals[i].portions || 1;
+    if (meals[i].cal === null || meals[i].cal === undefined) byDay[k].unknown++;
+    byDay[k].cal += (meals[i].cal || 0) * mult;
+    byDay[k].p += (meals[i].p || 0) * mult;
+  }
+  var out = [];
+  for (var k2 in byDay) {
+    if (!Object.prototype.hasOwnProperty.call(byDay, k2)) continue;
+    if (byDay[k2].unknown > 0) continue;
+    out.push(byDay[k2]);
+  }
+  return out;
+}
+
+/** Weight change as a percentage of bodyweight per week, or null. */
+function weightTrendPctPerWeek() {
+  var log = S.get('profile.weightLog', []);
+  if (log.length < 2) return null;
+  var first = log[0], last = log[log.length - 1];
+  var days = (last.ts - first.ts) / 86400000;
+  if (days < 10 || !first.kg) return null;
+  var pct = ((last.kg - first.kg) / first.kg) * 100;
+  return { pctPerWeek: pct / (days / 7), days: Math.round(days), from: first.kg, to: last.kg };
+}
+
+/** Days since the last workout of a given type, or null if never. */
+function daysSinceWorkout(type) {
+  var w = S.get('workouts', []);
+  for (var i = w.length - 1; i >= 0; i--) {
+    if (type && w[i].type !== type) continue;
+    return Math.floor((Date.now() - w[i].ts) / 86400000);
+  }
+  return null;
+}
+
+/** Recent training load: how hard the last sessions ran, as % of ceiling. */
+function trainingLoad(days) {
+  var w = S.get('workouts', []);
+  var cutoff = Date.now() - (days || 14) * 86400000;
+  var hard = 0, total = 0, late = 0, sumPct = 0, withHr = 0;
+  for (var i = 0; i < w.length; i++) {
+    if (w[i].ts < cutoff) continue;
+    total++;
+    if (new Date(w[i].ts).getHours() >= 21) late++;
+    var z = hrZone(w[i].maxHr);
+    if (z) {
+      withHr++;
+      sumPct += z.pct;
+      if (z.level === 'hard' || z.level === 'max') hard++;
+    }
+  }
+  return {
+    total: total, hard: hard, late: late,
+    avgPct: withHr ? sumPct / withHr : null
+  };
+}
+
+function avgSleepHours(n) {
+  var v = healthAverage('sleepMs', n || 7);
+  return v === null ? null : v / 3600000;
+}
+
+/**
+ * The prioritised advice list. Priority 1 is something worth changing this
+ * week; 3 is upkeep. The UI shows them in order and does not pad the list.
+ */
+function expertInsights() {
+  var ar = isRTL();
+  var out = [];
+  var profile = S.get('profile', {});
+  var body = latestBodyWith('muscleKg');
+  var bmr = bestBMR(profile);
+  var tdee = bestTDEE(profile);
+  var target = proteinTarget();
+  var load = trainingLoad(14);
+  var trend = weightTrendPctPerWeek();
+  var sleepH = avgSleepHours(7);
+  var lastGym = daysSinceWorkout('gym');
+
+  function push(priority, tone, icon, title, text) {
+    out.push({ priority: priority, tone: tone, icon: icon, title: title, text: text });
+  }
+
+  /* --- 1. Cardio-only while losing weight: the muscle problem ---------- */
+  if (load.total >= 2 && (lastGym === null || lastGym > 10)) {
+    push(1, 'warn', '🏋️',
+      ar ? 'كل تمارينك كارديو — ده بياكل من عضلك' : 'All cardio, no resistance',
+      ar
+        ? 'آخر ١٤ يوم فيهم ' + load.total + ' تمرين، ومفيش ولا واحد مقاومة. '
+          + 'إنت بتعمل عجز في السعرات + صيام ممتد + كارديو طويل، والتلاتة مع بعض '
+          + 'بيخلوا الجسم ياخد من العضل مش من الدهون بس. '
+          + (body ? 'عندك ' + body.muscleKg + ' كجم كتلة صافية — دي اللي بتحدد أيضك، '
+            + 'ولو نزلت هيبقى تثبيت الوزن بعدين أصعب بكتير. ' : '')
+          + 'المطلوب مش كتير: تمرينين مقاومة في الأسبوع، ٤٠ دقيقة، حركات مركّبة '
+          + '(سكوات، ضغط، سحب). ده مش عشان تكبّر عضل — ده عشان تدّي الجسم سبب إنه '
+          + 'يحافظ على اللي عندك وهو في عجز.'
+        : 'Fourteen days, ' + load.total + ' sessions, none of them resistance. '
+          + 'A calorie deficit plus extended fasting plus long cardio pushes the body '
+          + 'to take from muscle, not only fat. '
+          + (body ? 'You have ' + body.muscleKg + ' kg of lean mass, which sets your '
+            + 'metabolic rate; losing it makes maintenance far harder later. ' : '')
+          + 'Two sessions a week, 40 minutes, compound movements (squat, press, pull). '
+          + 'Not to build — to give the body a reason to keep what you have.');
+  }
+
+  /* --- 2. Rate of loss ------------------------------------------------- */
+  if (trend && trend.pctPerWeek < -1.0) {
+    push(1, 'warn', '⚖️',
+      ar ? 'بتنزل بسرعة أكتر من اللازم' : 'Losing weight too fast',
+      ar
+        ? 'نزلت ' + Math.abs(trend.pctPerWeek).toFixed(1) + '٪ من وزنك في الأسبوع '
+          + 'على مدار ' + trend.days + ' يوم. فوق ١٪ في الأسبوع، نسبة كبيرة من النازل '
+          + 'بتبقى عضل ومياه مش دهون. هدّي المعدل لـ٠.٥-١٪ بزيادة الأكل في نافذتك، '
+          + 'مش بتقليل الصيام.'
+        : 'You are down ' + Math.abs(trend.pctPerWeek).toFixed(1) + '% of bodyweight per '
+          + 'week over ' + trend.days + ' days. Past 1% a week, a large share of that is '
+          + 'muscle and water rather than fat. Slow it to 0.5-1% by eating more inside '
+          + 'your window, not by shortening the fast.');
+  } else if (trend && trend.pctPerWeek > 0.4) {
+    push(2, 'exercise', '⚖️',
+      ar ? 'الوزن بيزيد' : 'Weight is climbing',
+      ar
+        ? 'الوزن طالع ' + trend.pctPerWeek.toFixed(1) + '٪ في الأسبوع رغم الصيام. '
+          + 'الصيام بينظّم التوقيت مش الكمية — لو السعرات في النافذة أعلى من احتياجك '
+          + 'هتزيد برضه. سجّل ماكروز وجبتك أسبوع وهتشوف الفجوة.'
+        : 'Weight is up ' + trend.pctPerWeek.toFixed(1) + '% a week despite fasting. '
+          + 'Fasting controls timing, not amount — if the window exceeds your needs you '
+          + 'still gain. Log macros for a week and the gap will show.');
+  }
+
+  /* --- 3. Calorie floor ------------------------------------------------ */
+  var days = completeCalorieDays(10);
+  if (days.length >= 3 && bmr.value) {
+    var sum = 0;
+    for (var i = 0; i < days.length; i++) sum += days[i].cal;
+    var avg = sum / days.length;
+    if (avg < bmr.value * 1.05) {
+      push(1, 'warn', '🔻',
+        ar ? 'أكلك تحت أيض الراحة' : 'Intake is below your resting burn',
+        ar
+          ? 'متوسط أكلك ' + Math.round(avg) + ' سعرة في اليوم على ' + days.length + ' أيام '
+            + 'مسجّلة كاملة، وأيض الراحة عندك ' + bmr.value + '. الأكل تحت أيض الراحة '
+            + 'باستمرار بينزّل هرمونات الغدة الدرقية ويقلل الحركة التلقائية، فالعجز '
+            + 'بيتآكل من نفسه. المدى المنطقي ليك ' + Math.round(bmr.value * 1.15) + '-'
+            + Math.round((tdee.value || bmr.value * 1.55) - 400) + ' سعرة في نافذتك.'
+          : 'You are averaging ' + Math.round(avg) + ' kcal across ' + days.length
+            + ' fully-logged days, against a resting burn of ' + bmr.value + '. Sitting '
+            + 'under resting burn suppresses thyroid output and spontaneous movement, so '
+            + 'the deficit erodes itself. A sane range is '
+            + Math.round(bmr.value * 1.15) + '-'
+            + Math.round((tdee.value || bmr.value * 1.55) - 400) + ' kcal in your window.');
+    }
+  }
+
+  /* --- 4. Protein in one sitting --------------------------------------- */
+  if (target.grams >= 100) {
+    push(2, 'good', '🍗',
+      ar ? 'قسّم البروتين على جرعتين' : 'Split the protein in two',
+      ar
+        ? 'هدفك ' + target.grams + ' جم بروتين، ونافذتك ساعات قليلة. الجسم بيستفيد '
+          + 'أحسن لما الكمية تتقسم: وجبة أساسية فيها ' + Math.round(target.grams * 0.6)
+          + ' جم، وبعدها بساعة ونص جرعة تانية ' + Math.round(target.grams * 0.4) + ' جم '
+          + '(زبادي يوناني، تونة، واي). ده كمان بيريّح المعدة بعد صيام طويل.'
+        : 'Your target is ' + target.grams + 'g in a short window. It lands better split: '
+          + 'a main plate of about ' + Math.round(target.grams * 0.6) + 'g, then '
+          + Math.round(target.grams * 0.4) + 'g ninety minutes later (Greek yoghurt, tuna, '
+          + 'whey). It is also far easier on the gut after a long fast.');
+  }
+
+  /* --- 5. Intensity distribution --------------------------------------- */
+  if (load.avgPct !== null && load.total >= 3) {
+    if (load.hard >= load.total * 0.6) {
+      push(2, 'exercise', '🚴',
+        ar ? 'كل تمارينك عنيفة' : 'Everything is a hard session',
+        ar
+          ? load.hard + ' من ' + load.total + ' تمارينك في المنطقة العنيفة '
+            + '(متوسط ' + Math.round(load.avgPct * 100) + '٪ من سقف نبضك). '
+            + 'الشغل ده بيرفع الكورتيزول ويأخر الاستشفاء، خصوصاً وإنت صايم وبتنام قليل. '
+            + 'التقسيم اللي بيشتغل: ٨٠٪ من وقتك في نبض هادي تقدر تتكلم فيه، و١-٢ جلسة '
+            + 'عنيفة بس في الأسبوع. الهادي هو اللي بيبني القاعدة الهوائية ويحرق دهون أكتر.'
+          : load.hard + ' of ' + load.total + ' sessions sat in the hard zone (averaging '
+            + Math.round(load.avgPct * 100) + '% of your ceiling). That raises cortisol and '
+            + 'delays recovery, more so while fasted and short on sleep. The split that '
+            + 'works: 80% of your time at a pace you can hold a conversation in, and one or '
+            + 'two hard sessions a week. The easy volume is what builds the aerobic base.');
+    }
+  }
+
+  /* --- 6. Recovery: late training, short sleep, stimulants ------------- */
+  if (load.late >= 2 && sleepH !== null && sleepH < 7) {
+    push(1, 'warn', '🌙',
+      ar ? 'بتتمرن بالليل وبتنام قليل' : 'Late training on short sleep',
+      ar
+        ? 'متوسط نومك ' + sleepH.toFixed(1) + ' ساعة، و' + load.late + ' تمرين بدأوا بعد '
+          + 'الساعة ٩ بالليل. التمرين العنيف بيرفع حرارة الجسم والنبض ويأخر النوم ساعة '
+          + 'لساعتين، وقلة النوم بترفع الجريلين فتصحى جعان أكتر وتلاقي الالتزام أصعب. '
+          + 'لو التمرين بالليل مفيش منه فكاك، خلي الجلسات العنيفة بدري في اليوم وسيب '
+          + 'الليل للمشي.'
+        : 'You are averaging ' + sleepH.toFixed(1) + ' hours of sleep with ' + load.late
+          + ' sessions starting after 21:00. Hard training raises core temperature and heart '
+          + 'rate and pushes sleep back an hour or two, and short sleep raises ghrelin, so '
+          + 'you wake hungrier and find the fast harder. If evening training is fixed, move '
+          + 'the hard sessions earlier and leave the night for walking.');
+  } else if (sleepH !== null && sleepH < 6.5) {
+    push(2, 'warn', '🌙',
+      ar ? 'النوم قليل' : 'Sleep is short',
+      ar
+        ? 'متوسط ' + sleepH.toFixed(1) + ' ساعة. تحت ٧ ساعات، الجسم بيميل يخسر عضل بدل '
+          + 'دهون في العجز، والجوع بيزيد. النوم هنا مش رفاهية — هو جزء من الخطة.'
+        : 'Averaging ' + sleepH.toFixed(1) + ' hours. Under seven, a deficit tilts toward '
+          + 'losing muscle rather than fat, and appetite rises. Sleep is part of the plan '
+          + 'here, not a luxury.');
+  }
+
+  /* --- 7. Breaking a long fast on sugar -------------------------------- */
+  var meals = S.get('meals', []);
+  var sugary = 0;
+  for (var mi = 0; mi < meals.length; mi++) {
+    if (Date.now() - meals[mi].ts > 14 * 86400000) continue;
+    var carbs = (meals[mi].c || 0) * (meals[mi].portions || 1);
+    var prot = (meals[mi].p || 0) * (meals[mi].portions || 1);
+    if (carbs >= 35 && prot < 10) sugary++;
+  }
+  if (sugary >= 2) {
+    push(2, 'warn', '🍰',
+      ar ? 'ترتيب الأكل بعد الصيام' : 'The order you break the fast in',
+      ar
+        ? 'سجّلت ' + sugary + ' صنف عالي الكارب وقليل البروتين آخر أسبوعين. بعد ٢٠ ساعة '
+          + 'صيام، حساسية الإنسولين بتبقى عالية — وده سلاح ذو حدين: نفس الحتة الحلوة '
+          + 'بتعمل قفزة أعنف من المعتاد وبعدها هبوط وجوع. الترتيب بيفرق أكتر من الامتناع: '
+          + 'بروتين وسلطة الأول، والحلو في آخر الوجبة لو ناوي عليه.'
+        : 'You logged ' + sugary + ' high-carb, low-protein items in the last fortnight. '
+          + 'After 20 fasted hours insulin sensitivity is high, which cuts both ways: the '
+          + 'same dessert spikes harder and drops you further afterwards. Order matters more '
+          + 'than abstinence — protein and salad first, sweets at the end if at all.');
+  }
+
+  /* --- 8. Electrolytes on long fasts ----------------------------------- */
+  var cf = S.get('currentFast', {});
+  if (cf.active) {
+    var hoursNow = fastElapsed(cf) / 3600000;
+    var el = electrolytesToday();
+    if (hoursNow >= 16 && (el.sodium || 0) < ELECTROLYTE_TARGETS.sodium * 0.4) {
+      push(1, 'warn', '🧂',
+        ar ? 'الصوديوم ناقص وإنت في ساعة ' + Math.floor(hoursNow) : 'Sodium is low at hour ' + Math.floor(hoursNow),
+        ar
+          ? 'مسجّل ' + (el.sodium || 0) + ' مجم صوديوم النهاردة. أثناء الصيام الإنسولين '
+            + 'بينزل، والكلى بتطرد صوديوم أسرع — وده سبب أغلب الصداع والدوخة والتقلصات، '
+            + 'مش الجوع. نص ملعقة ملح في مياه دلوقتي هتفرق خلال نص ساعة.'
+          : 'You have logged ' + (el.sodium || 0) + ' mg of sodium today. Fasting lowers '
+            + 'insulin and the kidneys dump sodium faster — that, not hunger, is behind most '
+            + 'fasting headaches, dizziness and cramps. Half a teaspoon of salt in water now '
+            + 'shows up within thirty minutes.');
+    }
+  }
+
+  /* --- 9. Fibre and micronutrients on OMAD ----------------------------- */
+  if (S.get('settings.plan', 'custom') === 'omad' || S.get('settings.defaultGoal', 20) >= 20) {
+    push(3, 'good', '🥗',
+      ar ? 'الخضار مش رفاهية في وجبة واحدة' : 'Vegetables are not optional on one meal',
+      ar
+        ? 'وجبة واحدة معناها فرصة واحدة للألياف والميكرو. استهدف نص الطبق خضار متنوعة '
+          + 'الألوان — الألياف بتبطّئ امتصاص السكر، وبتغذّي بكتيريا القولون اللي '
+          + 'بتضعف مع الصيام الطويل المتكرر.'
+        : 'One meal is one chance at fibre and micronutrients. Aim for half the plate as '
+          + 'mixed-colour vegetables — fibre blunts the glucose curve and feeds the gut '
+          + 'bacteria that thin out on repeated long fasts.');
+  }
+
+  out.sort(function (a, b) { return a.priority - b.priority; });
+  return out;
 }
 
 /* ---------------------------------------------------------------------

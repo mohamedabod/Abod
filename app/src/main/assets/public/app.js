@@ -150,6 +150,69 @@ function syncReminders() {
   }));
 }
 
+/**
+ * Pushes the expert engine's conclusions into the native scheduler.
+ *
+ * Two slots, deliberately: a daily one carrying whatever the analysis rates
+ * most worth changing this week, and a protein one that fires inside the
+ * eating window when the target is too large for one sitting. Both are
+ * turned off outright when the data does not support saying anything —
+ * a notification that fires with nothing to say trains the user to swipe.
+ */
+var _insTimer = null;
+var _insLast = '';
+
+/** Coalesces the storage writes of one user action into a single analysis. */
+function scheduleInsightSync() {
+  clearTimeout(_insTimer);
+  _insTimer = setTimeout(syncInsights, 2000);
+}
+
+function syncInsights() {
+  if (!N.ok()) return;
+  var list = [];
+  try { list = expertInsights(); } catch (e) { list = []; }
+
+  var r = S.get('settings.reminders', {});
+  var dailyTime = r.insightTime || '11:00';
+  var top = list.length && r.insight !== false ? list[0] : null;
+  var stamp = (top ? top.title + '|' + top.text : '') + '|' + proteinTarget().grams
+    + '|' + S.get('settings.windowStart', '17:00') + '|' + dailyTime
+    + '|' + (r.protein !== false);
+  if (stamp === _insLast) return;
+  _insLast = stamp;
+
+  N.call('setInsight', 'daily', !!top, dailyTime,
+    top ? top.icon + ' ' + top.title : '',
+    top ? notifBody(top.text) : '');
+
+  // The protein split only makes sense while there is a target big enough to
+  // warrant it; proteinTarget() already refuses to guess without a weight.
+  var target = proteinTarget();
+  var second = target.grams >= 100 ? Math.round(target.grams * 0.4) : 0;
+  var wantProtein = second > 0 && r.protein !== false;
+  N.call('setInsight', 'protein', wantProtein,
+    S.get('settings.windowStart', '17:00'),
+    wantProtein ? (isRTL() ? '🍗 جرعة البروتين التانية' : '🍗 Second protein dose')
+      : '',
+    wantProtein
+      ? (isRTL()
+        ? 'باقي ' + second + ' جم على هدف النهاردة. زبادي يوناني أو تونة أو واي '
+          + 'دلوقتي بيوصلوك للهدف من غير ما تتقل معدتك في وجبة واحدة.'
+        : second + 'g still to go today. Greek yoghurt, tuna or whey now gets you '
+          + 'there without loading one meal.')
+      : '');
+}
+
+/** Trims advice prose to something a notification can actually show. */
+function notifBody(text) {
+  if (!text) return '';
+  if (text.length <= 230) return text;
+  var cut = text.slice(0, 230);
+  var stop = Math.max(cut.lastIndexOf('. '), cut.lastIndexOf('، '), cut.lastIndexOf('. '));
+  return (stop > 120 ? cut.slice(0, stop + 1) : cut) + '…';
+}
+
 /* ---------------------------------------------------------------------
  * Fast actions
  * ------------------------------------------------------------------- */
@@ -299,6 +362,7 @@ function ReminderToggle(props) {
     next[key] = value;
     S.set('settings.reminders', next);
     syncReminders();
+    syncInsights();
     refresh();
   }
 
@@ -308,8 +372,8 @@ function ReminderToggle(props) {
       props.hint ? h('div', { className: 'row-sub' }, props.hint) : null),
     props.timeKey && on
       ? h(TextField, {
-          value: r[props.timeKey] || '20:00',
-          placeholder: '20:00',
+          value: r[props.timeKey] || props.defaultTime || '20:00',
+          placeholder: props.defaultTime || '20:00',
           onCommit: function (v) { set(props.timeKey, v); }
         })
       : null,
@@ -663,33 +727,61 @@ function Ring(props) {
 
 function PhaseTimeline(props) {
   var hours = props.hours;
+  var n = PHASES.length;
   var segs = [];
-  var labels = [];
-  for (var i = 0; i < PHASES.length; i++) {
+  var i;
+
+  for (i = 0; i < n; i++) {
     var p = PHASES[i];
-    var reached = hours >= p.from;
     segs.push(h('div', {
       key: 'sg' + i,
       className: 'timeline-seg',
-      style: { background: reached ? p.color : '#2a2a4a' }
+      style: { background: hours >= p.from ? p.color : '#2a2a4a' }
     }));
-    labels.push(h('span', { key: 'lb' + i }, p.from + (isRTL() ? 'س' : 'h')));
   }
-  // Position across the whole 0-72h strip, clamped to the last segment.
-  var span = PHASES[PHASES.length - 1].from;
-  var pos = Math.max(0, Math.min(1, hours / span));
+
+  // The strip is a phase scale, not a time axis: segments are equal width so
+  // the early phases -- where most fasts actually live -- stay readable, and
+  // the open-ended 72h+ phase can be drawn at all.
+  //
+  // Labels and marker must therefore use that same scale. They previously did
+  // not: labels were spread by space-between (a 1/6 step across 7 items) while
+  // segment boundaries fall on 1/7, and the marker was placed linearly at
+  // hours/72. At hour 14 the marker landed at 19.4%, between the "4h" and
+  // "12h" labels, so a 14-hour fast read as roughly 8.
+  var labels = [];
+  for (i = 0; i < n; i++) {
+    (function (idx) {
+      labels.push(h('span', {
+        key: 'lb' + idx,
+        className: 'timeline-label',
+        // Boundary i sits at i/n; the last label is pinned to the far edge.
+        style: { insetInlineStart: (idx / n * 100).toFixed(2) + '%' }
+      }, PHASES[idx].from + (isRTL() ? 'س' : 'h')));
+    })(i);
+  }
+
+  // Marker: which segment, plus how far through that segment.
+  var idxNow = phaseIndexFor(hours);
+  var seg = PHASES[idxNow];
+  var segEnd = idxNow + 1 < n ? PHASES[idxNow + 1].from : seg.from + 24;
+  var within = segEnd > seg.from ? (hours - seg.from) / (segEnd - seg.from) : 0;
+  if (within < 0) within = 0;
+  if (within > 1) within = 1;
+  var pos = Math.min(1, (idxNow + within) / n);
 
   return h('div', null,
     h('div', { className: 'timeline-wrap' },
       h('div', { className: 'timeline' }, segs),
-      props.hours > 0
+      hours > 0
         ? h('div', {
             className: 'timeline-marker',
-            style: { insetInlineStart: 'calc(' + (pos * 100).toFixed(1) + '% - 1.5px)' }
+            style: { insetInlineStart: 'calc(' + (pos * 100).toFixed(2) + '% - 1.5px)' }
           })
         : null),
     h('div', { className: 'timeline-labels' }, labels));
 }
+
 
 /* ---------------------------------------------------------------------
  * Home
@@ -755,7 +847,8 @@ function HomePage() {
         : null,
 
       h(PhaseTimeline, { hours: hours }),
-      h('div', { className: 'goal-selector' }, goalBtns),
+      h('div', { className: 'goal-strip' },
+        h('div', { className: 'goal-selector' }, goalBtns)),
       controls,
 
       cf.active ? h('div', { className: 'btn-group', style: { marginTop: '10px' } },
@@ -1958,8 +2051,30 @@ function CoachPage() {
       h('div', { className: 'tip-text' }, '• ' + tips[i])));
   }
 
+  // The expert engine reads the logged numbers rather than the clock, so it
+  // sits above the phase advice: when it has something to say it is the most
+  // useful thing on the page, and when it has nothing it says nothing.
+  var insights = [];
+  try { insights = expertInsights(); } catch (e) { insights = []; }
+  var insightCards = [];
+  for (var k = 0; k < insights.length; k++) {
+    (function (c, idx) {
+      insightCards.push(h('div', { key: 'ix' + idx, className: 'insight-card ' + c.tone },
+        h('div', { className: 'insight-head' },
+          h('span', { className: 'insight-icon' }, c.icon),
+          h('span', { className: 'insight-title' }, c.title),
+          h('span', { className: 'prio prio-' + c.priority }, t('prio_' + c.priority))),
+        h('div', { className: 'insight-text' }, c.text)));
+    })(insights[k], k);
+  }
+
   return h('div', null,
     h(CheckInCard, null),
+
+    h('div', { className: 'section-title' }, t('expert_title')),
+    h('div', { className: 'section-sub' }, t('expert_sub')),
+    insightCards.length ? insightCards
+      : h('div', { className: 'tip-card' }, h('div', { className: 'tip-text' }, t('expert_empty'))),
 
     h('div', { className: 'section-title' },
       t('coach_title') + (checkin ? ' — ' + t('personalized') : '')),
@@ -2250,6 +2365,9 @@ function SettingsPage() {
       h(ReminderToggle, { k: 'checkin', label: t('rem_checkin'), timeKey: 'checkinTime' }),
       h(ReminderToggle, { k: 'supplement', label: t('rem_supplement'), timeKey: 'supplementTime' }),
       h(ReminderToggle, { k: 'nudge', label: t('rem_nudge'), hint: t('rem_nudge_hint'), timeKey: 'nudgeTime' }),
+      h(ReminderToggle, { k: 'insight', label: t('insight_time'), hint: t('insight_time_hint'),
+        timeKey: 'insightTime', defaultTime: '11:00' }),
+      h(ReminderToggle, { k: 'protein', label: t('rem_protein'), hint: t('rem_protein_hint') }),
       h(SettingRow, { label: t('rem_test') },
         h('button', {
           className: 'btn btn-sm btn-outline',
@@ -3086,6 +3204,8 @@ window.__onBack = function () {
   N.call('healthRefresh');
   recomputeStats();
   syncReminders();
+  S._onSave = scheduleInsightSync;
+  syncInsights();
   if (applySleepEstimate(N.parse(N.call('sleepEstimate'), []))) recomputeStats();
   maybeAutoBackup();
   N.call('refreshWidget');

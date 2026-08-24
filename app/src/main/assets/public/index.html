@@ -122,8 +122,14 @@ button,input,select,textarea{font-family:inherit;font-size:inherit;color:inherit
 .timeline-marker{position:absolute;top:-4px;width:3px;height:16px;border-radius:2px;
   background:#fff;box-shadow:0 0 8px rgba(255,255,255,.5);transition:inset-inline-start .5s var(--ease)}
 .timeline-seg{flex:1;background:var(--line);transition:background .45s var(--ease)}
-.timeline-labels{display:flex;justify-content:space-between;font-size:9.5px;color:var(--text-3);
+/* Absolutely positioned on the segment boundaries, so a label sits exactly
+   where its phase begins instead of being spread evenly across the row. */
+.timeline-labels{position:relative;height:14px;font-size:9.5px;color:var(--text-3);
   margin-bottom:var(--s1);font-weight:600}
+.timeline-label{position:absolute;top:0;transform:translateX(-50%)}
+[dir="rtl"] .timeline-label{transform:translateX(50%)}
+.timeline-label:first-child{transform:none}
+[dir="rtl"] .timeline-label:first-child{transform:none}
 
 /* ---------- buttons ---------- */
 .btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;
@@ -147,6 +153,16 @@ button,input,select,textarea{font-family:inherit;font-size:inherit;color:inherit
 .goal-selector{display:flex;gap:6px;justify-content:safe center;margin:var(--s3) 0 0;
   flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;padding:2px 0}
 .goal-selector::-webkit-scrollbar{display:none}
+/* Edge fade: a half-cut chip at the rim reads as broken without it. */
+.goal-strip{position:relative}
+.goal-strip::before,.goal-strip::after{content:'';position:absolute;top:0;bottom:0;width:26px;
+  pointer-events:none;z-index:2}
+.goal-strip::before{inset-inline-start:0;
+  background:linear-gradient(to right,var(--surface),transparent)}
+.goal-strip::after{inset-inline-end:0;
+  background:linear-gradient(to left,var(--surface),transparent)}
+[dir="rtl"] .goal-strip::before{background:linear-gradient(to left,var(--surface),transparent)}
+[dir="rtl"] .goal-strip::after{background:linear-gradient(to right,var(--surface),transparent)}
 .goal-btn{flex:0 0 auto}
 .goal-btn{padding:7px 14px;border:1px solid var(--line);border-radius:var(--r-pill);
   background:var(--surface-2);color:var(--text-2);font-size:var(--fs-sm);font-weight:700;
@@ -252,6 +268,28 @@ select.setting-input{width:136px;text-align:start}
 .tip-card.warn .tip-title{color:var(--danger)}
 .tip-card.good{border-inline-start-color:var(--green)}
 .tip-card.good .tip-title{color:var(--green)}
+/* ---------- expert insights ---------- */
+.section-sub{font-size:var(--fs-sm);color:var(--text-3);line-height:1.7;
+  margin:calc(var(--s2) * -1) var(--s1) var(--s2)}
+.insight-card{background:var(--surface);border:1px solid var(--line-soft);
+  border-radius:var(--r);padding:14px;margin-bottom:var(--s2);
+  border-inline-start:3px solid var(--gold)}
+.insight-head{display:flex;align-items:center;gap:8px;margin-bottom:7px}
+.insight-icon{font-size:16px;line-height:1}
+.insight-title{font-size:var(--fs-sm);font-weight:700;color:var(--gold);flex:1}
+.insight-text{font-size:var(--fs-sm);color:var(--text-2);line-height:1.85}
+.insight-card.exercise{border-inline-start-color:var(--blue)}
+.insight-card.exercise .insight-title{color:var(--blue)}
+.insight-card.warn{border-inline-start-color:var(--danger)}
+.insight-card.warn .insight-title{color:var(--danger)}
+.insight-card.good{border-inline-start-color:var(--green)}
+.insight-card.good .insight-title{color:var(--green)}
+.prio{font-size:10px;font-weight:700;letter-spacing:.4px;padding:3px 8px;
+  border-radius:999px;white-space:nowrap;flex:none}
+.prio-1{background:rgba(255,77,94,.14);color:#ff8b96}
+.prio-2{background:rgba(233,178,69,.14);color:var(--gold)}
+.prio-3{background:rgba(255,255,255,.06);color:var(--text-3)}
+
 .refeed-card{background:var(--surface);border:1px solid var(--line-soft);border-radius:var(--r);
   padding:14px;margin-bottom:var(--s2);border-inline-start:3px solid var(--green)}
 .refeed-phase{font-size:var(--fs-sm);font-weight:700;color:var(--green);margin-bottom:5px}

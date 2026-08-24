@@ -30,6 +30,9 @@ public final class Reminders {
     public static final String K_CHECKIN = "checkin";
     public static final String K_SUPPLEMENT = "supplement";
     public static final String K_START_NUDGE = "start_nudge";
+    /** Coaching text composed in JS, where the data lives, delivered here. */
+    public static final String K_INSIGHT_DAILY = "insight_daily";
+    public static final String K_INSIGHT_PROTEIN = "insight_protein";
 
     // Prefs written from JS through JsBridge.setReminderConfig
     public static final String P_WATER = "rem_water";
@@ -76,6 +79,28 @@ public final class Reminders {
                 p.getString(P_SUPPLEMENT_TIME, "18:00"), 0);
         daily(ctx, K_START_NUDGE, p.getBoolean(P_NUDGE, false),
                 p.getString(P_NUDGE_TIME, "22:00"), 0);
+
+        // Insight slots: the copy is written by the JS coach and stored here,
+        // so the analysis stays where the data is and native only delivers.
+        daily(ctx, K_INSIGHT_DAILY, p.getBoolean("ins_daily_on", true),
+                p.getString("ins_daily_time", "11:00"), 0);
+        // Ninety minutes into the window: late enough that the first plate is
+        // done, early enough that a second dose is not a midnight snack.
+        daily(ctx, K_INSIGHT_PROTEIN, p.getBoolean("ins_protein_on", true),
+                p.getString("ins_protein_time", p.getString(P_WINDOW_START, "17:00")), 90);
+    }
+
+    /** Stores one insight's text; scheduleAll arms the alarm for it. */
+    public static void setInsight(Context ctx, String slot, boolean on,
+                                  String time, String title, String body) {
+        AppCore core = AppCore.get();
+        core.init(ctx);
+        SharedPreferences.Editor e = core.prefs().edit();
+        e.putBoolean("ins_" + slot + "_on", on);
+        if (time != null && time.length() > 0) e.putString("ins_" + slot + "_time", time);
+        e.putString("ins_" + slot + "_title", title == null ? "" : title);
+        e.putString("ins_" + slot + "_body", body == null ? "" : body);
+        e.apply();
     }
 
     private static void daily(Context ctx, String kind, boolean on, String hhmm, int offsetMin) {
@@ -170,6 +195,19 @@ public final class Reminders {
                     : (ar ? "ابدأ صيامك دلوقتي وهدفك يخلص في ميعاده."
                           : "Start now and your goal finishes on time.");
             notify(ctx, 4214, ar ? "مبدأتش الصيام لسه" : "No fast started yet", body);
+
+        } else if (K_INSIGHT_DAILY.equals(kind) || K_INSIGHT_PROTEIN.equals(kind)) {
+            String slot = K_INSIGHT_DAILY.equals(kind) ? "daily" : "protein";
+            String title = p.getString("ins_" + slot + "_title", "");
+            String body = p.getString("ins_" + slot + "_body", "");
+            // Nothing composed yet, or the rule no longer applies: stay quiet
+            // rather than send an empty notification.
+            if (title.length() == 0 || body.length() == 0) return;
+            if ("protein".equals(slot) && !fasting) {
+                notify(ctx, 4218, title, body);
+            } else if ("daily".equals(slot)) {
+                notify(ctx, 4219, title, body);
+            }
         }
     }
 

@@ -20,7 +20,7 @@ import java.io.OutputStreamWriter;
  */
 public class JsBridge implements NativeListener {
 
-    public static final String VERSION = "6.0";
+    public static final String VERSION = "6.2";
 
     private final MainActivity activity;
     private final WebView web;
@@ -118,6 +118,17 @@ public class JsBridge implements NativeListener {
         } catch (org.json.JSONException ignored) {
             return;
         }
+        Reminders.scheduleAll(core.context());
+    }
+
+    /**
+     * Stores a coaching notification composed by the JS analysis engine.
+     * slot is "daily" or "protein"; the schedule is re-armed after each call.
+     */
+    @JavascriptInterface
+    public void setInsight(String slot, boolean on, String time, String title, String body) {
+        if (slot == null) return;
+        Reminders.setInsight(core.context(), slot, on, time, title, body);
         Reminders.scheduleAll(core.context());
     }
 
