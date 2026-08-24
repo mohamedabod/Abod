@@ -6,7 +6,7 @@
  * no destructuring, no classes, no async/await. See README.
  * ===================================================================== */
 
-var APP_VERSION = '6.2';
+var APP_VERSION = '7.0';
 var STORE_KEY = 'sayem_v4';
 var LEGACY_KEY = 'sayem_v3';
 
@@ -65,9 +65,11 @@ var S = {
       },
       meals: [],
       history: [],
+      insightLog: [],
+      plannedBreaks: [],
+      favourites: [],
       customFoods: [],
       checkins: [],
-      pulseLog: [],
       routes: [],
       workouts: [],
       bodyLog: [],
@@ -75,7 +77,7 @@ var S = {
       health: { lastSync: 0, status: '', granted: 0 },
       electrolytes: { date: '', sodium: 0, potassium: 0, magnesium: 0 },
       backup: { lastAt: 0, lastPath: '' },
-      water: { date: '', ml: 0, target: 3000 },
+      water: { date: '', ml: 0 },
       profile: {
         // age stays null until the user sets it: a guessed age silently
         // corrupts every calorie number derived from it.
@@ -195,9 +197,11 @@ var S = {
     if (!d.band) d.band = def.band;
     if (!d.meals) d.meals = [];
     if (!d.history) d.history = [];
+    if (!d.insightLog) d.insightLog = [];
+    if (!d.plannedBreaks) d.plannedBreaks = [];
+    if (!d.favourites) d.favourites = [];
     if (!d.customFoods) d.customFoods = [];
     if (!d.checkins) d.checkins = [];
-    if (!d.pulseLog) d.pulseLog = [];
     if (!d.routes) d.routes = [];
     if (!d.workouts) d.workouts = [];
     if (!d.bodyLog) d.bodyLog = [];
@@ -293,10 +297,10 @@ var S = {
     if (incoming.settings) d.settings = m(d.settings, incoming.settings);
 
     added += mergeList(d.history, incoming.history, 'id');
+    added += mergeList(d.insightLog, incoming.insightLog, 'ts');
     added += mergeList(d.meals, incoming.meals, 'id');
     added += mergeList(d.customFoods, incoming.customFoods, 'k');
     added += mergeList(d.checkins, incoming.checkins, 'ts');
-    added += mergeList(d.pulseLog, incoming.pulseLog, 'ts');
     added += mergeList(d.routes, incoming.routes, 'id');
     added += mergeList(d.workouts, incoming.workouts, 'id');
     added += mergeList(d.bodyLog, incoming.bodyLog, 'ts');
@@ -353,9 +357,31 @@ function mergeList(target, incoming, key) {
   return added;
 }
 
+/**
+ * Arabic counts do not take a bare numeral the way English does: one and two
+ * have their own forms, and the noun changes shape again past ten. Rendering
+ * "1 مرة" or "0 يوم" is the tell that a string was assembled by a machine.
+ */
+function arCount(n, one, two, few, many) {
+  if (n === 0) return many;
+  if (n === 1) return one;
+  if (n === 2) return two;
+  if (n <= 10) return n + ' ' + few;
+  return n + ' ' + many;
+}
+
+/** Sorts in place by a numeric timestamp field and returns the same list. */
 function sortByTime(list, key) {
-  if (!list) return;
+  if (!list) return list;
   list.sort(function (a, b) { return (a[key] || 0) - (b[key] || 0); });
+  return list;
+}
+
+/** Health rows carry an ISO date string, so they sort on the parsed value. */
+function sortByDate(list) {
+  if (!list) return list;
+  list.sort(function (a, b) { return Date.parse(a.date) - Date.parse(b.date); });
+  return list;
 }
 
 /* ---------------------------------------------------------------------
@@ -369,19 +395,9 @@ var LANG = {
     coach: 'المدرب', settings: 'الإعدادات',
 
     start_fasting: 'ابدأ الصيام', pause: 'إيقاف مؤقت', resume: 'استئناف', stop: 'إنهاء',
-    fasting_for: 'صائم منذ', paused_state: 'موقوف مؤقتاً', running_state: 'جارٍ',
-    idle_state: 'غير صائم', not_fasting: 'مش صايم دلوقتي',
-    start_prompt: 'اختار هدفك واضغط ابدأ',
-    hours: 'ساعة', hour_short: 'س', min_short: 'د', sec_short: 'ث', day: 'يوم', days: 'يوم',
-    set_start_time: 'وقت بداية الصيام', start_now: 'ابدأ الآن', back_hours: 'بدأت من كام ساعة؟',
-    confirm: 'تأكيد', cancel: 'إلغاء', save: 'حفظ', delete: 'حذف', close: 'إغلاق', add: 'إضافة',
-    edit: 'تعديل', done: 'تم',
-
-    fasting_goal: 'هدف الصيام', custom_goal: 'هدف مخصص', progress_pct: 'نسبة التقدم',
-    of_goal: 'من الهدف', next_phase_in: 'المرحلة التالية بعد', goal_reached: 'وصلت للهدف',
-    elapsed: 'المنقضي', remaining: 'المتبقي', ends_at: 'ينتهي',
-
-    phase: 'المرحلة',
+    paused_state: 'موقوف مؤقتاً', running_state: 'جارٍ',
+    idle_state: 'غير صائم', start_prompt: 'اختار هدفك واضغط ابدأ',
+    hours: 'ساعة', hour_short: 'س', min_short: 'د', day: 'يوم', set_start_time: 'وقت بداية الصيام', confirm: 'تأكيد', cancel: 'إلغاء', save: 'حفظ', delete: 'حذف', close: 'إغلاق', edit: 'تعديل', fasting_goal: 'هدف الصيام', of_goal: 'من الهدف', next_phase_in: 'المرحلة التالية بعد', goal_reached: 'وصلت للهدف',
     phase_anabolic: 'بداية الصيام',
     phase_anabolic_desc: 'الجسم يستهلك الجلوكوز المخزّن ومخزون الجليكوجين يقل تدريجياً',
     phase_catabolic: 'حرق الدهون',
@@ -400,7 +416,7 @@ var LANG = {
     band: 'السوار الذكي', connect_band: 'ربط السوار', disconnect_band: 'فصل السوار',
     forget_band: 'نسيان الجهاز', connected: 'متصل', disconnected: 'غير متصل',
     connecting: 'جاري الربط…', scanning: 'جاري البحث…', reconnecting: 'إعادة الاتصال…',
-    heart_rate: 'النبض', bpm: 'ن/د', battery: 'بطارية السوار', auto_connect: 'اتصال تلقائي',
+    heart_rate: 'النبض', bpm: 'ن/د', auto_connect: 'اتصال تلقائي',
     band_hint: 'شغّل بث النبض من السوار: تطبيق Huawei Health ← الجهاز ← الإعدادات ← بث بيانات معدل ضربات القلب',
     err_bt_off: 'البلوتوث مقفول — افتحه وجرّب تاني',
     err_no_permission: 'محتاج إذن البلوتوث/الموقع للبحث عن السوار',
@@ -412,25 +428,19 @@ var LANG = {
     no_native: 'الميزة دي متاحة داخل التطبيق فقط',
 
     activity: 'النشاط البدني', steps: 'خطوة', steps_label: 'الخطوات',
-    active_minutes: 'دقائق نشاط', calories_burned: 'سعرات محروقة', cadence: 'خطوة/دقيقة',
-    level_still: 'ساكن', level_light: 'نشاط خفيف', level_moderate: 'نشاط متوسط', level_vigorous: 'نشاط عالي',
+    active_minutes: 'دقائق نشاط', calories_burned: 'سعرات محروقة', level_still: 'ساكن', level_light: 'نشاط خفيف', level_moderate: 'نشاط متوسط', level_vigorous: 'نشاط عالي',
     activity_level_now: 'مستوى النشاط الآن', reset_activity: 'تصفير عدّاد اليوم',
     no_step_sensor: 'الهاتف لا يحتوي على حساس خطوات',
     perm_activity: 'إذن النشاط البدني مطلوب لعد الخطوات',
     grant_permissions: 'منح الأذونات',
 
     search_food: 'ابحث عن أكل…', calories: 'سعرات', protein: 'بروتين', carbs: 'كارب', fat: 'دهون',
-    no_meals: 'مافيش وجبات النهاردة', todays_total: 'إجمالي اليوم', portions: 'عدد الحصص',
-    eating_while_fasting: 'أنت صائم دلوقتي — تسجيل وجبة هينهي الصيام. تحب تكمل؟',
+    no_meals: 'مافيش وجبات النهاردة', todays_total: 'إجمالي اليوم', eating_while_fasting: 'أنت صائم دلوقتي — تسجيل وجبة هينهي الصيام. تحب تكمل؟',
     end_and_log: 'أنهِ الصيام وسجّل', just_log: 'سجّل فقط',
 
     water: 'الماء', water_intake: 'شرب الماء', water_target: 'الهدف اليومي', ml: 'مل',
-    add_water: 'أضف', reset_water: 'تصفير',
     liquids_allowed: 'مسموح أثناء الصيام', forbidden_drinks: 'ممنوع أثناء الصيام',
     drink_water: 'ماء + أملاح (صوديوم/هيمالايان)',
-    herbal_drinks: 'مشروبات عشبية بدون سكر',
-    coffee_tea: 'قهوة / شاي أخضر سادة',
-    sparkling_water: 'مياه غازية بليمون',
     aniseed_lemon: 'يانسون بالليمون', mint_tea: 'شاي نعناع', hibiscus: 'كركديه',
     cinnamon_caraway: 'قرفة / كراوية', plain_coffee: 'قهوة سادة', plain_green_tea: 'شاي أخضر سادة',
     club_soda: 'كلوب صودا بليمون وثلج',
@@ -439,12 +449,42 @@ var LANG = {
 
     bmi: 'كتلة الجسم', tdee: 'سعراتك اليومية', bmr: 'أيض الراحة',
     current_streak: 'السلسلة الحالية', best_streak: 'أفضل سلسلة', total_sessions: 'عدد الجلسات',
-    total_hours: 'إجمالي الساعات', completion_rate: 'نسبة الإكمال', avg_duration: 'متوسط المدة',
-    longest_fast: 'أطول صيام', last_7_days: 'آخر 7 أيام',
+    total_hours: 'إجمالي الساعات', completion_rate: 'نسبة الإكمال', longest_fast: 'أطول صيام', last_7_days: 'آخر 7 أيام',
     history: 'سجل الصيام', no_history: 'لا يوجد سجل بعد', completed: 'مكتمل', incomplete: 'غير مكتمل',
-    weight_log: 'سجل الوزن', add_weight: 'سجّل وزنك', weight_change: 'التغير',
-
-    coach_title: 'المدرب الذكي', analysis: 'التحليل الفسيولوجي', tips: 'نصائح علمية',
+    add_weight: 'سجّل وزنك', coach_title: 'المدرب الذكي', analysis: 'التحليل الفسيولوجي', tips: 'نصائح علمية',
+    trend_7: 'خط الاتجاه (٧ أيام)', kg_per_week: 'كجم/أسبوع', pct_per_week: '٪ من وزنك/أسبوع',
+    over_days: 'يوم', trend_hint: 'الخط ده هو اللي بيتقاس عليه التقدم — الميزان لوحده بيتأرجح كيلو ونص في اليوم على مية وجليكوجين.',
+    trend_need_more: 'محتاج أسبوعين قراءات وزن على الأقل قبل ما أقدر أقول اتجاه بثقة.',
+    pf_add: 'أضف صيام سابق', pf_edit: 'تعديل الصيام', pf_from: 'من', pf_to: 'إلى',
+    pf_manual: 'يدوي', pf_bad_date: 'تاريخ أو وقت غير صالح',
+    pf_end_before_start: 'وقت النهاية لازم يكون بعد البداية',
+    pf_future: 'مينفعش تسجّل صيام في المستقبل', pf_too_long: 'المدة أطول من ١٤ يوم — راجع التواريخ',
+    wk_need_two_weeks: 'محتاج أسبوعين بيانات عشان المقارنة تبقى ليها معنى.',
+    wk_one_change: 'حاجة واحدة تغيّرها', refeed_day: 'يوم فطار مخطط', refeed_day_hint: 'الفطار المقصود جزء من الخطة — مش كسر للسلسلة.',
+    refeed_set: 'اتسجّل كيوم فطار مخطط', refeed_cleared: 'اتشال', refeed_planned: 'أيام مخططة',
+    tomorrow: 'بكرة',
+    rec_good: 'الاستشفاء كويس', rec_watch: 'خلي بالك من الاستشفاء', rec_strained: 'جسمك مرهق',
+    rec_good_sub: 'نبض الراحة عند خط الأساس بتاعك', rec_baseline: 'الأساس',
+    pa_title: 'قراءتي لبياناتك', pa_sub: 'تحليل مكتوب على سجلك إنت، مش قواعد عامة',
+    sev_high: 'مهم', sev_medium: 'يستاهل نظرة', sev_info: 'للعلم',
+    followups: 'متابعة',
+    repeat_yesterday: 'زي امبارح', repeat_done: 'اتنقلت وجبات امبارح',
+    repeat_nothing: 'مفيش وجبات مسجّلة امبارح', favourites: 'المفضّلة', favourite: 'مفضّلة',
+    water_from_weight: 'من وزنك', water_training: 'تمرين', water_heat: 'جو حر', water_manual: 'هدف يدوي',
+    hot_climate: 'جو حر', hot_climate_hint: 'يزوّد نص لتر في شهور الصيف',
+    appearance: 'المظهر', theme: 'الثيم', theme_dark: 'غامق', theme_light: 'فاتح', theme_system: 'النظام',
+    accent: 'اللون الأساسي', text_size: 'حجم الخط',
+    size_s: 'صغير', size_m: 'عادي', size_l: 'كبير', size_xl: 'أكبر',
+    ramadan_mode: 'وضع رمضان', ramadan_enable: 'فعّل وضع رمضان',
+    ramadan_hint: 'النافذة تتحسب من المغرب للفجر تلقائياً كل يوم',
+    ramadan_note: 'النافذة والتذكيرات بتتحرك مع الشمس كل يوم. الحسابات فلكية تقديرية — اعتمد على مواقيت بلدك للصلاة.',
+    ramadan_no_location: 'محتاج إحداثيات صحيحة عشان أحسب المواقيت.',
+    maghrib: 'المغرب', fajr: 'الفجر', fast_length: 'مدة الصيام',
+    latitude: 'خط العرض', longitude: 'خط الطول', calc_method: 'طريقة الحساب',
+    use_my_location: 'استخدم موقعي', use_my_location_hint: 'من آخر موقع معروف للهاتف',
+    detect: 'حدّد', location_unavailable: 'مفيش موقع محفوظ — افتح الخرايط مرة الأول',
+    report: 'تقرير شهري', report_hint: 'ملخص مقروء تبعته لدكتور أو تحتفظ بيه',
+    share_report: 'شارك التقرير',
     expert_title: 'قراءة أرقامك', expert_sub: 'تحليل تغذية وتدريب مبني على اللي إنت سجّلته',
     expert_empty: 'لسه مفيش بيانات كفاية. سجّل وزنك ووجباتك وتمارينك أسبوع، وهنا هتلاقي تحليل مخصوص ليك.',
     prio_1: 'غيّر ده الأسبوع ده', prio_2: 'يستاهل انتباهك', prio_3: 'محافظة',
@@ -460,10 +500,7 @@ var LANG = {
     refeed_long_warn: 'بعد صيام 48 ساعة+ خطر متلازمة إعادة التغذية حقيقي. ابدأ بكميات صغيرة جداً وتدريجية، ولو حسيت بخفقان أو تنميل أو ارتباك — كسّر الصيام واطلب استشارة طبية.',
 
     supplements: 'المكملات', take_now: 'أخذتها', taken_today: 'اتأخذت النهاردة',
-    dosage: 'الجرعة', safety_warning: 'تحذير أمان', supplement_log: 'سجل المكملات',
-    no_double_dose: 'كبسولة واحدة في اليوم بحد أقصى. مضاعفة الجرعة تسبب تراكم الفيتامينات الذائبة في الدهون (A/D/E) وإجهاد الكبد.',
-    add_supplement: 'أضف مكمل',
-
+    dosage: 'الجرعة', no_double_dose: 'كبسولة واحدة في اليوم بحد أقصى. مضاعفة الجرعة تسبب تراكم الفيتامينات الذائبة في الدهون (A/D/E) وإجهاد الكبد.',
     profile: 'الملف الشخصي', name: 'الاسم', weight: 'الوزن (كجم)', height: 'الطول (سم)',
     age: 'العمر', gender: 'النوع', male: 'ذكر', female: 'أنثى',
     activity_level: 'مستوى النشاط', sedentary: 'قليل الحركة', light: 'خفيف',
@@ -478,54 +515,29 @@ var LANG = {
 
     disclaimer: 'تنبيه طبي',
     disclaimer_text: 'التطبيق أداة تتبّع وليس استشارة طبية. الصيام الممتد (24 ساعة فأكثر) مش مناسب للحوامل والمرضعات ومرضى السكري ومن يتناول أدوية ضغط أو سكر أو له تاريخ اضطرابات أكل. استشر طبيبك قبل أي صيام يتجاوز 24 ساعة، ولو حسيت بدوخة شديدة أو خفقان أو إغماء — افطر فوراً.',
-    understood: 'فهمت',
     long_fast_warn: 'تجاوزت 48 ساعة. راقب الترطيب والأملاح، وتجنّب المجهود، ولو ظهرت أعراض خطيرة افطر فوراً.',
 
-    activity_hub: 'مركز النشاط', open_activity: 'افتح مركز النشاط',
-    phone_sensors: 'مستشعرات الهاتف', available: 'متاح', not_available: 'غير متاح',
-    sensor_stepCounter: 'عدّاد خطوات', sensor_stepDetector: 'كاشف خطوة',
+    activity_hub: 'مركز النشاط', phone_sensors: 'مستشعرات الهاتف', sensor_stepCounter: 'عدّاد خطوات', sensor_stepDetector: 'كاشف خطوة',
     sensor_accelerometer: 'مقياس تسارع', sensor_gyroscope: 'جيروسكوب',
     sensor_barometer: 'بارومتر (ضغط)', sensor_light: 'حساس ضوء',
     sensor_proximity: 'حساس قرب', sensor_magnetometer: 'بوصلة',
     sensor_heartRate: 'حساس نبض',
-    floors: 'أدوار', elevation: 'ارتفاع', lux: 'إضاءة',
-
-    pulse_title: 'قياس النبض بالكاميرا', pulse_start: 'ابدأ القياس',
-    pulse_cancel: 'إلغاء', pulse_again: 'قياس تاني',
-    pulse_howto: 'حط طرف صباعك على الكاميرا الخلفية والفلاش وغطيهم كويس. متضغطش بقوة. ثبّت إيدك 25 ثانية.',
-    pulse_warmup: 'تجهيز… ثبّت صباعك',
-    pulse_measuring: 'بيقيس… متحركش',
-    pulse_done: 'النتيجة',
-    pulse_weak: 'الإشارة ضعيفة — غطي الكاميرا والفلاش كويس وجرّب تاني',
-    pulse_quality_low: 'مش شايف صباعك — قرّبه من العدسة',
-    pulse_quality_high: 'الصورة ساطعة زيادة — غطي الفلاش',
-    pulse_disclaimer: 'قياس تقريبي بالكاميرا، مش جهاز طبي. للقياس الدقيق استخدم السوار.',
-    pulse_log: 'سجل النبض', pulse_source_camera: 'كاميرا', pulse_source_band: 'سوار',
-    err_no_camera: 'مفيش كاميرا متاحة', err_busy: 'القياس شغال بالفعل',
-
-    route: 'المسار', route_title: 'تسجيل مسار المشي/الجري',
+    floors: 'أدوار', elevation: 'ارتفاع', route: 'المسار', route_title: 'تسجيل مسار المشي/الجري',
     route_start: 'ابدأ التسجيل', route_pause: 'إيقاف مؤقت', route_resume: 'استئناف',
-    route_stop: 'إنهاء وحفظ', route_distance: 'المسافة', route_pace: 'الإيقاع',
-    route_duration: 'المدة', route_elevation: 'الصعود', route_accuracy: 'دقة GPS',
-    route_open_maps: 'افتح في الخرائط', route_export: 'تصدير GPX',
+    route_stop: 'إنهاء وحفظ', route_distance: 'المسافة', route_duration: 'المدة', route_open_maps: 'افتح في الخرائط', route_export: 'تصدير GPX',
     route_waiting: 'بيدوّر على إشارة GPS…', route_saved: 'المسار اتحفظ',
-    route_history: 'مساراتي', no_routes: 'مفيش مسارات متسجلة',
-    err_gps_off: 'الـGPS مقفول — افتحه من إعدادات الهاتف',
+    route_history: 'مساراتي', err_gps_off: 'الـGPS مقفول — افتحه من إعدادات الهاتف',
     err_no_provider: 'الجهاز مش بيدعم تحديد الموقع',
     route_hint: 'سيب التطبيق شغال أثناء المشي. الإشعار هيفضل ظاهر والتسجيل مستمر.',
     km: 'كم', min_per_km: 'د/كم', meter: 'م',
 
-    manual_meal: 'إضافة وجبة يدوي', meal_name: 'اسم الوجبة', add_photo: 'صورة',
-    take_photo: 'كاميرا', from_gallery: 'من المعرض', remove_photo: 'شيل الصورة',
-    save_to_db: 'احفظها في قائمة الأكل', my_foods: 'أكلاتي',
-    photo_failed: 'مافيش صورة اتحفظت',
+    manual_meal: 'إضافة وجبة يدوي', meal_name: 'اسم الوجبة', take_photo: 'كاميرا', from_gallery: 'من المعرض', remove_photo: 'شيل الصورة',
+    save_to_db: 'احفظها في قائمة الأكل', photo_failed: 'مافيش صورة اتحفظت',
 
     checkin: 'حالتك النهاردة', checkin_save: 'سجّل حالتك',
-    mood: 'المزاج', energy: 'الطاقة', hunger: 'الجوع', focus: 'التركيز',
-    mood_1: 'زفت', mood_2: 'مضايق', mood_3: 'عادي', mood_4: 'كويس', mood_5: 'ممتاز',
-    low: 'منخفض', mid: 'متوسط', high: 'عالي',
+    mood: 'المزاج', energy: 'الطاقة', hunger: 'الجوع', high: 'عالي',
     checkin_done: 'اتسجلت — المدرب هيظبط نصايحه على كده',
-    checkin_history: 'سجل حالتك', personalized: 'مخصص لحالتك',
+    personalized: 'مخصص لحالتك',
     coach_hunger_high: 'الجوع عالي',
     coach_energy_low: 'طاقتك منخفضة',
     coach_mood_low: 'مزاجك مش تمام',
@@ -535,10 +547,9 @@ var LANG = {
     no_scans: 'مفيش قياسات — ضيف قياس InBody أو ميزان ذكي',
     fat_pct: 'نسبة الدهون %', fat_kg: 'كتلة الدهون (كجم)',
     muscle_kg: 'الكتلة العضلية (كجم)', water_pct: 'نسبة المياه %',
-    lean_mass: 'الكتلة الصافية', since_first: 'من أول قياس',
+    since_first: 'من أول قياس',
     body_hint: 'الميزان لوحده بيكدب أثناء الصيام: أول ٢٤ ساعة بتنزل مياه وجليكوجين مش دهون. القياس ده هو اللي بيفرق.',
-    bmr_lean: 'محسوب من الكتلة الصافية', bmr_mifflin: 'محسوب من الوزن والطول والعمر',
-    need_age: 'حدد عمرك عشان نحسب السعرات',
+    bmr_lean: 'محسوب من الكتلة الصافية', need_age: 'حدد عمرك عشان نحسب السعرات',
     no_macros: 'وجبة من غير ماكروز', weight_unit: 'كجم',
     hc_title: 'Health Connect', hc_connect: 'اربط Health Connect', hc_sync: 'زامن الآن',
     hc_syncing: 'بيزامن…', hc_last_sync: 'آخر مزامنة', hc_never: 'لسه متزامنش',
@@ -552,11 +563,11 @@ var LANG = {
     hc_result: 'اتقرا',
     hc_days: 'يوم', hc_workouts: 'تمرين', hc_weights: 'قياس وزن',
     sleep_last: 'آخر نوم', sleep_avg: 'متوسط النوم', resting_hr: 'نبض الراحة',
-    spo2: 'الأكسجين', spo2_avg: 'متوسط الأكسجين', health_trends: 'مؤشراتك',
+    spo2_avg: 'متوسط الأكسجين', health_trends: 'مؤشراتك',
     no_health_data: 'مفيش بيانات — اربط Health Connect وزامن',
     hc_error: 'المزامنة فشلت',
     sleep_metric: 'النوم', fast_today: 'صيام النهاردة', avg_7: 'متوسط ٧ أيام', last_14: 'آخر ١٤ يوم',
-    dashboard: 'لوحتك', tap_for_detail: 'اضغط لتفاصيل أكتر', no_series: 'مفيش بيانات كفاية للرسم',
+    dashboard: 'لوحتك', no_series: 'مفيش بيانات كفاية للرسم',
     live: 'مباشر', latest: 'آخر قراءة',
 
     protein_target: 'هدف البروتين', protein_left: 'فاضل', protein_done: 'وصلت لهدفك',
@@ -573,7 +584,6 @@ var LANG = {
     plan_applied: 'الخطة اتفعّلت',
 
     week_compare: 'الأسبوع ده مقابل اللي فاته', vs_last_week: 'عن الأسبوع اللي فات',
-    no_prev_week: 'محتاج أسبوع كامل قبل ما نقارن',
     fast_hours: 'ساعات الصيام', avg_fast: 'متوسط الصيام', avg_steps: 'متوسط الخطوات',
 
     hr_vs_fast: 'النبض مقابل الصيام',
@@ -581,7 +591,6 @@ var LANG = {
     hr_vs_fast_hint: 'كل نقطة يوم: المحور الأفقي ساعات صيامك، والرأسي نبضك. لو النبض بيقل مع الساعات، ده تأقلم كويس. لو بيزيد فجأة، غالباً أملاح أو إجهاد.',
     no_hr_data: 'مفيش بيانات نبض كفاية لسه',
 
-    sleep_est: 'نوم تقديري', sleep_from_phone: 'من الموبايل', sleep_from_hc: 'من السوار',
     sleep_est_hint: 'تقدير من سكون الموبايل والإضاءة. مش دقة السوار، بس بيسد الفجوة.',
 
     widget: 'ويدجت الشاشة الرئيسية',
@@ -594,13 +603,12 @@ var LANG = {
     rem_window: 'نافذة الأكل', rem_window_hint: 'لما تفتح، وقبل ما تقفل بنص ساعة',
     rem_checkin: 'تذكير بتسجيل حالتك', rem_supplement: 'تذكير بالمكمل',
     rem_nudge: 'نبّهني لو مبدأتش صيام', rem_nudge_hint: 'لو الوقت عدّى ولسه مبدأتش',
-    rem_time: 'الميعاد', rem_test: 'جرّب التنبيه', rem_sent: 'اتبعت — بُص فوق',
+    rem_test: 'جرّب التنبيه', rem_sent: 'اتبعت — بُص فوق',
     rem_need_perm: 'إذن الإشعارات مقفول — التنبيهات مش هتظهر',
 
-    today: 'النهاردة', yesterday: 'امبارح', hours_ago: 'من كام ساعة؟',
-    edit_start: 'تعديل وقت البداية', will_be: 'يعني صايم من',
+    today: 'النهاردة', yesterday: 'امبارح', edit_start: 'تعديل وقت البداية', will_be: 'يعني صايم من',
     time_future: 'الوقت ده لسه مجاش — اختار امبارح',
-    hour_unit: 'ساعة', quick_pick: 'اختيار سريع',
+    quick_pick: 'اختيار سريع',
 
     onb_skip: 'تخطي', onb_next: 'التالي', onb_back: 'رجوع', onb_start: 'يلا نبدأ',
     onb_step: 'خطوة', onb_of: 'من',
@@ -623,23 +631,17 @@ var LANG = {
 
 
 
-    workouts: 'التمارين', add_workout: 'سجّل تمرين', workout_type: 'النوع',
-    distance_km: 'المسافة (كم)', duration_min: 'المدة (دقيقة)',
-    avg_hr: 'متوسط النبض', max_hr: 'أقصى نبض', hr_zone: 'شدة التمرين',
-    zone_easy: 'خفيف', zone_moderate: 'متوسط', zone_hard: 'عنيف', zone_max: 'أقصى مجهود',
-    no_workouts: 'مفيش تمارين متسجلة', workout_history: 'سجل التمارين',
-    fasted_workout: 'صايم', of_max_hr: 'من أقصى نبض متوقع',
-
-    sleep: 'النوم والمنبهات', wake_time: 'موعد الصحيان', sleep_target: 'ساعات النوم',
+    workouts: 'التمارين', add_workout: 'سجّل تمرين', distance_km: 'المسافة (كم)', duration_min: 'المدة (دقيقة)',
+    avg_hr: 'متوسط النبض', max_hr: 'أقصى نبض', zone_easy: 'خفيف', zone_moderate: 'متوسط', zone_hard: 'عنيف', zone_max: 'أقصى مجهود',
+    no_workouts: 'مفيش تمارين متسجلة', fasted_workout: 'صايم', sleep: 'النوم والمنبهات', wake_time: 'موعد الصحيان', sleep_target: 'ساعات النوم',
     bedtime: 'موعد النوم المفترض', caffeine_cutoff: 'آخر كافيين',
     eating_window: 'نافذة الأكل', window_start: 'تبدأ', window_end: 'تنتهي',
 
     import_merge: 'دمج مع بياناتي', import_replace: 'استبدال كل شيء',
     merged_records: 'سجل اتضاف', import_replace_warn: 'الاستبدال هيمسح كل اللي مسجل دلوقتي',
 
-    saved: 'اتحفظ', deleted: 'اتمسح', copied: 'اتنسخ', file_saved: 'الملف اتحفظ في',
+    saved: 'اتحفظ', deleted: 'اتمسح', file_saved: 'الملف اتحفظ في',
     fast_started: 'بدأ الصيام — بالتوفيق!', fast_ended: 'انتهى الصيام',
-    congrats: 'تهانينا!', keep_going: 'كمّل، إنت أقوى مما تتصور',
     empty_search: 'مافيش نتيجة'
   },
 
@@ -649,19 +651,9 @@ var LANG = {
     coach: 'Coach', settings: 'Settings',
 
     start_fasting: 'Start Fast', pause: 'Pause', resume: 'Resume', stop: 'End Fast',
-    fasting_for: 'Fasting for', paused_state: 'Paused', running_state: 'Running',
-    idle_state: 'Not fasting', not_fasting: 'No active fast',
-    start_prompt: 'Pick a goal and start',
-    hours: 'hours', hour_short: 'h', min_short: 'm', sec_short: 's', day: 'day', days: 'days',
-    set_start_time: 'Fast start time', start_now: 'Start now', back_hours: 'Started how long ago?',
-    confirm: 'Confirm', cancel: 'Cancel', save: 'Save', delete: 'Delete', close: 'Close', add: 'Add',
-    edit: 'Edit', done: 'Done',
-
-    fasting_goal: 'Fasting goal', custom_goal: 'Custom goal', progress_pct: 'Progress',
-    of_goal: 'of goal', next_phase_in: 'Next phase in', goal_reached: 'Goal reached',
-    elapsed: 'Elapsed', remaining: 'Remaining', ends_at: 'Ends at',
-
-    phase: 'Phase',
+    paused_state: 'Paused', running_state: 'Running',
+    idle_state: 'Not fasting', start_prompt: 'Pick a goal and start',
+    hours: 'hours', hour_short: 'h', min_short: 'm', day: 'day', set_start_time: 'Fast start time', confirm: 'Confirm', cancel: 'Cancel', save: 'Save', delete: 'Delete', close: 'Close', edit: 'Edit', fasting_goal: 'Fasting goal', of_goal: 'of goal', next_phase_in: 'Next phase in', goal_reached: 'Goal reached',
     phase_anabolic: 'Anabolic',
     phase_anabolic_desc: 'Burning stored glucose, glycogen slowly depleting',
     phase_catabolic: 'Fat Burning',
@@ -680,7 +672,7 @@ var LANG = {
     band: 'Smart band', connect_band: 'Connect band', disconnect_band: 'Disconnect',
     forget_band: 'Forget device', connected: 'Connected', disconnected: 'Disconnected',
     connecting: 'Connecting…', scanning: 'Scanning…', reconnecting: 'Reconnecting…',
-    heart_rate: 'Heart rate', bpm: 'bpm', battery: 'Band battery', auto_connect: 'Auto connect',
+    heart_rate: 'Heart rate', bpm: 'bpm', auto_connect: 'Auto connect',
     band_hint: 'Enable HR broadcast on the band: Huawei Health > device > Settings > HR Data Broadcasts',
     err_bt_off: 'Bluetooth is off — turn it on and retry',
     err_no_permission: 'Bluetooth/location permission is required to scan',
@@ -692,25 +684,19 @@ var LANG = {
     no_native: 'Available inside the Android app only',
 
     activity: 'Physical activity', steps: 'steps', steps_label: 'Steps',
-    active_minutes: 'Active minutes', calories_burned: 'Calories burned', cadence: 'steps/min',
-    level_still: 'Still', level_light: 'Light', level_moderate: 'Moderate', level_vigorous: 'Vigorous',
+    active_minutes: 'Active minutes', calories_burned: 'Calories burned', level_still: 'Still', level_light: 'Light', level_moderate: 'Moderate', level_vigorous: 'Vigorous',
     activity_level_now: 'Current intensity', reset_activity: 'Reset today',
     no_step_sensor: 'No hardware step sensor on this phone',
     perm_activity: 'Activity recognition permission is needed for steps',
     grant_permissions: 'Grant permissions',
 
     search_food: 'Search food…', calories: 'kcal', protein: 'Protein', carbs: 'Carbs', fat: 'Fat',
-    no_meals: 'No meals logged today', todays_total: "Today's total", portions: 'Portions',
-    eating_while_fasting: 'You are fasting — logging a meal ends the fast. Continue?',
+    no_meals: 'No meals logged today', todays_total: "Today's total", eating_while_fasting: 'You are fasting — logging a meal ends the fast. Continue?',
     end_and_log: 'End fast & log', just_log: 'Log only',
 
     water: 'Water', water_intake: 'Water intake', water_target: 'Daily target', ml: 'ml',
-    add_water: 'Add', reset_water: 'Reset',
     liquids_allowed: 'Allowed while fasting', forbidden_drinks: 'Forbidden while fasting',
     drink_water: 'Water + electrolytes (sodium/Himalayan)',
-    herbal_drinks: 'Herbal drinks, no sugar',
-    coffee_tea: 'Plain coffee / green tea',
-    sparkling_water: 'Sparkling water with lemon',
     aniseed_lemon: 'Aniseed with lemon', mint_tea: 'Mint tea', hibiscus: 'Hibiscus',
     cinnamon_caraway: 'Cinnamon / caraway', plain_coffee: 'Black coffee', plain_green_tea: 'Green tea',
     club_soda: 'Club soda, ice and lemon',
@@ -719,12 +705,42 @@ var LANG = {
 
     bmi: 'BMI', tdee: 'TDEE', bmr: 'BMR',
     current_streak: 'Current streak', best_streak: 'Best streak', total_sessions: 'Sessions',
-    total_hours: 'Total hours', completion_rate: 'Completion', avg_duration: 'Average',
-    longest_fast: 'Longest fast', last_7_days: 'Last 7 days',
+    total_hours: 'Total hours', completion_rate: 'Completion', longest_fast: 'Longest fast', last_7_days: 'Last 7 days',
     history: 'Fasting history', no_history: 'Nothing logged yet', completed: 'Completed', incomplete: 'Incomplete',
-    weight_log: 'Weight log', add_weight: 'Log weight', weight_change: 'Change',
-
-    coach_title: 'Smart coach', analysis: 'Physiological analysis', tips: 'Science tips',
+    add_weight: 'Log weight', coach_title: 'Smart coach', analysis: 'Physiological analysis', tips: 'Science tips',
+    trend_7: '7-day trend', kg_per_week: 'kg/week', pct_per_week: '% bodyweight/week',
+    over_days: 'days', trend_hint: 'This line is what progress is measured on — raw scale weight swings over a kilo a day on water and glycogen alone.',
+    trend_need_more: 'At least a fortnight of weigh-ins is needed before a direction can be called.',
+    pf_add: 'Log a past fast', pf_edit: 'Edit fast', pf_from: 'From', pf_to: 'To',
+    pf_manual: 'Manual', pf_bad_date: 'Invalid date or time',
+    pf_end_before_start: 'The end must come after the start',
+    pf_future: 'A fast cannot end in the future', pf_too_long: 'Longer than 14 days — check the dates',
+    wk_need_two_weeks: 'Two weeks of data are needed before a comparison means anything.',
+    wk_one_change: 'One thing to change', refeed_day: 'Planned refeed day', refeed_day_hint: 'A deliberate break is part of the plan, not a broken streak.',
+    refeed_set: 'Marked as a planned refeed', refeed_cleared: 'Cleared', refeed_planned: 'Days planned',
+    tomorrow: 'Tomorrow',
+    rec_good: 'Recovery looks fine', rec_watch: 'Watch your recovery', rec_strained: 'You are under-recovered',
+    rec_good_sub: 'Resting heart rate is at your baseline', rec_baseline: 'baseline',
+    pa_title: 'My reading of your data', pa_sub: 'Written against your own record, not general rules',
+    sev_high: 'Important', sev_medium: 'Worth a look', sev_info: 'For reference',
+    followups: 'Follow-up',
+    repeat_yesterday: 'Same as yesterday', repeat_done: "Copied yesterday's meals",
+    repeat_nothing: 'No meals logged yesterday', favourites: 'Favourites', favourite: 'Favourite',
+    water_from_weight: 'from weight', water_training: 'training', water_heat: 'heat', water_manual: 'manual target',
+    hot_climate: 'Hot climate', hot_climate_hint: 'Adds half a litre through the summer months',
+    appearance: 'Appearance', theme: 'Theme', theme_dark: 'Dark', theme_light: 'Light', theme_system: 'System',
+    accent: 'Accent colour', text_size: 'Text size',
+    size_s: 'Small', size_m: 'Normal', size_l: 'Large', size_xl: 'Larger',
+    ramadan_mode: 'Ramadan mode', ramadan_enable: 'Enable Ramadan mode',
+    ramadan_hint: 'The window follows maghrib to fajr, recomputed daily',
+    ramadan_note: 'The window and its reminders move with the sun each day. These are astronomical estimates — follow your local prayer timetable.',
+    ramadan_no_location: 'Valid coordinates are needed to compute the times.',
+    maghrib: 'Maghrib', fajr: 'Fajr', fast_length: 'Fast length',
+    latitude: 'Latitude', longitude: 'Longitude', calc_method: 'Calculation method',
+    use_my_location: 'Use my location', use_my_location_hint: "From the phone's last known position",
+    detect: 'Detect', location_unavailable: 'No cached position — open a maps app once first',
+    report: 'Monthly report', report_hint: 'A readable summary to send to a doctor or keep',
+    share_report: 'Share report',
     expert_title: 'Reading your numbers', expert_sub: 'Nutrition and training analysis from what you logged',
     expert_empty: 'Not enough data yet. Log your weight, meals and workouts for a week and your own analysis appears here.',
     prio_1: 'Change this week', prio_2: 'Worth your attention', prio_3: 'Upkeep',
@@ -740,10 +756,7 @@ var LANG = {
     refeed_long_warn: 'After 48h+ refeeding syndrome is a real risk. Restart with very small portions, and if you feel palpitations, tingling or confusion, break the fast and seek medical advice.',
 
     supplements: 'Supplements', take_now: 'Taken', taken_today: 'Taken today',
-    dosage: 'Dosage', safety_warning: 'Safety warning', supplement_log: 'Supplement log',
-    no_double_dose: 'One capsule per day maximum. Doubling the dose accumulates fat-soluble vitamins (A/D/E) and strains the liver.',
-    add_supplement: 'Add supplement',
-
+    dosage: 'Dosage', no_double_dose: 'One capsule per day maximum. Doubling the dose accumulates fat-soluble vitamins (A/D/E) and strains the liver.',
     profile: 'Profile', name: 'Name', weight: 'Weight (kg)', height: 'Height (cm)',
     age: 'Age', gender: 'Gender', male: 'Male', female: 'Female',
     activity_level: 'Activity level', sedentary: 'Sedentary', light: 'Light',
@@ -758,54 +771,29 @@ var LANG = {
 
     disclaimer: 'Medical notice',
     disclaimer_text: 'This app is a tracker, not medical advice. Extended fasting (24h+) is not suitable during pregnancy or breastfeeding, for people with diabetes, anyone on blood-pressure or glucose medication, or with a history of eating disorders. Talk to your doctor before any fast beyond 24 hours, and break the fast immediately if you feel severe dizziness, palpitations or faintness.',
-    understood: 'Understood',
     long_fast_warn: 'Past 48 hours. Watch hydration and electrolytes, avoid exertion, and break the fast if serious symptoms appear.',
 
-    activity_hub: 'Activity hub', open_activity: 'Open activity hub',
-    phone_sensors: 'Phone sensors', available: 'available', not_available: 'not available',
-    sensor_stepCounter: 'Step counter', sensor_stepDetector: 'Step detector',
+    activity_hub: 'Activity hub', phone_sensors: 'Phone sensors', sensor_stepCounter: 'Step counter', sensor_stepDetector: 'Step detector',
     sensor_accelerometer: 'Accelerometer', sensor_gyroscope: 'Gyroscope',
     sensor_barometer: 'Barometer', sensor_light: 'Light sensor',
     sensor_proximity: 'Proximity', sensor_magnetometer: 'Compass',
     sensor_heartRate: 'Heart rate sensor',
-    floors: 'Floors', elevation: 'Elevation', lux: 'Light',
-
-    pulse_title: 'Camera pulse', pulse_start: 'Measure',
-    pulse_cancel: 'Cancel', pulse_again: 'Measure again',
-    pulse_howto: 'Cover the rear camera and the flash with your fingertip. Do not press hard. Hold still for 25 seconds.',
-    pulse_warmup: 'Warming up… hold still',
-    pulse_measuring: 'Measuring… do not move',
-    pulse_done: 'Result',
-    pulse_weak: 'Weak signal — cover both the lens and the flash and try again',
-    pulse_quality_low: 'No finger detected — move closer to the lens',
-    pulse_quality_high: 'Too bright — cover the flash',
-    pulse_disclaimer: 'A camera estimate, not a medical device. Use the band for accuracy.',
-    pulse_log: 'Pulse log', pulse_source_camera: 'camera', pulse_source_band: 'band',
-    err_no_camera: 'No camera available', err_busy: 'A measurement is already running',
-
-    route: 'Route', route_title: 'Record a walk or run',
+    floors: 'Floors', elevation: 'Elevation', route: 'Route', route_title: 'Record a walk or run',
     route_start: 'Start recording', route_pause: 'Pause', route_resume: 'Resume',
-    route_stop: 'Finish & save', route_distance: 'Distance', route_pace: 'Pace',
-    route_duration: 'Duration', route_elevation: 'Ascent', route_accuracy: 'GPS accuracy',
-    route_open_maps: 'Open in maps', route_export: 'Export GPX',
+    route_stop: 'Finish & save', route_distance: 'Distance', route_duration: 'Duration', route_open_maps: 'Open in maps', route_export: 'Export GPX',
     route_waiting: 'Waiting for a GPS fix…', route_saved: 'Route saved',
-    route_history: 'My routes', no_routes: 'No routes recorded yet',
-    err_gps_off: 'GPS is off — turn it on in system settings',
+    route_history: 'My routes', err_gps_off: 'GPS is off — turn it on in system settings',
     err_no_provider: 'This device has no location provider',
     route_hint: 'Leave the app running while you walk. The notification stays up and recording continues.',
     km: 'km', min_per_km: 'min/km', meter: 'm',
 
-    manual_meal: 'Add meal manually', meal_name: 'Meal name', add_photo: 'Photo',
-    take_photo: 'Camera', from_gallery: 'Gallery', remove_photo: 'Remove photo',
-    save_to_db: 'Save to my food list', my_foods: 'My foods',
-    photo_failed: 'No photo was saved',
+    manual_meal: 'Add meal manually', meal_name: 'Meal name', take_photo: 'Camera', from_gallery: 'Gallery', remove_photo: 'Remove photo',
+    save_to_db: 'Save to my food list', photo_failed: 'No photo was saved',
 
     checkin: 'How you feel today', checkin_save: 'Save check-in',
-    mood: 'Mood', energy: 'Energy', hunger: 'Hunger', focus: 'Focus',
-    mood_1: 'Awful', mood_2: 'Low', mood_3: 'Okay', mood_4: 'Good', mood_5: 'Great',
-    low: 'Low', mid: 'Medium', high: 'High',
+    mood: 'Mood', energy: 'Energy', hunger: 'Hunger', high: 'High',
     checkin_done: 'Saved — the coach will adapt to this',
-    checkin_history: 'Check-in history', personalized: 'Personalised',
+    personalized: 'Personalised',
     coach_hunger_high: 'Hunger is high',
     coach_energy_low: 'Energy is low',
     coach_mood_low: 'Mood is low',
@@ -815,10 +803,9 @@ var LANG = {
     no_scans: 'No scans yet — add an InBody or smart-scale reading',
     fat_pct: 'Body fat %', fat_kg: 'Fat mass (kg)',
     muscle_kg: 'Muscle mass (kg)', water_pct: 'Body water %',
-    lean_mass: 'Lean mass', since_first: 'since first scan',
+    since_first: 'since first scan',
     body_hint: 'The scale alone lies during a fast: the first 24h drops water and glycogen, not fat. This is what tells them apart.',
-    bmr_lean: 'from lean mass', bmr_mifflin: 'from weight, height and age',
-    need_age: 'Set your age to compute calories',
+    bmr_lean: 'from lean mass', need_age: 'Set your age to compute calories',
     no_macros: 'meals without macros', weight_unit: 'kg',
     hc_title: 'Health Connect', hc_connect: 'Connect Health Connect', hc_sync: 'Sync now',
     hc_syncing: 'Syncing…', hc_last_sync: 'Last sync', hc_never: 'never',
@@ -832,11 +819,11 @@ var LANG = {
     hc_result: 'read',
     hc_days: 'days', hc_workouts: 'workouts', hc_weights: 'weight readings',
     sleep_last: 'Last night', sleep_avg: 'Average sleep', resting_hr: 'Resting HR',
-    spo2: 'Oxygen', spo2_avg: 'Average SpO2', health_trends: 'Your metrics',
+    spo2_avg: 'Average SpO2', health_trends: 'Your metrics',
     no_health_data: 'No data — connect Health Connect and sync',
     hc_error: 'Sync failed',
     sleep_metric: 'Sleep', fast_today: "Today's fast", avg_7: '7-day average', last_14: 'Last 14 days',
-    dashboard: 'Your day', tap_for_detail: 'Tap for detail', no_series: 'Not enough data to chart',
+    dashboard: 'Your day', no_series: 'Not enough data to chart',
     live: 'live', latest: 'latest',
 
     protein_target: 'Protein target', protein_left: 'left', protein_done: 'Target reached',
@@ -853,7 +840,6 @@ var LANG = {
     plan_applied: 'Plan applied',
 
     week_compare: 'This week vs last', vs_last_week: 'vs last week',
-    no_prev_week: 'Needs a full previous week to compare',
     fast_hours: 'Fasted hours', avg_fast: 'Average fast', avg_steps: 'Average steps',
 
     hr_vs_fast: 'Heart rate vs fasting',
@@ -861,7 +847,6 @@ var LANG = {
     hr_vs_fast_hint: 'Each dot is a day: fasted hours across, heart rate up. Falling HR as hours rise means good adaptation. A sudden rise usually means electrolytes or strain.',
     no_hr_data: 'Not enough heart-rate data yet',
 
-    sleep_est: 'Estimated sleep', sleep_from_phone: 'from phone', sleep_from_hc: 'from band',
     sleep_est_hint: 'Estimated from phone stillness and light. Not band accuracy, but it fills the gap.',
 
     widget: 'Home screen widget',
@@ -874,13 +859,12 @@ var LANG = {
     rem_window: 'Eating window', rem_window_hint: 'When it opens, and 30 minutes before it closes',
     rem_checkin: 'Check-in reminder', rem_supplement: 'Supplement reminder',
     rem_nudge: 'Nudge if no fast started', rem_nudge_hint: 'When the time passes and nothing is running',
-    rem_time: 'Time', rem_test: 'Send a test', rem_sent: 'Sent — check your notifications',
+    rem_test: 'Send a test', rem_sent: 'Sent — check your notifications',
     rem_need_perm: 'Notification permission is off — reminders will not appear',
 
-    today: 'Today', yesterday: 'Yesterday', hours_ago: 'How long ago?',
-    edit_start: 'Edit start time', will_be: 'That is a fast of',
+    today: 'Today', yesterday: 'Yesterday', edit_start: 'Edit start time', will_be: 'That is a fast of',
     time_future: 'That time has not happened yet — pick yesterday',
-    hour_unit: 'hours', quick_pick: 'Quick pick',
+    quick_pick: 'Quick pick',
 
     onb_skip: 'Skip', onb_next: 'Next', onb_back: 'Back', onb_start: 'Get started',
     onb_step: 'Step', onb_of: 'of',
@@ -903,23 +887,17 @@ var LANG = {
 
 
 
-    workouts: 'Workouts', add_workout: 'Log a workout', workout_type: 'Type',
-    distance_km: 'Distance (km)', duration_min: 'Duration (min)',
-    avg_hr: 'Average HR', max_hr: 'Max HR', hr_zone: 'Intensity',
-    zone_easy: 'Easy', zone_moderate: 'Moderate', zone_hard: 'Hard', zone_max: 'All out',
-    no_workouts: 'No workouts logged', workout_history: 'Workout history',
-    fasted_workout: 'fasted', of_max_hr: 'of estimated max HR',
-
-    sleep: 'Sleep and stimulants', wake_time: 'Wake time', sleep_target: 'Sleep hours',
+    workouts: 'Workouts', add_workout: 'Log a workout', distance_km: 'Distance (km)', duration_min: 'Duration (min)',
+    avg_hr: 'Average HR', max_hr: 'Max HR', zone_easy: 'Easy', zone_moderate: 'Moderate', zone_hard: 'Hard', zone_max: 'All out',
+    no_workouts: 'No workouts logged', fasted_workout: 'fasted', sleep: 'Sleep and stimulants', wake_time: 'Wake time', sleep_target: 'Sleep hours',
     bedtime: 'Implied bedtime', caffeine_cutoff: 'Last caffeine',
     eating_window: 'Eating window', window_start: 'Opens', window_end: 'Closes',
 
     import_merge: 'Merge with my data', import_replace: 'Replace everything',
     merged_records: 'records added', import_replace_warn: 'Replacing erases everything currently stored',
 
-    saved: 'Saved', deleted: 'Deleted', copied: 'Copied', file_saved: 'File saved to',
+    saved: 'Saved', deleted: 'Deleted', file_saved: 'File saved to',
     fast_started: 'Fast started — good luck!', fast_ended: 'Fast ended',
-    congrats: 'Congratulations!', keep_going: 'Keep going, you are stronger than you think',
     empty_search: 'No results'
   }
 };
@@ -1047,13 +1025,6 @@ function calcBMR(kg, cm, age, gender) {
 }
 
 /** @return TDEE, or null when BMR cannot be computed. */
-function calcTDEE(kg, cm, age, gender, activity) {
-  var bmr = calcBMR(kg, cm, age, gender);
-  if (bmr === null) return null;
-  var f = { sedentary: 1.2, light: 1.375, moderate: 1.55, active: 1.725, very_active: 1.9 };
-  return Math.round(bmr * (f[activity] || 1.55));
-}
-
 /**
  * Katch-McArdle: when a body-composition scan is available it beats
  * Mifflin-St Jeor, because it works from lean mass and needs no age at all.
@@ -1064,25 +1035,58 @@ function calcBMRLean(leanKg) {
 }
 
 /** Best available resting-energy estimate, with its source named. */
-function bestBMR(profile) {
-  var body = latestBodyWith('muscleKg');
-  if (body && body.muscleKg) {
-    return { value: Math.round(calcBMRLean(body.muscleKg)), source: 'lean' };
+/**
+ * Fat-free mass in kg, which is what Katch-McArdle and the protein target
+ * both actually want.
+ *
+ * The reliable route is weight minus fat, because a scale's fat percentage
+ * is the one composition number it measures rather than models. A scale's
+ * "muscle" figure is skeletal muscle, which is materially smaller — for a
+ * 96 kg body at 24.5% fat it reads about 59 kg against a true fat-free mass
+ * of 72.5 kg. Feeding that into Katch-McArdle understates resting burn by
+ * roughly 290 kcal a day, and every calorie floor built on it inherits the
+ * error. Muscle mass is therefore only a last resort, and says so.
+ *
+ * @return {{kg: number, source: string}|null}
+ */
+function fatFreeMass() {
+  var byFat = latestBodyWith('fatKg');
+  if (byFat && byFat.kg && byFat.fatKg) {
+    return { kg: Math.round((byFat.kg - byFat.fatKg) * 10) / 10, source: 'fat_mass' };
   }
+  var byPct = latestBodyWith('fatPct');
+  if (byPct && byPct.kg && byPct.fatPct) {
+    return { kg: Math.round(byPct.kg * (1 - byPct.fatPct / 100) * 10) / 10, source: 'fat_pct' };
+  }
+  var byMuscle = latestBodyWith('muscleKg');
+  if (byMuscle && byMuscle.muscleKg) {
+    return { kg: byMuscle.muscleKg, source: 'muscle' };
+  }
+  return null;
+}
+
+function bestBMR(profile) {
+  var ffm = fatFreeMass();
+  if (ffm) return { value: Math.round(calcBMRLean(ffm.kg)), source: 'lean', basis: ffm.source };
   var v = calcBMR(profile.weight, profile.height, profile.age, profile.gender);
-  return v === null ? { value: null, source: 'none' } : { value: Math.round(v), source: 'mifflin' };
+  return v === null
+    ? { value: null, source: 'none' }
+    : { value: Math.round(v), source: 'mifflin' };
 }
 
 /**
  * Daily burn from the best BMR available. Using lean mass means a body scan
  * removes the need for an age entirely, instead of blocking the whole number.
  */
+var ACTIVITY_FACTORS = {
+  sedentary: 1.2, light: 1.375, moderate: 1.55, active: 1.725, very_active: 1.9
+};
+
 function bestTDEE(profile) {
   var bmr = bestBMR(profile);
   if (bmr.value === null) return { value: null, source: 'none' };
-  var f = { sedentary: 1.2, light: 1.375, moderate: 1.55, active: 1.725, very_active: 1.9 };
   return {
-    value: Math.round(bmr.value * (f[profile.activity] || 1.55)),
+    value: Math.round(bmr.value * (ACTIVITY_FACTORS[profile.activity] || 1.55)),
     source: bmr.source
   };
 }
@@ -1425,6 +1429,13 @@ var LIQUIDS_NO = [
  * ------------------------------------------------------------------- */
 
 /** Consecutive-day streak counting back from today (or yesterday). */
+/**
+ * Consecutive days with a completed fast.
+ *
+ * A day marked as a planned refeed bridges the streak without adding to it:
+ * a deliberate break is part of the protocol, so it should not reset the
+ * count, but it did not involve fasting either, so it should not inflate it.
+ */
 function computeStreak(history) {
   if (!history || !history.length) return 0;
   var days = {};
@@ -1433,12 +1444,13 @@ function computeStreak(history) {
   }
   var streak = 0;
   var cursor = startOfDay(Date.now());
-  if (!days[dayKey(cursor)]) {
+  // Today may simply not be over yet, so an empty today is not a break.
+  if (!days[dayKey(cursor)] && !isPlannedBreak(cursor)) {
     cursor -= 86400000;
-    if (!days[dayKey(cursor)]) return 0;
+    if (!days[dayKey(cursor)] && !isPlannedBreak(cursor)) return 0;
   }
-  while (days[dayKey(cursor)]) {
-    streak++;
+  while (days[dayKey(cursor)] || isPlannedBreak(cursor)) {
+    if (days[dayKey(cursor)]) streak++;
     cursor -= 86400000;
   }
   return streak;
@@ -1561,16 +1573,6 @@ var TIPS_EN = [
   'Light-headedness when standing after 24h is fairly common — get up slowly and take electrolytes.'
 ];
 
-function coachFor(hours) {
-  var idx = phaseIndexFor(hours);
-  var ar = isRTL();
-  return {
-    analysis: (ar ? COACH_AR : COACH_EN)[idx],
-    exercise: (ar ? EXERCISE_AR : EXERCISE_EN)[idx],
-    index: idx
-  };
-}
-
 
 /* ---------------------------------------------------------------------
  * Expert engine — nutrition and training analysis
@@ -1609,15 +1611,85 @@ function completeCalorieDays(n) {
   return out;
 }
 
-/** Weight change as a percentage of bodyweight per week, or null. */
-function weightTrendPctPerWeek() {
-  var log = S.get('profile.weightLog', []);
-  if (log.length < 2) return null;
-  var first = log[0], last = log[log.length - 1];
+/**
+ * Daily weight carried forward, so a gap between weigh-ins does not read as
+ * a gap in the trend. Each day takes the most recent reading on or before it.
+ * @return {Array<{ts:number, kg:number|null}>} oldest first
+ */
+function dailyWeights(days) {
+  var log = sortByTime(S.get('profile.weightLog', []).slice(), 'ts');
+  if (!log.length) return [];
+  var out = [];
+  var span = lastDays(days || 60);
+  for (var i = 0; i < span.length; i++) {
+    var kg = null;
+    for (var j = 0; j < log.length; j++) {
+      if (log[j].ts <= span[i].ts + 86399999 && log[j].kg) kg = log[j].kg;
+    }
+    out.push({ ts: span[i].ts, kg: kg });
+  }
+  return out;
+}
+
+/**
+ * Centred moving average of bodyweight.
+ *
+ * Scale weight during a fast swings well over a kilo on water and glycogen
+ * alone, so two raw readings can differ by more than a fortnight of real
+ * change — enough to invert the sign of the trend. Everything that reasons
+ * about direction reads this instead of the raw log.
+ *
+ * @return {Array<{ts:number, kg:number|null, avg:number|null}>}
+ */
+function smoothedWeights(days, window) {
+  var raw = dailyWeights(days || 60);
+  var w = window || 7;
+  var half = Math.floor(w / 2);
+  var out = [];
+  for (var i = 0; i < raw.length; i++) {
+    var sum = 0, n = 0;
+    for (var j = i - half; j <= i + half; j++) {
+      if (j < 0 || j >= raw.length || raw[j].kg === null) continue;
+      sum += raw[j].kg;
+      n++;
+    }
+    out.push({ ts: raw[i].ts, kg: raw[i].kg, avg: n ? sum / n : null });
+  }
+  return out;
+}
+
+/**
+ * Rate of weight change, measured on the smoothed line rather than on two
+ * raw weigh-ins.
+ *
+ * Needs a fortnight before it will commit to a direction: below that the
+ * smoothing window is wider than the sample and the slope is noise.
+ *
+ * @return {{pctPerWeek:number, kgPerWeek:number, days:number,
+ *           from:number, to:number, readings:number}|null}
+ */
+function weightTrend() {
+  var series = smoothedWeights(60, 7);
+  var points = [];
+  for (var i = 0; i < series.length; i++) {
+    if (series[i].avg !== null) points.push(series[i]);
+  }
+  if (points.length < 14) return null;
+
+  var first = points[0], last = points[points.length - 1];
   var days = (last.ts - first.ts) / 86400000;
-  if (days < 10 || !first.kg) return null;
-  var pct = ((last.kg - first.kg) / first.kg) * 100;
-  return { pctPerWeek: pct / (days / 7), days: Math.round(days), from: first.kg, to: last.kg };
+  if (days < 14 || !first.avg) return null;
+
+  var kgPerWeek = (last.avg - first.avg) / (days / 7);
+  var raw = S.get('profile.weightLog', []).length;
+  return {
+    pctPerWeek: (kgPerWeek / first.avg) * 100,
+    kgPerWeek: kgPerWeek,
+    days: Math.round(days),
+    from: Math.round(first.avg * 10) / 10,
+    to: Math.round(last.avg * 10) / 10,
+    readings: raw
+  };
 }
 
 /** Days since the last workout of a given type, or null if never. */
@@ -1670,17 +1742,24 @@ function expertInsights() {
   var tdee = bestTDEE(profile);
   var target = proteinTarget();
   var load = trainingLoad(14);
-  var trend = weightTrendPctPerWeek();
+  var trend = weightTrend();
   var sleepH = avgSleepHours(7);
   var lastGym = daysSinceWorkout('gym');
 
-  function push(priority, tone, icon, title, text) {
-    out.push({ priority: priority, tone: tone, icon: icon, title: title, text: text });
+  // `id` is what the insight log follows over time, so it must stay stable
+  // even as the wording changes; `metric` is the number the follow-up check
+  // re-reads to decide whether anything actually moved.
+  function push(id, priority, tone, icon, title, text, metric) {
+    out.push({
+      id: id, priority: priority, tone: tone, icon: icon,
+      title: title, text: text,
+      metric: metric === undefined ? null : metric
+    });
   }
 
   /* --- 1. Cardio-only while losing weight: the muscle problem ---------- */
   if (load.total >= 2 && (lastGym === null || lastGym > 10)) {
-    push(1, 'warn', '🏋️',
+    push('resistance', 1, 'warn', '🏋️',
       ar ? 'كل تمارينك كارديو — ده بياكل من عضلك' : 'All cardio, no resistance',
       ar
         ? 'آخر ١٤ يوم فيهم ' + load.total + ' تمرين، ومفيش ولا واحد مقاومة. '
@@ -1702,25 +1781,27 @@ function expertInsights() {
 
   /* --- 2. Rate of loss ------------------------------------------------- */
   if (trend && trend.pctPerWeek < -1.0) {
-    push(1, 'warn', '⚖️',
+    push('loss_rate', 1, 'warn', '⚖️',
       ar ? 'بتنزل بسرعة أكتر من اللازم' : 'Losing weight too fast',
       ar
-        ? 'نزلت ' + Math.abs(trend.pctPerWeek).toFixed(1) + '٪ من وزنك في الأسبوع '
-          + 'على مدار ' + trend.days + ' يوم. فوق ١٪ في الأسبوع، نسبة كبيرة من النازل '
-          + 'بتبقى عضل ومياه مش دهون. هدّي المعدل لـ٠.٥-١٪ بزيادة الأكل في نافذتك، '
-          + 'مش بتقليل الصيام.'
-        : 'You are down ' + Math.abs(trend.pctPerWeek).toFixed(1) + '% of bodyweight per '
-          + 'week over ' + trend.days + ' days. Past 1% a week, a large share of that is '
-          + 'muscle and water rather than fat. Slow it to 0.5-1% by eating more inside '
-          + 'your window, not by shortening the fast.');
+        ? 'خط الاتجاه (متوسط ٧ أيام) نازل ' + Math.abs(trend.kgPerWeek).toFixed(2)
+          + ' كجم في الأسبوع — يعني ' + Math.abs(trend.pctPerWeek).toFixed(1)
+          + '٪ من وزنك — على مدار ' + trend.days + ' يوم، من ' + trend.from + ' لـ'
+          + trend.to + ' كجم. فوق ١٪ في الأسبوع، نسبة كبيرة من النازل بتبقى عضل ومياه '
+          + 'مش دهون. هدّي المعدل لـ٠.٥-١٪ بزيادة الأكل في نافذتك، مش بتقليل الصيام.'
+        : 'The smoothed line is falling ' + Math.abs(trend.kgPerWeek).toFixed(2)
+          + ' kg a week — ' + Math.abs(trend.pctPerWeek).toFixed(1) + '% of bodyweight — '
+          + 'over ' + trend.days + ' days, from ' + trend.from + ' to ' + trend.to + ' kg. '
+          + 'Past 1% a week, a large share of that is muscle and water rather than fat. '
+          + 'Slow it to 0.5-1% by eating more inside your window, not by shortening the fast.');
   } else if (trend && trend.pctPerWeek > 0.4) {
-    push(2, 'exercise', '⚖️',
+    push('gaining', 2, 'exercise', '⚖️',
       ar ? 'الوزن بيزيد' : 'Weight is climbing',
       ar
-        ? 'الوزن طالع ' + trend.pctPerWeek.toFixed(1) + '٪ في الأسبوع رغم الصيام. '
+        ? 'خط الاتجاه طالع ' + trend.kgPerWeek.toFixed(2) + ' كجم في الأسبوع رغم الصيام. '
           + 'الصيام بينظّم التوقيت مش الكمية — لو السعرات في النافذة أعلى من احتياجك '
           + 'هتزيد برضه. سجّل ماكروز وجبتك أسبوع وهتشوف الفجوة.'
-        : 'Weight is up ' + trend.pctPerWeek.toFixed(1) + '% a week despite fasting. '
+        : 'The smoothed line is up ' + trend.kgPerWeek.toFixed(2) + ' kg a week despite fasting. '
           + 'Fasting controls timing, not amount — if the window exceeds your needs you '
           + 'still gain. Log macros for a week and the gap will show.');
   }
@@ -1732,7 +1813,7 @@ function expertInsights() {
     for (var i = 0; i < days.length; i++) sum += days[i].cal;
     var avg = sum / days.length;
     if (avg < bmr.value * 1.05) {
-      push(1, 'warn', '🔻',
+      push('calorie_floor', 1, 'warn', '🔻',
         ar ? 'أكلك تحت أيض الراحة' : 'Intake is below your resting burn',
         ar
           ? 'متوسط أكلك ' + Math.round(avg) + ' سعرة في اليوم على ' + days.length + ' أيام '
@@ -1751,7 +1832,7 @@ function expertInsights() {
 
   /* --- 4. Protein in one sitting --------------------------------------- */
   if (target.grams >= 100) {
-    push(2, 'good', '🍗',
+    push('protein_split', 2, 'good', '🍗',
       ar ? 'قسّم البروتين على جرعتين' : 'Split the protein in two',
       ar
         ? 'هدفك ' + target.grams + ' جم بروتين، ونافذتك ساعات قليلة. الجسم بيستفيد '
@@ -1767,7 +1848,7 @@ function expertInsights() {
   /* --- 5. Intensity distribution --------------------------------------- */
   if (load.avgPct !== null && load.total >= 3) {
     if (load.hard >= load.total * 0.6) {
-      push(2, 'exercise', '🚴',
+      push('intensity', 2, 'exercise', '🚴',
         ar ? 'كل تمارينك عنيفة' : 'Everything is a hard session',
         ar
           ? load.hard + ' من ' + load.total + ' تمارينك في المنطقة العنيفة '
@@ -1785,7 +1866,7 @@ function expertInsights() {
 
   /* --- 6. Recovery: late training, short sleep, stimulants ------------- */
   if (load.late >= 2 && sleepH !== null && sleepH < 7) {
-    push(1, 'warn', '🌙',
+    push('late_sleep', 1, 'warn', '🌙',
       ar ? 'بتتمرن بالليل وبتنام قليل' : 'Late training on short sleep',
       ar
         ? 'متوسط نومك ' + sleepH.toFixed(1) + ' ساعة، و' + load.late + ' تمرين بدأوا بعد '
@@ -1799,7 +1880,7 @@ function expertInsights() {
           + 'you wake hungrier and find the fast harder. If evening training is fixed, move '
           + 'the hard sessions earlier and leave the night for walking.');
   } else if (sleepH !== null && sleepH < 6.5) {
-    push(2, 'warn', '🌙',
+    push('short_sleep', 2, 'warn', '🌙',
       ar ? 'النوم قليل' : 'Sleep is short',
       ar
         ? 'متوسط ' + sleepH.toFixed(1) + ' ساعة. تحت ٧ ساعات، الجسم بيميل يخسر عضل بدل '
@@ -1819,7 +1900,7 @@ function expertInsights() {
     if (carbs >= 35 && prot < 10) sugary++;
   }
   if (sugary >= 2) {
-    push(2, 'warn', '🍰',
+    push('refeed_order', 2, 'warn', '🍰',
       ar ? 'ترتيب الأكل بعد الصيام' : 'The order you break the fast in',
       ar
         ? 'سجّلت ' + sugary + ' صنف عالي الكارب وقليل البروتين آخر أسبوعين. بعد ٢٠ ساعة '
@@ -1838,7 +1919,7 @@ function expertInsights() {
     var hoursNow = fastElapsed(cf) / 3600000;
     var el = electrolytesToday();
     if (hoursNow >= 16 && (el.sodium || 0) < ELECTROLYTE_TARGETS.sodium * 0.4) {
-      push(1, 'warn', '🧂',
+      push('sodium', 1, 'warn', '🧂',
         ar ? 'الصوديوم ناقص وإنت في ساعة ' + Math.floor(hoursNow) : 'Sodium is low at hour ' + Math.floor(hoursNow),
         ar
           ? 'مسجّل ' + (el.sodium || 0) + ' مجم صوديوم النهاردة. أثناء الصيام الإنسولين '
@@ -1853,7 +1934,7 @@ function expertInsights() {
 
   /* --- 9. Fibre and micronutrients on OMAD ----------------------------- */
   if (S.get('settings.plan', 'custom') === 'omad' || S.get('settings.defaultGoal', 20) >= 20) {
-    push(3, 'good', '🥗',
+    push('fibre', 3, 'good', '🥗',
       ar ? 'الخضار مش رفاهية في وجبة واحدة' : 'Vegetables are not optional on one meal',
       ar
         ? 'وجبة واحدة معناها فرصة واحدة للألياف والميكرو. استهدف نص الطبق خضار متنوعة '
@@ -2076,19 +2157,20 @@ function routineAdvice(hours, fasting) {
 
   // --- Eating window ---
   if (fasting) {
-    var ws = parseHHMM(S.get('settings.windowStart', '17:00'), 17);
-    var we = parseHHMM(S.get('settings.windowEnd', '21:00'), 21);
+    var win = effectiveWindow();
+    var ws = parseHHMM(win.start, 17);
+    var we = parseHHMM(win.end, 21);
     var startMin = ws.h * 60 + ws.mn;
     var endMin = we.h * 60 + we.mn;
     if (nowMin >= startMin && nowMin <= endMin && hours >= 16) {
       out.push({
         tone: 'good', icon: '🍽️', title: ar ? 'نافذة الأكل بتاعتك' : 'Your eating window',
         text: ar
-          ? 'إنت جوه نافذة الأكل (' + S.get('settings.windowStart', '17:00') + ' - '
-            + S.get('settings.windowEnd', '21:00') + ') وكملت ' + Math.floor(hours) + ' ساعة. '
+          ? 'إنت جوه نافذة الأكل (' + win.start + ' - ' + win.end + ') وكملت '
+            + Math.floor(hours) + ' ساعة. '
             + 'ابدأ ببروتين وسلطة قبل أي كارب — الترتيب ده بيقلل قفزة الإنسولين بعد صيام طويل.'
-          : 'You are inside your eating window (' + S.get('settings.windowStart', '17:00') + ' - '
-            + S.get('settings.windowEnd', '21:00') + ') at hour ' + Math.floor(hours) + '. '
+          : 'You are inside your eating window (' + win.start + ' - ' + win.end + ') at hour '
+            + Math.floor(hours) + '. '
             + 'Start with protein and salad before any carbs — that order blunts the insulin spike after a long fast.'
       });
     }
@@ -2232,10 +2314,8 @@ var METRIC_COLORS = {
  */
 function proteinTarget() {
   var perKg = parseFloat(S.get('settings.proteinPerKgLean', 2.0)) || 2.0;
-  var body = latestBodyWith('muscleKg');
-  if (body && body.muscleKg) {
-    return { grams: Math.round(body.muscleKg * perKg), basis: 'lean', perKg: perKg };
-  }
+  var ffm = fatFreeMass();
+  if (ffm) return { grams: Math.round(ffm.kg * perKg), basis: 'lean', perKg: perKg };
   var kg = S.get('profile.weight', 0);
   if (!kg) return { grams: 0, basis: 'none', perKg: perKg };
   // Without a scan, 1.6 g/kg of bodyweight is the conservative equivalent.
@@ -2406,6 +2486,120 @@ function weekCompare() {
     weight: { cur: wCur, prev: wPrev },
     hasPrev: prev.sessions > 0 || prev.stepDays > 0
   };
+}
+
+/* ---------------------------------------------------------------------
+ * Insight history
+ *
+ * Advice repeated verbatim every day is wallpaper. Recording what was
+ * raised, and when, lets the coach do the thing that separates coaching
+ * from a rule engine: come back later and say whether it worked.
+ * ------------------------------------------------------------------- */
+
+/** Remembers today's top insights so their effect can be checked later. */
+function recordInsights(list) {
+  var log = S.get('insightLog', []);
+  var today = dayKey(Date.now());
+  var seen = {};
+  var i;
+  for (i = 0; i < log.length; i++) {
+    if (dayKey(log[i].ts) === today) seen[log[i].id] = true;
+  }
+  var added = 0;
+  for (i = 0; i < list.length && i < 3; i++) {
+    if (seen[list[i].id]) continue;
+    log.push({
+      id: list[i].id,
+      ts: Date.now(),
+      title: list[i].title,
+      metric: list[i].metric === undefined ? null : list[i].metric
+    });
+    added++;
+  }
+  // A year of entries is plenty; older ones cannot be followed up usefully.
+  if (log.length > 400) log = log.slice(log.length - 400);
+  if (added) S.set('insightLog', log);
+  return added;
+}
+
+/**
+ * Insights that describe a correctable state, as opposed to standing advice
+ * that stays true no matter what the user does. Only the former can be
+ * reported back as resolved.
+ */
+var CORRECTABLE_INSIGHTS = {
+  resistance: true, loss_rate: true, gaining: true, calorie_floor: true,
+  intensity: true, late_sleep: true, short_sleep: true, refeed_order: true,
+  sodium: true
+};
+
+/**
+ * Insights raised at least a week ago that no longer appear, phrased as a
+ * follow-up rather than a fresh warning.
+ * @return {Array<{title:string, text:string, improved:boolean}>}
+ */
+function insightFollowUps() {
+  var ar = isRTL();
+  var log = S.get('insightLog', []);
+  var out = [];
+  var current = {};
+  var live = expertInsights();
+  var i;
+  for (i = 0; i < live.length; i++) current[live[i].id] = live[i];
+
+  var seen = {};
+  for (i = log.length - 1; i >= 0; i--) {
+    var e = log[i];
+    var age = Date.now() - e.ts;
+    if (age < 7 * 86400000 || age > 60 * 86400000) continue;
+    if (seen[e.id]) continue;
+    seen[e.id] = true;
+    if (current[e.id]) continue;               // still true — not a follow-up yet
+    if (!CORRECTABLE_INSIGHTS[e.id]) continue; // standing advice never "resolves"
+
+    var days = Math.round(age / 86400000);
+    out.push({
+      id: e.id,
+      improved: true,
+      title: ar ? 'اتحسّن: ' + e.title : 'Resolved: ' + e.title,
+      text: ar
+        ? 'نبّهتك على ده من ' + days + ' يوم، ودلوقتي مبقاش ظاهر في أرقامك. '
+          + 'ده اللي إحنا عايزينه — كمّل على نفس الشغل.'
+        : 'Raised ' + days + ' days ago and no longer showing in your numbers. '
+          + 'That is the outcome we wanted — keep doing what changed it.'
+    });
+    if (out.length >= 2) break;
+  }
+  return out;
+}
+
+/* ---------------------------------------------------------------------
+ * Planned refeed days
+ *
+ * A deliberate break is part of any long protocol; the app used to record
+ * it identically to a failure, which punished the correct decision.
+ * ------------------------------------------------------------------- */
+
+function plannedBreaks() {
+  return S.get('plannedBreaks', []);
+}
+
+function isPlannedBreak(ts) {
+  var key = dayKey(ts);
+  var list = plannedBreaks();
+  for (var i = 0; i < list.length; i++) if (list[i] === key) return true;
+  return false;
+}
+
+/** Toggles a day's planned-break flag. @return the new state. */
+function togglePlannedBreak(ts) {
+  var key = dayKey(ts);
+  var list = plannedBreaks().slice();
+  var idx = list.indexOf(key);
+  if (idx >= 0) list.splice(idx, 1);
+  else list.push(key);
+  S.set('plannedBreaks', list);
+  return idx < 0;
 }
 
 /* ---------------------------------------------------------------------
@@ -2683,6 +2877,272 @@ function healthAverage(field, n) {
 }
 
 /* ---------------------------------------------------------------------
+ * Ramadan mode
+ *
+ * For a month every year the eating window is not a setting — it is dawn and
+ * sunset, and it moves a little every day. Rather than make the user edit two
+ * times each evening, the window is computed from the sun's position for
+ * their coordinates.
+ *
+ * The maths is the standard NOAA solar-position approximation, accurate to
+ * well under a minute for this purpose. Fajr and isha are defined by solar
+ * depression angles below the horizon, and the angle depends on the
+ * convention a region follows; Egypt uses the Egyptian General Authority of
+ * Survey's 19.5°/17.5°, which is what the default reflects.
+ * ------------------------------------------------------------------- */
+
+var SUN_CONVENTIONS = {
+  egypt: { fajr: 19.5, isha: 17.5, ar: 'الهيئة المصرية العامة للمساحة', en: 'Egyptian General Authority of Survey' },
+  mwl: { fajr: 18, isha: 17, ar: 'رابطة العالم الإسلامي', en: 'Muslim World League' },
+  makkah: { fajr: 18.5, isha: 18, ar: 'أم القرى', en: 'Umm al-Qura' },
+  isna: { fajr: 15, isha: 15, ar: 'إسنا (أمريكا الشمالية)', en: 'ISNA (North America)' }
+};
+
+// Alexandria. A sensible default beats an empty field, and the user can move it.
+var DEFAULT_COORDS = { lat: 31.2001, lon: 29.9187 };
+
+function toRad(deg) { return deg * Math.PI / 180; }
+function toDeg(rad) { return rad * 180 / Math.PI; }
+
+/**
+ * Sun times for one local day.
+ *
+ * Works in Julian days and returns local wall-clock hours, taking the
+ * device's own UTC offset so it stays correct wherever the phone is.
+ *
+ * @return {{fajr:number, sunrise:number, maghrib:number, isha:number}|null}
+ *         hours after local midnight, or null above the polar circles where
+ *         a depression angle may never be reached.
+ */
+function sunTimes(date, lat, lon, conv) {
+  var angles = SUN_CONVENTIONS[conv] || SUN_CONVENTIONS.egypt;
+  var d = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  var julian = Math.floor(d.getTime() / 86400000 + 2440587.5);
+  var n = julian - 2451545.0 + 0.0008;
+
+  var meanSolarNoon = n - lon / 360;
+  var meanAnomaly = (357.5291 + 0.98560028 * meanSolarNoon) % 360;
+  var center = 1.9148 * Math.sin(toRad(meanAnomaly))
+    + 0.02 * Math.sin(toRad(2 * meanAnomaly))
+    + 0.0003 * Math.sin(toRad(3 * meanAnomaly));
+  var eclipticLon = (meanAnomaly + center + 180 + 102.9372) % 360;
+  var solarTransit = 2451545.0 + meanSolarNoon + 0.0053 * Math.sin(toRad(meanAnomaly))
+    - 0.0069 * Math.sin(toRad(2 * eclipticLon));
+  var declination = Math.asin(Math.sin(toRad(eclipticLon)) * Math.sin(toRad(23.44)));
+
+  // Hour angle for a given depression below the horizon, in days.
+  function hourAngle(depression) {
+    var cosH = (Math.sin(toRad(-depression)) - Math.sin(toRad(lat)) * Math.sin(declination))
+      / (Math.cos(toRad(lat)) * Math.cos(declination));
+    if (cosH > 1 || cosH < -1) return null;   // never reached at this latitude
+    return toDeg(Math.acos(cosH)) / 360;
+  }
+
+  var offsetHours = -d.getTimezoneOffset() / 60;
+  function localHours(julianDay) {
+    if (julianDay === null) return null;
+    var h = (julianDay - Math.floor(julianDay) - 0.5) * 24 + offsetHours;
+    return ((h % 24) + 24) % 24;
+  }
+
+  // -0.833° accounts for refraction and the sun's own radius at the horizon.
+  var hSun = hourAngle(0.833);
+  var hFajr = hourAngle(angles.fajr);
+  var hIsha = hourAngle(angles.isha);
+  if (hSun === null) return null;
+
+  return {
+    fajr: hFajr === null ? null : localHours(solarTransit - hFajr),
+    sunrise: localHours(solarTransit - hSun),
+    maghrib: localHours(solarTransit + hSun),
+    isha: hIsha === null ? null : localHours(solarTransit + hIsha)
+  };
+}
+
+/**
+ * The eating window actually in force, which is the Ramadan one when that
+ * mode is on and the stored setting otherwise. Everything that reminds,
+ * advises or displays reads this rather than the raw setting, so turning
+ * Ramadan mode on moves all of it at once.
+ *
+ * @return {{start:string, end:string, source:string}}
+ */
+function effectiveWindow() {
+  var ram = ramadanWindow();
+  if (ram) return { start: ram.start, end: ram.end, source: 'ramadan' };
+  return {
+    start: S.get('settings.windowStart', '17:00'),
+    end: S.get('settings.windowEnd', '21:00'),
+    source: 'manual'
+  };
+}
+
+function hoursToHHMM(h) {
+  if (h === null || h === undefined) return '';
+  var total = Math.round(h * 60);
+  return pad2(Math.floor(total / 60) % 24) + ':' + pad2(total % 60);
+}
+
+/**
+ * Today's eating window under Ramadan mode: iftar at maghrib, suhoor ending
+ * at fajr. Returns null when the mode is off or the location is unusable.
+ *
+ * @return {{start:string, end:string, fastHours:number,
+ *           maghrib:string, fajr:string}|null}
+ */
+function ramadanWindow(when) {
+  if (!S.get('settings.ramadan', false)) return null;
+  var lat = parseFloat(S.get('settings.lat', DEFAULT_COORDS.lat));
+  var lon = parseFloat(S.get('settings.lon', DEFAULT_COORDS.lon));
+  if (isNaN(lat) || isNaN(lon)) return null;
+
+  var now = when ? new Date(when) : new Date();
+  var today = sunTimes(now, lat, lon, S.get('settings.sunConvention', 'egypt'));
+  if (!today || today.maghrib === null) return null;
+
+  // Suhoor ends at the next dawn, which belongs to tomorrow's solar day.
+  var tomorrow = sunTimes(new Date(now.getTime() + 86400000), lat, lon,
+    S.get('settings.sunConvention', 'egypt'));
+  var fajr = tomorrow && tomorrow.fajr !== null ? tomorrow.fajr : today.fajr;
+  if (fajr === null) return null;
+
+  var fastHours = (24 - today.maghrib) + today.sunrise;
+  return {
+    start: hoursToHHMM(today.maghrib),
+    end: hoursToHHMM(fajr),
+    maghrib: hoursToHHMM(today.maghrib),
+    fajr: hoursToHHMM(fajr),
+    sunrise: hoursToHHMM(today.sunrise),
+    fastHours: Math.round(fastHours * 10) / 10
+  };
+}
+
+/* ---------------------------------------------------------------------
+ * Recovery
+ *
+ * Resting heart rate is the cheapest honest recovery signal there is: it
+ * needs no extra logging, and it moves before the subjective feeling does.
+ * The number on its own means nothing, though — 58 is excellent for one
+ * person and elevated for another. What carries information is the distance
+ * from that person's own settled baseline.
+ * ------------------------------------------------------------------- */
+
+/**
+ * Median resting HR over an older stretch, used as the personal baseline.
+ * Median rather than mean so one bad night does not move the reference.
+ * The most recent `skip` days are excluded so today is compared against
+ * where the body has been, not against itself.
+ *
+ * @return {{bpm:number, days:number}|null}
+ */
+function restingBaseline(skip) {
+  var rows = S.get('healthDays', []);
+  var cut = Date.now() - (skip || 3) * 86400000;
+  var vals = [];
+  for (var i = 0; i < rows.length; i++) {
+    if (!rows[i].restingHr) continue;
+    var ts = Date.parse(rows[i].date);
+    if (isNaN(ts) || ts > cut) continue;
+    vals.push(rows[i].restingHr);
+  }
+  if (vals.length < 7) return null;
+  vals.sort(function (a, b) { return a - b; });
+  var mid = Math.floor(vals.length / 2);
+  var bpm = vals.length % 2 ? vals[mid] : (vals[mid - 1] + vals[mid]) / 2;
+  return { bpm: Math.round(bpm * 10) / 10, days: vals.length };
+}
+
+/**
+ * Where recovery stands right now.
+ *
+ * A single elevated morning is noise — travel, a late meal, a warm room.
+ * Two or more consecutive mornings above baseline is the pattern worth
+ * acting on, which is why `streak` gates the verdict rather than the last
+ * reading alone.
+ *
+ * @return {{level:string, recent:number, baseline:number, delta:number,
+ *           streak:number}|null} level is 'good' | 'watch' | 'strained'
+ */
+function recoveryStatus() {
+  var base = restingBaseline(3);
+  if (!base) return null;
+
+  var rows = sortByDate(S.get('healthDays', []).slice().filter(function (r) {
+    return r.restingHr && !isNaN(Date.parse(r.date));
+  }));
+  if (!rows.length) return null;
+
+  var recent = [];
+  for (var i = rows.length - 1; i >= 0 && recent.length < 3; i--) recent.push(rows[i].restingHr);
+  if (!recent.length) return null;
+
+  var sum = 0;
+  for (var j = 0; j < recent.length; j++) sum += recent[j];
+  var avg = sum / recent.length;
+  var delta = avg - base.bpm;
+
+  // Consecutive mornings sitting at least 3 bpm over baseline.
+  var streak = 0;
+  for (var k = rows.length - 1; k >= 0; k--) {
+    if (rows[k].restingHr - base.bpm >= 3) streak++;
+    else break;
+  }
+
+  var level = 'good';
+  if (delta >= 5 && streak >= 2) level = 'strained';
+  else if (delta >= 3 || streak >= 2) level = 'watch';
+
+  return {
+    level: level,
+    recent: Math.round(avg * 10) / 10,
+    baseline: base.bpm,
+    delta: Math.round(delta * 10) / 10,
+    streak: streak
+  };
+}
+
+/* ---------------------------------------------------------------------
+ * Hydration
+ * ------------------------------------------------------------------- */
+
+/**
+ * Daily water goal in millilitres.
+ *
+ * A flat three litres is wrong in both directions — too much for a small
+ * sedentary body, not nearly enough for a 96 kg one riding 20 km in an
+ * Alexandrian summer. Baseline scales with bodyweight, then training and
+ * heat are added as what they are: replacement for measured losses.
+ *
+ * @return {{ml:number, base:number, training:number, heat:number,
+ *           manual:boolean}}
+ */
+function waterTarget() {
+  var manual = parseInt(S.get('settings.waterTargetManual', 0), 10) || 0;
+  var kg = parseFloat(S.get('profile.weight', 0)) || 0;
+
+  // 35 ml/kg is the usual clinical starting point for a healthy adult.
+  var base = kg ? Math.round(kg * 35) : 2500;
+
+  // Roughly half a litre per active hour logged in the last day.
+  var activeMin = 0;
+  var w = S.get('workouts', []);
+  for (var i = 0; i < w.length; i++) {
+    if (Date.now() - w[i].ts > 86400000) continue;
+    activeMin += (w[i].durationMs || 0) / 60000;
+  }
+  var training = Math.round(activeMin / 60 * 500);
+
+  // A hot-climate allowance the user turns on for the summer months.
+  var heat = S.get('settings.hotClimate', false) ? 500 : 0;
+
+  var total = manual > 0 ? manual : base + training + heat;
+  return {
+    ml: Math.max(1500, Math.min(6000, Math.round(total / 50) * 50)),
+    base: base, training: training, heat: heat, manual: manual > 0
+  };
+}
+
+/* ---------------------------------------------------------------------
  * Route helpers
  * ------------------------------------------------------------------- */
 
@@ -2793,6 +3253,484 @@ function exportText() {
 }
 
 /* ---------------------------------------------------------------------
+ * Personal analysis
+ *
+ * expertInsights() applies rules. This reads the record as a whole and says
+ * what it means — the things you only see by looking at how the pieces sit
+ * together, and the things that are wrong with the *data* rather than with
+ * the person. A coach who never questions the measurements is only ever
+ * coaching the measurements.
+ *
+ * Each section states what was observed, what it implies, and what to do.
+ * Sections stay silent unless the record actually supports them.
+ * ------------------------------------------------------------------- */
+
+/** Gap in hours between consecutive fasts, oldest first. */
+function fastGaps() {
+  var hist = sortByTime(S.get('history', []).slice(), 'start');
+  var out = [];
+  for (var i = 1; i < hist.length; i++) {
+    var prevEnd = hist[i - 1].end || hist[i - 1].start;
+    if (!prevEnd || !hist[i].start) continue;
+    out.push({ hours: (hist[i].start - prevEnd) / 3600000, at: hist[i].start });
+  }
+  return out;
+}
+
+/** Workouts that began within `hours` of a fast ending. */
+function workoutsAfterBreaking(hours) {
+  var w = S.get('workouts', []);
+  var hist = S.get('history', []);
+  var out = [];
+  for (var i = 0; i < w.length; i++) {
+    for (var j = 0; j < hist.length; j++) {
+      var end = hist[j].end;
+      if (!end) continue;
+      var gap = (w[i].ts - end) / 3600000;
+      if (gap >= 0 && gap <= (hours || 3)) { out.push({ workout: w[i], gapH: gap }); break; }
+    }
+  }
+  return out;
+}
+
+/**
+ * My reading of this particular record.
+ * @return {Array<{id:string, severity:string, title:string, body:string,
+ *                 action:string|null}>}
+ */
+function personalAnalysis() {
+  var ar = isRTL();
+  var out = [];
+  var profile = S.get('profile', {});
+  var hist = S.get('history', []);
+  var body = latestBody();
+  var ffm = fatFreeMass();
+
+  function add(id, severity, title, bodyText, action) {
+    out.push({ id: id, severity: severity, title: title, body: bodyText, action: action || null });
+  }
+
+  /* --- 1. What the composition actually says -------------------------- */
+  if (body && body.fatPct && ffm && profile.height && profile.weight) {
+    var bmi = calcBMI(profile.weight, profile.height);
+    var fatKg = body.fatKg || Math.round(profile.weight * body.fatPct / 10) / 10;
+    // Weight that would put him at 18% fat while keeping every kilo of lean.
+    var goalKg = Math.round(ffm.kg / (1 - 0.18) * 10) / 10;
+    add('composition', 'info',
+      ar ? 'قراءة تركيب جسمك — الرقم المهم مش الوزن' : 'What your composition actually says',
+      ar
+        ? 'وزنك ' + profile.weight + ' كجم و BMI ' + bmi.toFixed(1) + '، والرقم ده لوحده '
+          + 'بيحطك في خانة "سمنة درجة أولى" تقريباً. بس تركيبك بيحكي حكاية تانية: '
+          + fatKg + ' كجم دهون، و' + ffm.kg + ' كجم كتلة خالية من الدهون. '
+          + 'الكتلة دي كبيرة — ودي حاجة كويسة جداً، لأنها هي اللي بتحدد أيضك وبتخلي '
+          + 'العجز يشتغل لصالحك. يعني مشكلتك مش إنك "تقيل"، مشكلتك إنك شايل '
+          + fatKg + ' كجم دهون زيادة فوق هيكل قوي.\n\n'
+          + 'لو حافظت على الـ' + ffm.kg + ' كجم دي بالكامل ونزلت للدهون لـ١٨٪، '
+          + 'هتقف عند ' + goalKg + ' كجم تقريباً. ده الهدف الحقيقي — مش رقم على الميزان '
+          + 'اخترته من دماغك. وكل قرار تدريب وأكل من هنا المفروض يتقاس بسؤال واحد: '
+          + 'هل ده بيحمي الـ' + ffm.kg + ' كجم دي ولا بياكل منها؟'
+        : 'You are ' + profile.weight + ' kg at a BMI of ' + bmi.toFixed(1) + ', which on its own '
+          + 'reads as class-one obesity. Your composition says something different: '
+          + fatKg + ' kg of fat over ' + ffm.kg + ' kg of fat-free mass. That fat-free figure '
+          + 'is large, and that is good news — it sets your metabolic rate and it is what makes '
+          + 'a deficit work in your favour. Your problem is not that you are heavy; it is that '
+          + fatKg + ' kg of fat is sitting on a strong frame.\n\n'
+          + 'Keep every kilo of that ' + ffm.kg + ' kg and drop to 18% fat and you land near '
+          + goalKg + ' kg. That is the real target, rather than a number you picked off a scale. '
+          + 'From here, every training and eating decision answers one question: does this '
+          + 'protect those ' + ffm.kg + ' kg, or eat into them?',
+      ar ? 'اعتبر ' + ffm.kg + ' كجم دي خط أحمر. الميزان ينزل، الرقم ده ما ينزلش.'
+         : 'Treat those ' + ffm.kg + ' kg as the line you do not cross. The scale falls; that number does not.');
+  }
+
+  /* --- 2. The blind spot: no calorie data ----------------------------- */
+  var loggedDays = completeCalorieDays(30).length;
+  var customs = S.get('customFoods', []);
+  var blankCustoms = 0;
+  for (var ci = 0; ci < customs.length; ci++) {
+    if (customs[ci].cal === null || customs[ci].cal === undefined) blankCustoms++;
+  }
+  if (loggedDays < 3) {
+    add('no_intake', 'high',
+      ar ? 'أكبر فجوة في بياناتك: مفيش سعرات مسجّلة' : 'The blind spot: no intake data',
+      ar
+        ? (loggedDays === 0
+            ? 'مفيش ولا يوم واحد مسجّل بسعرات كاملة آخر شهر'
+            : 'عندك ' + arCount(loggedDays, 'يوم واحد بس', 'يومين بس', 'أيام بس', 'يوم') + ' مسجّلة بسعرات كاملة آخر شهر')
+          + (blankCustoms ? '، و' + arCount(blankCustoms, 'واحدة', 'اتنين', 'من أكلاتك المحفوظة', 'من أكلاتك المحفوظة')
+            + (blankCustoms <= 2 ? ' من أكلاتك المحفوظة' : '') + ' متسجّلة من غير أي ماكروز' : '')
+          + '. ده معناه إن نص المعادلة غايب.\n\n'
+          + 'الصيام بيتحكم في **التوقيت**. الوزن بيتحكم فيه **الكمية**. إنت ماسك التوقيت '
+          + 'كويس جداً — والدليل إن كل صياماتك المسجّلة وصلت لهدفها. بس من غير أرقام أكل، '
+          + 'لا أنا ولا إنت نقدر نعرف إنت في عجز ولا فايض، ولا نعرف البروتين كفاية ولا لأ. '
+          + 'كل نصيحة عن السعرات بعد كده هتبقى تخمين.\n\n'
+          + 'وأنا مش بطلب منك تسجّل كل لقمة للأبد. اسبوع واحد بس، بصدق، وهتعرف الفجوة '
+          + 'فين — وبعدها تقدر تسيبها.'
+        : 'Only ' + loggedDays + ' day(s) in the last month carry complete calorie data'
+          + (blankCustoms ? ', and ' + blankCustoms + ' of your saved foods have no macros at all' : '')
+          + '. Half the equation is missing.\n\n'
+          + 'Fasting controls **timing**. Bodyweight is controlled by **amount**. You have the '
+          + 'timing handled — every logged fast of yours reached its goal. But without intake '
+          + 'numbers, neither of us can tell whether you are in a deficit or a surplus, or '
+          + 'whether protein is anywhere near sufficient. Every calorie recommendation after '
+          + 'this is a guess.\n\n'
+          + 'I am not asking you to log every bite forever. One honest week is enough to find '
+          + 'the gap, and then you can stop.',
+      ar ? 'سجّل ٧ أيام بالسعرات. ده أعلى عائد لأقل مجهود في التطبيق كله.'
+         : 'Log seven days with calories. It is the highest-return, lowest-effort thing in the app.');
+  }
+
+  /* --- 3. The window that is not there -------------------------------- */
+  var gaps = fastGaps();
+  var tight = 0, shortest = null;
+  for (var gi = 0; gi < gaps.length; gi++) {
+    if (gaps[gi].hours < 2) tight++;
+    if (shortest === null || gaps[gi].hours < shortest) shortest = gaps[gi].hours;
+  }
+  if (gaps.length && tight > 0) {
+    add('window', 'high',
+      ar ? 'نافذة الأكل عندك شبه معدومة في السجل' : 'Your eating window barely exists on paper',
+      ar
+        ? 'في سجلك ' + arCount(tight, 'مرة واحدة', 'مرتين', 'مرات', 'مرة')
+          + ' الصيام الجديد ابتدا فوراً بعد اللي قبله'
+          + (shortest !== null && shortest < 0.2 ? ' — في مرة بفرق صفر دقيقة' : '')
+          + '. إعداداتك بتقول النافذة من ' + S.get('settings.windowStart', '17:00') + ' لـ'
+          + S.get('settings.windowEnd', '21:00') + '، يعني ٤ ساعات. الواقع المسجّل أقل من كده بكتير.\n\n'
+          + 'واحد من اتنين: يا إما إنت فعلاً بتاكل في وقت ضيق جداً، وساعتها المشكلة إنك '
+          + 'مش هتعرف تاكل احتياجك من البروتين ولا السعرات في الوقت ده — ودي أسرع طريقة '
+          + 'لخسارة عضل. يا إما إنك بتاكل عادي بس مش بتوقف المؤقت، وساعتها كل الأرقام '
+          + 'اللي التطبيق بيحسبها متضخّمة وبتديك إحساس زائف بالإنجاز.\n\n'
+          + 'الاتنين محتاجين نفس الحل: اوقف المؤقت وقت ما تاكل أول لقمة فعلاً، وابدأ '
+          + 'الصيام الجديد وقت ما تخلص آخر لقمة.'
+        : tight + ' time(s) in your record a new fast starts the instant the previous one ends'
+          + (shortest !== null && shortest < 0.2 ? ' — once with a zero-minute gap' : '')
+          + '. Your settings declare a window of ' + S.get('settings.windowStart', '17:00') + ' to '
+          + S.get('settings.windowEnd', '21:00') + ', four hours. The record shows far less.\n\n'
+          + 'It is one of two things. Either you really are eating in a very narrow slot, in which '
+          + 'case you cannot physically fit your protein or your calories into it — the fastest '
+          + 'route to losing muscle there is. Or you are eating normally and not stopping the '
+          + 'timer, in which case every number the app computes is inflated and gives you a '
+          + 'false sense of progress.\n\n'
+          + 'Both need the same fix: stop the timer at the first bite, start the next fast at the last.',
+      ar ? 'اوقف المؤقت عند أول لقمة، مش عند آخر واحدة.'
+         : 'Stop the timer at the first bite, not the last.');
+  }
+
+  /* --- 4. Training stacked on top of a broken fast --------------------- */
+  var after = workoutsAfterBreaking(3);
+  if (after.length >= 1) {
+    var hardAfter = 0, soonest = null;
+    for (var ai = 0; ai < after.length; ai++) {
+      var z = hrZone(after[ai].workout.maxHr);
+      if (z && (z.level === 'hard' || z.level === 'max')) hardAfter++;
+      if (soonest === null || after[ai].gapH < soonest) soonest = after[ai].gapH;
+    }
+    if (hardAfter > 0) {
+      add('post_break_load', 'medium',
+        ar ? 'بتحمّل على نفسك بعد الفطار على طول' : 'You stack hard work right after breaking',
+        ar
+          ? 'لقيت ' + arCount(after.length, 'تمرين واحد', 'تمرينين', 'تمارين', 'تمرين')
+            + ' بدأوا خلال ٣ ساعات من فطارك، منهم '
+            + arCount(hardAfter, 'واحد', 'اتنين', 'في المنطقة العنيفة', 'في المنطقة العنيفة')
+            + (hardAfter <= 2 ? ' في المنطقة العنيفة' : '')
+            + (soonest !== null ? '، وأقربهم بعد ' + Math.round(soonest * 60) + ' دقيقة بس' : '')
+            + '.\n\n'
+            + 'التوقيت ده مش غلط في حد ذاته — بالعكس، التمرين بعد الأكل بيبقى أداؤه أحسن. '
+            + 'المشكلة في الترتيب: لو الوجبة لسه في المعدة وطلعت تركب ٢٠ كيلو بنبض ١٧٠+، '
+            + 'الدم بيتسحب من الهضم للعضل، فلا الوجبة اتهضمت كويس ولا التمرين خد وقوده. '
+            + 'وده بيفسّر كتير من الإرهاق اللي بيجي بعدها.\n\n'
+            + 'الترتيب اللي بيشتغل: تفطر خفيف (بروتين + سوائل + ملح)، تستنى ٦٠-٩٠ دقيقة، '
+            + 'تتمرن، وبعدها الوجبة الكبيرة. كده التمرين بياخد وقوده والوجبة الكبيرة بتروح '
+            + 'على عضلة فاتحة.'
+          : after.length + ' session(s) started within three hours of you breaking a fast, '
+            + hardAfter + ' of them in the hard zone'
+            + (soonest !== null ? ', the closest just ' + Math.round(soonest * 60) + ' minutes after' : '')
+            + '.\n\n'
+            + 'The timing is not wrong in itself — training after eating performs better. The '
+            + 'ordering is. If the meal is still in your stomach when you go out for 20 km at '
+            + '170+ bpm, blood leaves digestion for the working muscle: the meal digests badly '
+            + 'and the session runs unfuelled. That accounts for a lot of the wipe-out afterwards.\n\n'
+            + 'The order that works: break light (protein, fluid, salt), wait 60-90 minutes, '
+            + 'train, then eat the main meal. The session gets fuel and the big meal lands on '
+            + 'a muscle that is primed to take it.',
+        ar ? 'فطار خفيف → ٦٠-٩٠ دقيقة → تمرين → الوجبة الكبيرة.'
+           : 'Break light → wait 60-90 min → train → main meal.');
+    }
+  }
+
+  /* --- 5. Data hygiene: a double dose in the log ---------------------- */
+  var sups = S.get('supplements', []);
+  var doubled = null;
+  for (var si = 0; si < sups.length && !doubled; si++) {
+    var log = (sups[si].log || []).slice().sort(function (a, b) { return a - b; });
+    for (var li = 1; li < log.length; li++) {
+      if (dayKey(log[li]) === dayKey(log[li - 1])) {
+        doubled = { name: sups[si].name, gapH: (log[li] - log[li - 1]) / 3600000 };
+        break;
+      }
+    }
+  }
+  if (doubled) {
+    add('double_dose', 'medium',
+      ar ? 'جرعة مكرّرة في سجل المكمّلات' : 'A repeated dose in your supplement log',
+      ar
+        ? 'سجّلت "' + doubled.name + '" مرتين في نفس اليوم بفارق '
+          + doubled.gapH.toFixed(1) + ' ساعة.\n\n'
+          + 'لو ده مالتي فيتامين، الجرعة المكرّرة مش مجرد "زيادة مالهاش لازمة": الفيتامينات '
+          + 'الذائبة في الدهون (A و D و E و K) بتتخزّن في الكبد ومابتتخلصش مع البول زي '
+          + 'فيتامين C. تكرار ده بانتظام هو اللي بيوصل للتسمم، مش المرة الواحدة. '
+          + 'والحديد كمان لو موجود في التركيبة، الجرعة الزيادة بتوجع المعدة على الفاضي.\n\n'
+          + 'الأغلب إن ده تسجيل مكرر مش أخد مكرر. بس ده بالظبط سبب وجود التنبيه — '
+          + 'من غير سجل نضيف مش هتعرف تفرّق.'
+        : 'You logged "' + doubled.name + '" twice on the same day, '
+          + doubled.gapH.toFixed(1) + ' hours apart.\n\n'
+          + 'If that is a multivitamin, a repeat dose is not merely redundant: the fat-soluble '
+          + 'vitamins (A, D, E, K) accumulate in the liver rather than clearing in urine the way '
+          + 'vitamin C does. Toxicity comes from repetition, not from one occasion. And if the '
+          + 'formula contains iron, the extra dose buys you stomach upset for nothing.\n\n'
+          + 'Most likely this was a double entry rather than a double dose. That is exactly why '
+          + 'the warning exists — without a clean log you cannot tell the two apart.',
+      ar ? 'راجع اليوم ده. ولو التسجيل غلط، امسح الجرعة الزيادة عشان السجل يفضل موثوق.'
+         : 'Check that day, and delete the extra entry if it was a mislog — the record is only useful if it is true.');
+  }
+
+  /* --- 6. A measurement that does not add up -------------------------- */
+  if (body && body.waterPct && body.fatPct) {
+    // Fat-free tissue is about 73% water, so total body water tracks lean mass.
+    var expectedWater = Math.round((100 - body.fatPct) * 0.73);
+    if (Math.abs(body.waterPct - expectedWater) >= 8) {
+      add('water_reading', 'info',
+        ar ? 'قراءة الماء في الميزان مش متسقة' : 'The body-water reading does not add up',
+        ar
+          ? 'الميزان مسجّل ماء الجسم ' + body.waterPct + '٪ ونسبة دهون ' + body.fatPct + '٪. '
+            + 'الأنسجة الخالية من الدهون تقريباً ٧٣٪ ماء، يعني عند نسبة الدهون دي المتوقع '
+            + 'يكون حوالي ' + expectedWater + '٪. الفرق كبير جداً على إنه صدفة.\n\n'
+            + 'أغلب الظن إنك عملت القياس وإنت في ساعة متأخرة من الصيام. أجهزة البيو-إمبيدانس '
+            + 'بتقيس مقاومة كهربائية وبتترجمها لتركيب جسم — والجفاف بيرفع المقاومة، '
+            + 'فالجهاز بيقرا ماء أقل ودهون أعلى من الحقيقة. يعني نسبة دهونك الحقيقية '
+            + 'غالباً أقل من ' + body.fatPct + '٪.\n\n'
+            + 'القياس مالوش معنى غير لما يتكرر بنفس الظروف: نفس الوقت من اليوم، وقبل '
+            + 'الأكل والشرب، ومن غير تمرين قبلها بساعات.'
+          : 'The scale recorded ' + body.waterPct + '% body water against ' + body.fatPct
+            + '% fat. Fat-free tissue is roughly 73% water, so at that fat percentage you would '
+            + 'expect around ' + expectedWater + '%. The gap is too wide to be chance.\n\n'
+            + 'The likely explanation is that you measured late into a fast. Bioimpedance devices '
+            + 'measure electrical resistance and infer composition from it; dehydration raises '
+            + 'resistance, so the device reads less water and more fat than is really there. Your '
+            + 'true body fat is probably below ' + body.fatPct + '%.\n\n'
+            + 'The measurement only means anything when repeated under the same conditions: same '
+            + 'time of day, before eating or drinking, and not within hours of training.',
+        ar ? 'أعد القياس الصبح قبل الأكل والشرب، وقارن بالقراءة دي.'
+           : 'Re-measure in the morning before food or fluid, and compare against this reading.');
+    }
+  }
+
+  /* --- 7. Age is missing and it costs you a real number ---------------- */
+  if (!profile.age) {
+    var seenMax = 0;
+    var wl = S.get('workouts', []);
+    for (var wi = 0; wi < wl.length; wi++) {
+      if ((wl[wi].maxHr || 0) > seenMax) seenMax = wl[wi].maxHr;
+    }
+    add('age_missing', 'info',
+      ar ? 'سنك ناقص — ودي بتكسر مناطق النبض' : 'Your age is missing, and heart-rate zones need it',
+      ar
+        ? 'أيض الراحة عندك محسوب من الكتلة الخالية من الدهون، فالسن مش لازم له — كويس. '
+          + 'بس مناطق النبض لازم لها سقف، والسقف بيتحسب من السن.\n\n'
+          + (seenMax
+            ? 'أعلى نبض مسجّل عندك ' + seenMax + '. التطبيق بيستخدمه كسقف مؤقت، وده تقدير '
+              + 'أقل من الحقيقة دايماً لأن نادراً حد يوصل لسقفه الفعلي في تمرين عادي — '
+              + 'يعني كل جلساتك بتتحسب "أعنف" مما هي فعلاً.'
+            : 'ومن غير سن ولا نبض مسجّل، التطبيق مش قادر يحكم على شدة أي جلسة.')
+        : 'Your resting metabolic rate is computed from fat-free mass, so it does not need your '
+          + 'age — that part is fine. Heart-rate zones do need a ceiling, and the ceiling comes '
+          + 'from age.\n\n'
+          + (seenMax
+            ? 'Your highest recorded heart rate is ' + seenMax + '. The app is using that as a '
+              + 'stand-in ceiling, which always understates the true one — almost nobody reaches '
+              + 'their real maximum in ordinary training. Every session is therefore being scored '
+              + 'as harder than it was.'
+            : 'With neither an age nor a recorded heart rate, the app cannot judge how hard any '
+              + 'session was.'),
+      ar ? 'اكتب سنك في الملف الشخصي — ثانية واحدة وبتصلّح كل حسابات الشدة.'
+         : 'Add your age in the profile — one field, and every intensity figure becomes real.');
+  }
+
+  /* --- 8. Check-ins logged at the wrong moment ------------------------ */
+  var checkins = S.get('checkins', []);
+  if (checkins.length) {
+    var afterEating = 0;
+    for (var k2 = 0; k2 < checkins.length; k2++) {
+      for (var h2 = 0; h2 < hist.length; h2++) {
+        if (!hist[h2].end) continue;
+        var d2 = (checkins[k2].ts - hist[h2].end) / 3600000;
+        if (d2 >= 0 && d2 <= 3) { afterEating++; break; }
+      }
+    }
+    if (afterEating === checkins.length && checkins.length >= 1) {
+      add('checkin_timing', 'info',
+        ar ? 'بتسجّل حالتك بعد ما تفطر — ودي أقل لحظة مفيدة' : 'You check in after eating, the least useful moment',
+        ar
+          ? (checkins.length === 1
+              ? 'تسجيل حالتك الوحيد اتعمل خلال ٣ ساعات من الفطار. '
+              : 'كل تسجيلات حالتك (' + checkins.length + ') اتعملت خلال ٣ ساعات من الفطار. ')
+            + 'وطبيعي تكون الطاقة عالية والجوع منخفض في اللحظة دي — إنت لسه أكلت.\n\n'
+            + 'المعلومة الحقيقية في الساعة ١٦ لـ٢٠، لما الجليكوجين بيخلص والجسم بيقلب '
+            + 'على الدهون. اللي بيحصل هناك — صداع، تركيز، مزاج، برودة — هو اللي بيقول '
+            + 'إن الصيام ده مناسب لك ولا لأ، وهو اللي بيخلي نصايح المدرب مبنية على حالتك '
+            + 'إنت مش على متوسط الناس.'
+          : 'All ' + checkins.length + ' of your check-ins were logged within three hours of '
+            + 'breaking a fast. Energy high and hunger low at that moment is expected — you had '
+            + 'just eaten.\n\n'
+            + 'The information is at hours 16 to 20, as glycogen runs down and the body turns to '
+            + 'fat. What happens there — headache, focus, mood, feeling cold — is what tells us '
+            + 'whether this protocol suits you, and it is what lets the coach speak to your state '
+            + 'rather than to an average.',
+        ar ? 'سجّل حالتك مرة وإنت في الساعة ١٦-٢٠، مش بعد الأكل.'
+           : 'Log one check-in between hours 16 and 20, not after eating.');
+    }
+  }
+
+  var rank = { high: 0, medium: 1, info: 2 };
+  out.sort(function (a, b) { return rank[a.severity] - rank[b.severity]; });
+  return out;
+}
+
+/* ---------------------------------------------------------------------
+ * Monthly report
+ *
+ * exportText() above dumps the raw record. This is the other thing a record
+ * is for: something a person can hand to a doctor, or paste into a chat,
+ * and have it understood without the app.
+ * ------------------------------------------------------------------- */
+
+/**
+ * A readable report over the last `days` days.
+ * @return {string} Markdown, because it survives being pasted anywhere.
+ */
+function monthlyReport(days) {
+  var ar = isRTL();
+  var n = days || 30;
+  var since = Date.now() - n * 86400000;
+  var profile = S.get('profile', {});
+  var L = [];
+
+  function head(text) { L.push('', '## ' + text, ''); }
+  function line(label, value) { if (value !== null && value !== '' && value !== undefined) L.push('- **' + label + ':** ' + value); }
+
+  L.push('# ' + (ar ? 'تقرير الصيام المتقطع' : 'Intermittent fasting report'));
+  L.push('');
+  L.push((ar ? 'الفترة: آخر ' : 'Period: last ') + n + (ar ? ' يوم — حتى ' : ' days — to ') + fmtDate(Date.now()));
+  L.push((ar ? 'الاسم: ' : 'Name: ') + (profile.name || '—'));
+
+  /* --- composition --------------------------------------------------- */
+  head(ar ? 'القياسات' : 'Measurements');
+  var body = latestBody();
+  var ffm = fatFreeMass();
+  var bmr = bestBMR(profile);
+  var tdee = bestTDEE(profile);
+  line(ar ? 'الوزن' : 'Weight', profile.weight ? profile.weight + ' kg' : null);
+  line(ar ? 'الطول' : 'Height', profile.height ? profile.height + ' cm' : null);
+  if (profile.weight && profile.height) {
+    line('BMI', calcBMI(profile.weight, profile.height).toFixed(1));
+  }
+  if (body && body.fatPct) line(ar ? 'نسبة الدهون' : 'Body fat', body.fatPct + '%');
+  if (ffm) line(ar ? 'الكتلة الخالية من الدهون' : 'Fat-free mass', ffm.kg + ' kg');
+  if (bmr.value) line(ar ? 'أيض الراحة (تقديري)' : 'Resting metabolic rate (est.)', bmr.value + ' kcal');
+  if (tdee.value) line(ar ? 'إجمالي الصرف اليومي (تقديري)' : 'Total daily expenditure (est.)', tdee.value + ' kcal');
+
+  var trend = weightTrend();
+  if (trend) {
+    line(ar ? 'اتجاه الوزن' : 'Weight trend',
+      trend.kgPerWeek.toFixed(2) + ' kg/' + (ar ? 'أسبوع' : 'week')
+      + ' (' + trend.from + ' → ' + trend.to + ' kg ' + (ar ? 'خلال ' : 'over ') + trend.days + (ar ? ' يوم' : ' days') + ')');
+  }
+
+  /* --- adherence ------------------------------------------------------ */
+  head(ar ? 'الالتزام' : 'Adherence');
+  var hist = S.get('history', []);
+  var inRange = [], totalMs = 0, longest = 0, completedN = 0;
+  for (var i = 0; i < hist.length; i++) {
+    if ((hist[i].end || hist[i].start) < since) continue;
+    inRange.push(hist[i]);
+    totalMs += hist[i].duration || 0;
+    if ((hist[i].duration || 0) > longest) longest = hist[i].duration;
+    if (hist[i].completed) completedN++;
+  }
+  line(ar ? 'عدد الصيامات' : 'Fasts logged', inRange.length);
+  if (inRange.length) {
+    line(ar ? 'إجمالي الساعات' : 'Total fasted hours', (totalMs / 3600000).toFixed(1));
+    line(ar ? 'متوسط الصيام' : 'Average fast', (totalMs / inRange.length / 3600000).toFixed(1) + ' h');
+    line(ar ? 'أطول صيام' : 'Longest fast', (longest / 3600000).toFixed(1) + ' h');
+    line(ar ? 'وصل للهدف' : 'Goal reached', completedN + ' / ' + inRange.length);
+  }
+  line(ar ? 'السلسلة الحالية' : 'Current streak', S.get('stats.currentStreak', 0) + (ar ? ' يوم' : ' days'));
+
+  /* --- intake --------------------------------------------------------- */
+  head(ar ? 'التغذية' : 'Nutrition');
+  var logged = completeCalorieDays(n);
+  if (logged.length) {
+    var cal = 0, prot = 0;
+    for (var c = 0; c < logged.length; c++) { cal += logged[c].cal; prot += logged[c].p; }
+    line(ar ? 'أيام مسجّلة بالكامل' : 'Fully logged days', logged.length + ' / ' + n);
+    line(ar ? 'متوسط السعرات' : 'Average intake', Math.round(cal / logged.length) + ' kcal');
+    line(ar ? 'متوسط البروتين' : 'Average protein', Math.round(prot / logged.length) + ' g');
+  } else {
+    L.push('- ' + (ar
+      ? '_لا توجد أيام مسجّلة بسعرات كاملة في هذه الفترة، فلا يمكن الحكم على كفاية الأكل._'
+      : '_No days with complete calorie data in this period, so intake adequacy cannot be assessed._'));
+  }
+  var target = proteinTarget();
+  if (target.grams) line(ar ? 'هدف البروتين' : 'Protein target', target.grams + ' g');
+
+  /* --- training ------------------------------------------------------- */
+  head(ar ? 'التدريب' : 'Training');
+  var w = S.get('workouts', []);
+  var byType = {}, sessions = 0, km = 0;
+  for (var j = 0; j < w.length; j++) {
+    if (w[j].ts < since) continue;
+    sessions++;
+    byType[w[j].type] = (byType[w[j].type] || 0) + 1;
+    km += w[j].distanceKm || 0;
+  }
+  line(ar ? 'عدد الجلسات' : 'Sessions', sessions);
+  if (km) line(ar ? 'إجمالي المسافة' : 'Total distance', km.toFixed(1) + ' km');
+  var types = [];
+  for (var tk in byType) {
+    if (!Object.prototype.hasOwnProperty.call(byType, tk)) continue;
+    types.push(workoutType(tk)[ar ? 'ar' : 'en'] + ' ×' + byType[tk]);
+  }
+  if (types.length) line(ar ? 'التوزيع' : 'Breakdown', types.join('، '));
+
+  /* --- recovery ------------------------------------------------------- */
+  head(ar ? 'الاستشفاء' : 'Recovery');
+  var sleep = avgSleepHours(Math.min(n, 30));
+  if (sleep !== null) line(ar ? 'متوسط النوم' : 'Average sleep', sleep.toFixed(1) + ' h');
+  var rec = recoveryStatus();
+  if (rec) {
+    line(ar ? 'نبض الراحة' : 'Resting heart rate',
+      rec.recent + ' bpm (' + (ar ? 'خط الأساس ' : 'baseline ') + rec.baseline + ')');
+  }
+
+  /* --- findings ------------------------------------------------------- */
+  var insights = expertInsights();
+  if (insights.length) {
+    head(ar ? 'الملاحظات' : 'Findings');
+    for (var k = 0; k < insights.length; k++) {
+      L.push((k + 1) + '. **' + insights[k].title + '** — ' + insights[k].text);
+    }
+  }
+
+  L.push('');
+  L.push('---');
+  L.push('_' + (ar
+    ? 'تقرير مولّد من تطبيق ' + t('app_name') + '. أرقام الأيض والصرف تقديرية، وليست تشخيصاً طبياً.'
+    : 'Generated by ' + t('app_name') + '. Metabolic figures are estimates, not a medical diagnosis.') + '_');
+
+  return L.join('\n');
+}
+
+/* ---------------------------------------------------------------------
  * Native bridge (window.Native, injected by JsBridge.java)
  * ------------------------------------------------------------------- */
 
@@ -2840,10 +3778,6 @@ var N = {
   },
   routePath: function (max) {
     return this.parse(this.call('routePath', max || 300), []);
-  },
-  pulseState: function () {
-    return this.parse(this.call('pulseState'),
-      { status: 'idle', running: false, progress: 0, bpm: 0, quality: 0 });
   },
   inventory: function () {
     return this.parse(this.call('sensorsInventory'), {});

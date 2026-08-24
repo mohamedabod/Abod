@@ -141,6 +141,34 @@ public class RouteTracker implements LocationListener {
                 == PackageManager.PERMISSION_GRANTED;
     }
 
+    /**
+     * A cached fix from any available provider, for features that need to know
+     * roughly where the phone is without starting a tracking session — prayer
+     * times being the only one so far. Never requests a fresh fix: a coarse
+     * cached position is accurate enough for solar geometry, and starting the
+     * GPS for it would cost battery for no gain.
+     *
+     * @return {"lat":..,"lon":..} or {} when nothing is known.
+     */
+    public String lastLocationJson() {
+        if (!hasPermission()) return "{}";
+        LocationManager lm = (LocationManager) ctx.getSystemService(Context.LOCATION_SERVICE);
+        if (lm == null) return "{}";
+        Location best = null;
+        try {
+            List<String> providers = lm.getProviders(true);
+            for (int i = 0; i < providers.size(); i++) {
+                Location l = lm.getLastKnownLocation(providers.get(i));
+                if (l == null) continue;
+                if (best == null || l.getTime() > best.getTime()) best = l;
+            }
+        } catch (SecurityException e) {
+            return "{}";
+        }
+        if (best == null) return "{}";
+        return "{\"lat\":" + best.getLatitude() + ",\"lon\":" + best.getLongitude() + "}";
+    }
+
     public long elapsedMs() {
         if (startedAt == 0) return 0;
         long end = paused && pausedAt > 0 ? pausedAt : System.currentTimeMillis();

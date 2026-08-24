@@ -133,6 +133,7 @@ function syncReminders() {
   if (!N.ok()) return;
   var r = S.get('settings.reminders', {});
   var stats = S.get('stats', {});
+  var win = effectiveWindow();
   N.call('setReminderConfig', JSON.stringify({
     water: r.water !== false,
     motivation: r.motivation !== false,
@@ -140,8 +141,8 @@ function syncReminders() {
     checkin: r.checkin !== false,
     supplement: !!r.supplement,
     nudge: !!r.nudge,
-    windowStart: S.get('settings.windowStart', '17:00'),
-    windowEnd: S.get('settings.windowEnd', '21:00'),
+    windowStart: win.start,
+    windowEnd: win.end,
     checkinTime: r.checkinTime || '20:00',
     supplementTime: r.supplementTime || '18:00',
     nudgeTime: r.nudgeTime || '22:00',
@@ -173,12 +174,15 @@ function syncInsights() {
   var list = [];
   try { list = expertInsights(); } catch (e) { list = []; }
 
+  // Remember what the engine raised today so the coach can follow it up.
+  if (list.length) { try { recordInsights(list); } catch (e) {} }
+
   var r = S.get('settings.reminders', {});
+  var win = effectiveWindow();
   var dailyTime = r.insightTime || '11:00';
   var top = list.length && r.insight !== false ? list[0] : null;
   var stamp = (top ? top.title + '|' + top.text : '') + '|' + proteinTarget().grams
-    + '|' + S.get('settings.windowStart', '17:00') + '|' + dailyTime
-    + '|' + (r.protein !== false);
+    + '|' + win.start + '|' + dailyTime + '|' + (r.protein !== false);
   if (stamp === _insLast) return;
   _insLast = stamp;
 
@@ -191,8 +195,7 @@ function syncInsights() {
   var target = proteinTarget();
   var second = target.grams >= 100 ? Math.round(target.grams * 0.4) : 0;
   var wantProtein = second > 0 && r.protein !== false;
-  N.call('setInsight', 'protein', wantProtein,
-    S.get('settings.windowStart', '17:00'),
+  N.call('setInsight', 'protein', wantProtein, win.start,
     wantProtein ? (isRTL() ? '🍗 جرعة البروتين التانية' : '🍗 Second protein dose')
       : '',
     wantProtein
@@ -336,6 +339,18 @@ function Card(props) {
     props.children);
 }
 
+/**
+ * A signed number for display inside right-to-left text.
+ *
+ * The bidi algorithm treats a leading "-" as neutral and reorders it to the
+ * visual end of the run, so -0.71 renders as "0.71-". Isolating the number
+ * keeps the sign where it belongs without forcing the whole line to LTR.
+ */
+function signed(value, dp, suffix) {
+  var txt = (value > 0 ? '+' : '') + num(value.toFixed(dp === undefined ? 1 : dp));
+  return h('span', { className: 'num-ltr' }, txt + (suffix || ''));
+}
+
 function Stat(props) {
   return h('div', { className: 'stat-item' },
     h('div', { className: 'stat-val ' + (props.tone || '') }, props.value),
@@ -453,7 +468,17 @@ var ICONS = {
     'M6 6H3.5v1.5A3.5 3.5 0 0 0 7 11', 'M18 6h2.5v1.5A3.5 3.5 0 0 1 17 11'],
   sensor: ['M12 14a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z', 'M8.5 8.5a5 5 0 0 0 0 7', 'M15.5 8.5a5 5 0 0 1 0 7',
     'M5.5 5.5a9 9 0 0 0 0 13', 'M18.5 5.5a9 9 0 0 1 0 13'],
-  scale: ['M4 21.5h16', 'M12 3v18.5', 'M12 3 4 9h16L12 3Z']
+  scale: ['M4 21.5h16', 'M12 3v18.5', 'M12 3 4 9h16L12 3Z'],
+  edit: ['M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5Z'],
+  calendar: ['M19 4.5H5a2 2 0 0 0-2 2V19a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6.5a2 2 0 0 0-2-2Z',
+    'M3 10h18', 'M8 2.5v4', 'M16 2.5v4'],
+  palette: ['M12 21.5a9.5 9.5 0 1 1 0-19c5.2 0 9.5 3.6 9.5 8 0 2.5-2 4.5-4.5 4.5h-2a1.8 1.8 0 0 0-1.3 3c.4.5.6 1 .6 1.6 0 1-.8 1.9-2.3 1.9Z',
+    'M7.5 12.5a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z', 'M10.5 8a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z',
+    'M15.5 8.5a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z'],
+  moonStars: ['M20.8 13a8.8 8.8 0 1 1-9.8-9.8A6.9 6.9 0 0 0 20.8 13Z', 'M18 3v3', 'M16.5 4.5h3'],
+  repeat: ['M17 2.5 20.5 6 17 9.5', 'M3.5 11V9a3 3 0 0 1 3-3h14', 'M7 21.5 3.5 18 7 14.5',
+    'M20.5 13v2a3 3 0 0 1-3 3h-14'],
+  star: ['M12 2.8l2.9 5.9 6.5.9-4.7 4.6 1.1 6.5-5.8-3-5.8 3 1.1-6.5L2.6 9.6l6.5-.9L12 2.8Z']
 };
 
 function Icon(props) {
@@ -566,8 +591,17 @@ function AreaChart(props) {
   }
   if (real.length < 2) return null;
 
-  var min = Math.min.apply(null, real);
-  var max = Math.max.apply(null, real);
+  // An overlay (a trend line) shares the axis, so it has to be inside the
+  // extent too — scaling to the raw series alone clips it.
+  var overlay = props.overlay || null;
+  var extent = real.slice();
+  if (overlay) {
+    for (i = 0; i < overlay.length; i++) {
+      if (overlay[i] !== null && overlay[i] !== undefined) extent.push(overlay[i]);
+    }
+  }
+  var min = Math.min.apply(null, extent);
+  var max = Math.max.apply(null, extent);
   if (max - min < 0.0001) { max = min + 1; }
   // Breathing room so the line never sits on the frame.
   var span = max - min;
@@ -597,9 +631,22 @@ function AreaChart(props) {
       if (values[i] === null || values[i] === undefined) continue;
       dots.push(h('circle', {
         key: 'd', cx: px(i).toFixed(1), cy: py(values[i]).toFixed(1),
-        r: 3.5, fill: colour, stroke: '#0e0e18', strokeWidth: 2
+        // Punched out with the page background so the dot reads as a dot in
+        // either theme; a literal dark value leaves a hole on light.
+        r: 3.5, fill: colour, stroke: 'var(--bg)', strokeWidth: 2
       }));
       break;
+    }
+  }
+
+  var overlayPath = '';
+  if (overlay) {
+    var op = false;
+    for (i = 0; i < overlay.length; i++) {
+      var ov = overlay[i];
+      if (ov === null || ov === undefined) continue;
+      overlayPath += (op ? 'L' : 'M') + px(i).toFixed(1) + ' ' + py(ov).toFixed(1);
+      op = true;
     }
   }
 
@@ -615,8 +662,18 @@ function AreaChart(props) {
     h('path', {
       d: line, fill: 'none', stroke: colour, strokeWidth: props.stroke || 2,
       strokeLinecap: 'round', strokeLinejoin: 'round',
-      vectorEffect: 'non-scaling-stroke'
+      vectorEffect: 'non-scaling-stroke',
+      // The raw series steps back when an overlay carries the signal.
+      opacity: overlay ? 0.42 : 1
     }),
+    overlayPath
+      ? h('path', {
+          d: overlayPath, fill: 'none',
+          stroke: props.overlayColor || '#f5a623', strokeWidth: 2.4,
+          strokeLinecap: 'round', strokeLinejoin: 'round',
+          vectorEffect: 'non-scaling-stroke'
+        })
+      : null,
     dots);
 }
 
@@ -946,7 +1003,7 @@ function Dashboard() {
     h(MetricTile, {
       icon: 'droplet', label: t('water'), color: METRIC_COLORS.water,
       value: water.ml ? num(water.ml) : null, unit: t('ml'),
-      sub: num(Math.round((water.ml || 0) / (water.target || 3000) * 100)) + '% '
+      sub: num(Math.round((water.ml || 0) / waterTarget().ml * 100)) + '% '
         + t('of_goal'),
       onClick: function () { open('water'); }
     }),
@@ -973,7 +1030,7 @@ function MetricDetail(props) {
   var k = props.metric;
   var title = '', hero = null, unit = '', colour = '#e94560', body = null;
 
-  function chartCard(series, colr, kind, fmt) {
+  function chartCard(series, colr, kind, fmt, overlay) {
     var enough = 0;
     for (var i = 0; i < series.values.length; i++) {
       if (series.values[i] !== null && series.values[i] !== undefined) enough++;
@@ -985,10 +1042,16 @@ function MetricDetail(props) {
             values: series.values, labels: series.labels, color: colr, height: 130,
             avg: meanValue(series)
           })
-        : h(AreaChart, { values: series.values, color: colr, height: 160 }),
+        : h(AreaChart, {
+            values: series.values, color: colr, height: 160,
+            overlay: overlay || null, overlayColor: '#f5a623'
+          }),
       h('div', { className: 'chart-legend' },
         h('span', null, h('i', { style: { background: colr } }),
-          t('avg_7') + ': ' + (meanValue(series) === null ? '—' : fmt(meanValue(series))))));
+          t('avg_7') + ': ' + (meanValue(series) === null ? '—' : fmt(meanValue(series)))),
+        overlay
+          ? h('span', null, h('i', { style: { background: '#f5a623' } }), t('trend_7'))
+          : null));
   }
 
   if (k === 'fast') {
@@ -1076,8 +1139,33 @@ function MetricDetail(props) {
     colour = METRIC_COLORS.weight;
     hero = lastValue(weightS) ? num(lastValue(weightS).toFixed(1)) : '—';
     unit = t('weight_unit');
+
+    // Scale weight is noisy enough during a fast to invert a real trend, so
+    // the smoothed line is drawn over it and the raw series fades back.
+    var smooth = smoothedWeights(14, 7);
+    var trendVals = [];
+    for (var sw = 0; sw < smooth.length; sw++) trendVals.push(smooth[sw].avg);
+    var trend = weightTrend();
+
     body = h('div', null,
-      chartCard(weightS, colour, 'area', function (v) { return num(v.toFixed(1)) + ' ' + t('weight_unit'); }),
+      chartCard(weightS, colour, 'area',
+        function (v) { return num(v.toFixed(1)) + ' ' + t('weight_unit'); },
+        trendVals),
+      trend
+        ? h(Card, { title: t('trend_7'), icon: 'scale' },
+            h('div', { className: 'stats-grid' },
+              h(Stat, {
+                value: signed(trend.kgPerWeek, 2),
+                label: t('kg_per_week'),
+                tone: trend.kgPerWeek < 0 ? 'green' : 'gold'
+              }),
+              h(Stat, {
+                value: signed(trend.pctPerWeek, 2, '%'),
+                label: t('pct_per_week')
+              }),
+              h(Stat, { value: num(trend.days), label: t('over_days') })),
+            h('div', { className: 'info-box' }, t('trend_hint')))
+        : h('div', { className: 'info-box' }, t('trend_need_more')),
       h(BodyCompCard, null));
 
   } else {
@@ -1234,6 +1322,156 @@ function StartTimeModal(props) {
         h('button', { className: 'btn btn-outline btn-sm', onClick: props.onClose }, t('cancel')))));
 }
 
+/**
+ * Logs or edits a fast that has already finished.
+ *
+ * Without this the record can only ever grow forwards: a fast the app slept
+ * through — a dead battery, a trip, simply forgetting — is lost, and it takes
+ * the streak and every average down with it. An entry that cannot be
+ * corrected is not a record, it is a receipt.
+ */
+function PastFastModal(props) {
+  var edit = props.entry || null;
+
+  function toLocal(ts) {
+    var d = new Date(ts);
+    return {
+      date: d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()),
+      time: pad2(d.getHours()) + ':' + pad2(d.getMinutes())
+    };
+  }
+
+  var defEnd = edit ? edit.end : Date.now();
+  var defStart = edit ? edit.start : defEnd - 20 * 3600000;
+  var s0 = toLocal(defStart), e0 = toLocal(defEnd);
+
+  var a = useState(s0.date); var sDate = a[0], setSDate = a[1];
+  var b = useState(s0.time); var sTime = b[0], setSTime = b[1];
+  var c = useState(e0.date); var eDate = c[0], setEDate = c[1];
+  var d2 = useState(e0.time); var eTime = d2[0], setETime = d2[1];
+  var g = useState(edit ? edit.goal : S.get('settings.defaultGoal', 20));
+  var goal = g[0], setGoal2 = g[1];
+
+  function parse(dateStr, timeStr) {
+    var dp = String(dateStr).split('-');
+    var tp = String(timeStr).split(':');
+    if (dp.length !== 3 || tp.length !== 2) return NaN;
+    var dt = new Date(
+      parseInt(dp[0], 10), parseInt(dp[1], 10) - 1, parseInt(dp[2], 10),
+      parseInt(tp[0], 10) || 0, parseInt(tp[1], 10) || 0, 0, 0);
+    return dt.getTime();
+  }
+
+  var startTs = parse(sDate, sTime);
+  var endTs = parse(eDate, eTime);
+  var valid = !isNaN(startTs) && !isNaN(endTs) && endTs > startTs && endTs <= Date.now() + 60000;
+  var dur = valid ? endTs - startTs : 0;
+  var tooLong = dur > 14 * 86400000;
+
+  var err = null;
+  if (isNaN(startTs) || isNaN(endTs)) err = t('pf_bad_date');
+  else if (endTs <= startTs) err = t('pf_end_before_start');
+  else if (endTs > Date.now() + 60000) err = t('pf_future');
+  else if (tooLong) err = t('pf_too_long');
+
+  function pair(label, dateVal, setDate, timeVal, setTime) {
+    return h('div', { style: { marginBottom: 'var(--s3)' } },
+      h('div', { className: 'section-title', style: { margin: '0 0 6px' } }, label),
+      h('div', { style: { display: 'flex', gap: 'var(--s2)' } },
+        h('input', {
+          className: 'text-input', type: 'date', value: dateVal,
+          style: { flex: 2, direction: 'ltr' },
+          onChange: function (ev) { setDate(ev.target.value); }
+        }),
+        h('input', {
+          className: 'text-input', type: 'time', value: timeVal,
+          style: { flex: 1, direction: 'ltr' },
+          onChange: function (ev) { setTime(ev.target.value); }
+        })));
+  }
+
+  var goalBtns = [];
+  var goals = [16, 18, 20, 24, 36, 48, 72];
+  for (var gi = 0; gi < goals.length; gi++) {
+    (function (n) {
+      goalBtns.push(h('button', {
+        key: 'pg' + n,
+        className: 'goal-btn' + (parseInt(goal, 10) === n ? ' active' : ''),
+        onClick: function () { setGoal2(n); }
+      }, num(n) + (isRTL() ? 'س' : 'h')));
+    })(goals[gi]);
+  }
+
+  return h('div', { className: 'modal-overlay', onClick: props.onClose },
+    h('div', { className: 'modal', onClick: function (ev) { ev.stopPropagation(); } },
+      h('h3', null, edit ? t('pf_edit') : t('pf_add')),
+
+      pair(t('pf_from'), sDate, setSDate, sTime, setSTime),
+      pair(t('pf_to'), eDate, setEDate, eTime, setETime),
+
+      h('div', { className: 'section-title', style: { margin: '0 0 6px' } }, t('fasting_goal')),
+      h('div', { className: 'goal-selector' }, goalBtns),
+
+      err
+        ? h('div', { className: 'alert-box', style: { textAlign: 'center' } }, err)
+        : h('div', { className: 'info-box', style: { textAlign: 'center' } },
+            fmtShort(dur) + ' · '
+            + (dur / 3600000 >= goal ? t('goal_reached') : t('incomplete'))),
+
+      h('div', { className: 'modal-btns' },
+        h('button', {
+          className: 'btn btn-primary btn-sm',
+          disabled: !valid,
+          onClick: function () { props.onSave(startTs, endTs, parseInt(goal, 10) || 20); }
+        }, t('save')),
+        h('button', { className: 'btn btn-outline btn-sm', onClick: props.onClose }, t('cancel')))));
+}
+
+/**
+ * Writes a finished fast into the record.
+ *
+ * Heart-rate and step figures are left empty rather than guessed: a
+ * retroactive entry has no sensor data behind it, and a fabricated average
+ * would quietly poison every chart that reads it.
+ */
+function savePastFast(startTs, endTs, goal, editId) {
+  var hist = S.get('history', []);
+  var dur = endTs - startTs;
+  var entry = {
+    id: editId || uid(),
+    start: startTs,
+    end: endTs,
+    duration: dur,
+    goal: goal,
+    completed: dur / 3600000 >= goal,
+    avgHr: 0, maxHr: 0, steps: 0,
+    phase: phaseIndexFor(dur / 3600000),
+    manual: true
+  };
+
+  if (editId) {
+    for (var i = 0; i < hist.length; i++) {
+      if (hist[i].id !== editId) continue;
+      // Keep whatever the sensors recorded the first time round.
+      entry.avgHr = hist[i].avgHr || 0;
+      entry.maxHr = hist[i].maxHr || 0;
+      entry.steps = hist[i].steps || 0;
+      entry.manual = hist[i].manual || true;
+      hist[i] = entry;
+      break;
+    }
+  } else {
+    hist.push(entry);
+  }
+  sortByTime(hist, 'start');
+  if (hist.length > 500) hist = hist.slice(hist.length - 500);
+  S.set('history', hist);
+  recomputeStats();
+  syncReminders();
+  toast(t('saved'));
+  refresh();
+}
+
 /* ---------------------------------------------------------------------
  * Meals
  * ------------------------------------------------------------------- */
@@ -1318,8 +1556,10 @@ function MealsPage() {
       cal: food.cal, p: food.p, c: food.c, f: food.f,
       portions: 1, ts: Date.now(), photo: photoId || ''
     });
-    // Keep the log bounded: a week of meals is plenty for the totals view.
-    var cutoff = Date.now() - 7 * 86400000;
+    // Kept for sixty days: the totals view only needs today, but the expert
+    // engine and the monthly report both read a month back, and pruning at a
+    // week left them permanently short of data.
+    var cutoff = Date.now() - 60 * 86400000;
     var kept = [];
     for (var x = 0; x < meals.length; x++) if (meals[x].ts >= cutoff) kept.push(meals[x]);
     S.set('meals', kept);
@@ -1329,6 +1569,37 @@ function MealsPage() {
   function addFood(food) {
     if (S.get('currentFast.active', false)) { setPending(food); return; }
     reallyAdd(food);
+  }
+
+  /** Copies every meal logged yesterday into today, portions included. */
+  function repeatYesterday() {
+    var yKey = dayKey(Date.now() - 86400000);
+    var meals = S.get('meals', []);
+    var copied = 0;
+    var additions = [];
+    for (var x = 0; x < meals.length; x++) {
+      if (dayKey(meals[x].ts) !== yKey) continue;
+      additions.push(m({}, meals[x], {
+        id: uid(),
+        ts: Date.now(),
+        // The photo belongs to the original meal; copying the reference would
+        // make deleting either one blank the other.
+        photo: ''
+      }));
+      copied++;
+    }
+    if (!copied) { toast(t('repeat_nothing')); return; }
+    S.set('meals', meals.concat(additions));
+    toast(t('repeat_done') + ' (' + num(copied) + ')');
+    refresh();
+  }
+
+  function toggleFavourite(key) {
+    var favs = S.get('favourites', []).slice();
+    var at = favs.indexOf(key);
+    if (at >= 0) favs.splice(at, 1); else favs.push(key);
+    S.set('favourites', favs);
+    refresh();
   }
 
   function changePortion(id, delta) {
@@ -1357,11 +1628,12 @@ function MealsPage() {
   var resultRows = [];
   for (var r = 0; r < results.length && r < 30; r++) {
     (function (food) {
-      resultRows.push(h('div', {
-        key: 'f' + food.k, className: 'row',
-        onClick: function () { addFood(food); }
-      },
-        h('div', { className: 'row-main' },
+      var starred = S.get('favourites', []).indexOf(food.k) >= 0;
+      resultRows.push(h('div', { key: 'f' + food.k, className: 'row' },
+        h('div', {
+          className: 'row-main', style: { cursor: 'pointer' },
+          onClick: function () { addFood(food); }
+        },
           h('div', { className: 'row-title' }, isRTL() ? food.ar : food.en),
           h('div', { className: 'row-sub' },
             food.cal === null || food.cal === undefined
@@ -1370,8 +1642,42 @@ function MealsPage() {
         h('div', { className: 'row-end' },
           food.cal === null || food.cal === undefined
             ? '—'
-            : num(food.cal) + ' ' + t('calories'))));
+            : num(food.cal) + ' ' + t('calories')),
+        h('button', {
+          className: 'icon-btn',
+          'aria-label': t('favourite'),
+          onClick: function () { toggleFavourite(food.k); }
+        }, h(Icon, { name: 'star', size: 17, color: starred ? '#f5a623' : undefined }))));
     })(results[r]);
+  }
+
+  // Favourites are the answer to a diet that repeats: the same six things
+  // should never need searching for.
+  var favKeys = S.get('favourites', []);
+  var favRows = [];
+  for (var fk = 0; fk < favKeys.length; fk++) {
+    (function (key) {
+      var food = null;
+      var pool = allFoods();
+      for (var pi = 0; pi < pool.length; pi++) {
+        if (pool[pi].k === key) { food = pool[pi]; break; }
+      }
+      if (!food) return;
+      favRows.push(h('div', { key: 'fav' + key, className: 'row' },
+        h('div', {
+          className: 'row-main', style: { cursor: 'pointer' },
+          onClick: function () { addFood(food); }
+        },
+          h('div', { className: 'row-title' }, isRTL() ? food.ar : food.en),
+          h('div', { className: 'row-sub' },
+            food.cal === null || food.cal === undefined
+              ? '—' : num(food.cal) + ' ' + t('calories'))),
+        h('button', {
+          className: 'icon-btn',
+          'aria-label': t('favourite'),
+          onClick: function () { toggleFavourite(key); }
+        }, h(Icon, { name: 'star', size: 17, color: '#f5a623' }))));
+    })(favKeys[fk]);
   }
 
   var mealRows = [];
@@ -1414,7 +1720,17 @@ function MealsPage() {
       h('button', {
         className: 'btn btn-sm btn-primary',
         onClick: function () { setShowManual(true); }
-      }, h(Icon,{name:'plus',size:16}), t('manual_meal'))),
+      }, h(Icon,{name:'plus',size:16}), t('manual_meal')),
+      h('button', {
+        className: 'btn btn-sm btn-outline',
+        onClick: repeatYesterday
+      }, h(Icon,{name:'repeat',size:16}), t('repeat_yesterday'))),
+
+    favRows.length
+      ? h('div', null,
+          h('div', { className: 'section-title' }, t('favourites')),
+          favRows)
+      : null,
 
     h('div', { className: 'section-title' }, t('search_food')),
     h('input', {
@@ -1506,13 +1822,16 @@ function ElectrolytesCard() {
 }
 
 function LiquidsPage() {
-  var water = S.get('water', { date: '', ml: 0, target: 3000 });
+  // The goal is recomputed each day rather than stored, so it follows weight
+  // and yesterday's training instead of freezing at whatever it once was.
+  var goal = waterTarget();
+  var water = S.get('water', { date: '', ml: 0 });
   var todayKey = dayKey(Date.now());
   if (water.date !== todayKey) {
-    water = { date: todayKey, ml: 0, target: water.target || 3000 };
+    water = { date: todayKey, ml: 0 };
     S.set('water', water);
   }
-  var pct = Math.min(100, Math.round(water.ml / (water.target || 3000) * 100));
+  var pct = Math.min(100, Math.round(water.ml / goal.ml * 100));
 
   function addWater(ml) {
     var w = S.get('water', {});
@@ -1541,14 +1860,28 @@ function LiquidsPage() {
       h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' } },
         h('span', { style: { fontSize: '24px', fontWeight: 700 } },
           num(water.ml) + ' ', h('span', { style: { fontSize: '12px', color: '#a0a0c0' } }, t('ml'))),
-        h('span', { className: 'card-sub' }, t('water_target') + ': ' + num(water.target) + ' ' + t('ml'))),
+        h('span', { className: 'card-sub' }, t('water_target') + ': ' + num(goal.ml) + ' ' + t('ml'))),
       h('div', { className: 'water-bar' },
         h('div', { className: 'water-fill', style: { width: pct + '%' } })),
+      h('div', { className: 'chip-row' },
+        goal.manual
+          ? h('span', { className: 'chip' }, t('water_manual'))
+          : h('span', { className: 'chip' }, t('water_from_weight') + ' ' + num(goal.base)),
+        goal.training ? h('span', { className: 'chip' }, '+' + num(goal.training) + ' ' + t('water_training')) : null,
+        goal.heat ? h('span', { className: 'chip' }, '+' + num(goal.heat) + ' ' + t('water_heat')) : null),
       h('div', { className: 'btn-group' },
         h('button', { className: 'btn btn-sm btn-outline', onClick: function () { addWater(250); } }, '+250'),
         h('button', { className: 'btn btn-sm btn-outline', onClick: function () { addWater(500); } }, '+500'),
         h('button', { className: 'btn btn-sm btn-outline', onClick: function () { addWater(750); } }, '+750'),
-        h('button', { className: 'btn btn-sm btn-outline', onClick: function () { addWater(-250); } }, '−250'))),
+        h('button', { className: 'btn btn-sm btn-outline', onClick: function () { addWater(-250); } }, '−250')),
+      h(SettingRow, { label: t('hot_climate'), hint: t('hot_climate_hint') },
+        h(Switch, {
+          on: S.get('settings.hotClimate', false),
+          onChange: function () {
+            S.set('settings.hotClimate', !S.get('settings.hotClimate', false));
+            refresh();
+          }
+        }))),
 
     h(ElectrolytesCard, null),
 
@@ -1575,10 +1908,11 @@ function WeekCompareCard() {
     return h('span', { className: 'row-end' },
       fmt(cur),
       h('span', {
+        className: 'num-ltr',
         style: {
           marginInlineStart: '8px',
-          color: flat ? '#6b6b8c' : (better ? '#00d97e' : '#f5a623'),
-          fontSize: '11px'
+          color: flat ? 'var(--text-3)' : (better ? 'var(--green)' : 'var(--gold)'),
+          fontSize: 'var(--fs-xs)'
         }
       }, flat ? '—' : (diff > 0 ? '+' : '') + fmt(diff)));
   }
@@ -1589,10 +1923,14 @@ function WeekCompareCard() {
 
   if (!w.hasPrev) {
     return h(Card, { title: t('week_compare'), icon: 'chart' },
-      h(Empty, { text: t('no_prev_week') }));
+      h(Empty, { text: t('wk_need_two_weeks') }));
   }
 
-  return h(Card, { title: t('week_compare'), icon: 'chart' },
+  // Six deltas and no conclusion is a report, not a review; the verdict is
+  // whatever the expert engine ranked highest, so the two never disagree.
+  var top = expertInsights()[0] || null;
+
+  return h(Card, { title: t('week_compare'), icon: 'calendar' },
     h('div', { className: 'row-plain' },
       h('span', null, t('fast_hours')),
       delta(w.fastHours.cur, w.fastHours.prev, hours, true)),
@@ -1613,7 +1951,15 @@ function WeekCompareCard() {
       delta(w.weight.cur, w.weight.prev,
         function (v) { return num(v.toFixed(1)) + ' ' + t('weight_unit'); }, false)) : null,
     h('div', { className: 'chip-row' },
-      h('span', { className: 'chip' }, t('vs_last_week'))));
+      h('span', { className: 'chip' }, t('vs_last_week'))),
+    top
+      ? h('div', { className: 'insight-card ' + top.tone,
+                   style: { marginTop: 'var(--s3)', marginBottom: 0 } },
+          h('div', { className: 'insight-head' },
+            h('span', { className: 'insight-icon' }, top.icon),
+            h('span', { className: 'insight-title' }, t('wk_one_change'))),
+          h('div', { className: 'insight-text' }, top.title + ' — ' + top.text))
+      : null);
 }
 
 /** Scatter of heart rate against fasted hours — one dot per day. */
@@ -1667,6 +2013,7 @@ function ProgressPage() {
   var p = S.get('profile', {});
   var stats = S.get('stats', {});
   var hist = S.get('history', []);
+  var ed = useState(null); var editing = ed[0], setEditing = ed[1];
   var bmi = calcBMI(p.weight, p.height);
   var bmr = bestBMR(p);
   var tdee = bestTDEE(p);
@@ -1696,13 +2043,21 @@ function ProgressPage() {
         h('div', { className: 'row-main' },
           h('div', { className: 'row-title' },
             fmtShort(e.duration) + ' / ' + num(e.goal) + (isRTL() ? 'س' : 'h') + ' ',
-            e.completed ? h(Icon,{name:'check',size:14,color:'#00d97e',className:'ic-inline'}) : null),
+            e.completed ? h(Icon,{name:'check',size:14,color:'#00d97e',className:'ic-inline'}) : null,
+            e.manual ? h('span', { className: 'sev sev-info', style: { marginInlineStart: '6px' } },
+              t('pf_manual')) : null),
           h('div', { className: 'row-sub' },
             fmtDate(e.start) + ' · ' + fmtTimeOfDay(e.start) + ' → ' + fmtTimeOfDay(e.end)
             + (e.avgHr ? ' · ' + num(e.avgHr) + ' ' + t('bpm') : '')
             + (e.steps ? ' · ' + num(e.steps) + ' ' + t('steps') : ''))),
         h('button', {
+          className: 'icon-btn',
+          'aria-label': t('edit'),
+          onClick: function () { setEditing(e); }
+        }, h(Icon, { name: 'edit', size: 17 })),
+        h('button', {
           className: 'icon-btn danger',
+          'aria-label': t('delete'),
           onClick: function () { deleteHistory(e.id); }
         }, h(Icon, { name: 'trash', size: 17 }))));
     })(hist[k]);
@@ -1753,8 +2108,91 @@ function ProgressPage() {
         h('span', null, t('add_weight')),
         h('button', { className: 'btn btn-sm btn-outline', onClick: logWeight }, t('save')))),
 
+    h(RefeedCard, null),
+
     h('div', { className: 'section-title' }, t('history')),
-    rows.length ? rows : h(Empty, { text: t('no_history') }));
+    h('button', {
+      className: 'btn btn-outline btn-block',
+      style: { marginBottom: 'var(--s2)' },
+      onClick: function () { setEditing({}); }
+    }, h(Icon, { name: 'plus', size: 16 }), t('pf_add')),
+    rows.length ? rows : h(Empty, { text: t('no_history') }),
+
+    editing ? h(PastFastModal, {
+      entry: editing.id ? editing : null,
+      onClose: function () { setEditing(null); },
+      onSave: function (st, en, goal) {
+        savePastFast(st, en, goal, editing.id || null);
+        setEditing(null);
+      }
+    }) : null);
+}
+
+/**
+ * Planned refeed days.
+ *
+ * Marking tomorrow as a deliberate break is a legitimate part of a long
+ * protocol. The app used to score it identically to giving up, which meant
+ * the correct decision cost the user their streak.
+ */
+function RefeedCard() {
+  var today = Date.now();
+  var tomorrow = today + 86400000;
+  var list = plannedBreaks();
+
+  function cell(ts, label) {
+    var on = isPlannedBreak(ts);
+    return h('button', {
+      className: 'goal-btn' + (on ? ' active' : ''),
+      onClick: function () {
+        togglePlannedBreak(ts);
+        recomputeStats();
+        toast(on ? t('refeed_cleared') : t('refeed_set'));
+        refresh();
+      }
+    }, label);
+  }
+
+  return h(Card, { title: t('refeed_day'), icon: 'calendar' },
+    h('div', { className: 'card-sub', style: { marginBottom: 'var(--s3)' } }, t('refeed_day_hint')),
+    h('div', { className: 'goal-selector' },
+      cell(today, t('today')),
+      cell(tomorrow, t('tomorrow'))),
+    list.length
+      ? h('div', { className: 'row-sub', style: { marginTop: 'var(--s2)' } },
+          t('refeed_planned') + ': ' + num(list.length))
+      : null);
+}
+
+/**
+ * Recovery, read off resting heart rate against the user's own baseline.
+ *
+ * Says nothing at all until there are enough mornings to establish that
+ * baseline — a recovery verdict from four days of data is astrology.
+ */
+function RecoveryCard() {
+  var rec = recoveryStatus();
+  if (!rec) return null;
+  var ar = isRTL();
+
+  var title = rec.level === 'strained' ? t('rec_strained')
+    : rec.level === 'watch' ? t('rec_watch') : t('rec_good');
+  var sub = rec.level === 'good'
+    ? t('rec_good_sub')
+    : (ar
+      ? 'أعلى من خط الأساس بـ' + num(rec.delta.toFixed(1)) + ' نبضة'
+        + (rec.streak >= 2 ? ' لـ' + num(rec.streak) + ' صباح ورا بعض' : '')
+      : num(rec.delta.toFixed(1)) + ' bpm above baseline'
+        + (rec.streak >= 2 ? ' for ' + num(rec.streak) + ' mornings running' : ''));
+
+  return h('div', { className: 'rec-band rec-' + rec.level },
+    h('span', { className: 'rec-dot' }),
+    h('div', { className: 'rec-main' },
+      h('div', { className: 'rec-title' }, title),
+      h('div', { className: 'rec-sub' }, sub)),
+    h('div', { style: { textAlign: 'end' } },
+      h('div', { className: 'rec-num' }, num(rec.recent)),
+      h('div', { className: 'rec-sub' }, t('rec_baseline') + ' ' + num(rec.baseline))));
 }
 
 function deleteHistory(id) {
@@ -2056,6 +2494,35 @@ function CoachPage() {
   // useful thing on the page, and when it has nothing it says nothing.
   var insights = [];
   try { insights = expertInsights(); } catch (e) { insights = []; }
+
+  // My reading of the record as a whole, which is a different job from
+  // applying rules to it — including where the data itself is the problem.
+  var analysis = [];
+  try { analysis = personalAnalysis(); } catch (e) { analysis = []; }
+  var analysisCards = [];
+  for (var q = 0; q < analysis.length; q++) {
+    (function (sec) {
+      analysisCards.push(h('div', { key: 'pa' + sec.id, className: 'pa-card ' + sec.severity },
+        h('div', { className: 'pa-head' },
+          h('span', { className: 'pa-title' }, sec.title),
+          h('span', { className: 'sev sev-' + sec.severity },
+            t('sev_' + sec.severity))),
+        h('div', { className: 'pa-body' }, sec.body),
+        sec.action ? h('div', { className: 'pa-action' }, sec.action) : null));
+    })(analysis[q]);
+  }
+
+  // Anything previously flagged that has since cleared, reported back.
+  var follows = [];
+  try { follows = insightFollowUps(); } catch (e) { follows = []; }
+  var followCards = [];
+  for (var f = 0; f < follows.length; f++) {
+    followCards.push(h('div', { key: 'fu' + follows[f].id, className: 'insight-card good' },
+      h('div', { className: 'insight-head' },
+        h('span', { className: 'insight-icon' }, '✅'),
+        h('span', { className: 'insight-title' }, follows[f].title)),
+      h('div', { className: 'insight-text' }, follows[f].text)));
+  }
   var insightCards = [];
   for (var k = 0; k < insights.length; k++) {
     (function (c, idx) {
@@ -2069,7 +2536,21 @@ function CoachPage() {
   }
 
   return h('div', null,
+    h(RecoveryCard, null),
     h(CheckInCard, null),
+
+    analysisCards.length
+      ? h('div', null,
+          h('div', { className: 'section-title' }, t('pa_title')),
+          h('div', { className: 'section-sub' }, t('pa_sub')),
+          analysisCards)
+      : null,
+
+    followCards.length
+      ? h('div', null,
+          h('div', { className: 'section-title' }, t('followups')),
+          followCards)
+      : null,
 
     h('div', { className: 'section-title' }, t('expert_title')),
     h('div', { className: 'section-sub' }, t('expert_sub')),
@@ -2103,6 +2584,182 @@ function CoachPage() {
 /* ---------------------------------------------------------------------
  * Settings
  * ------------------------------------------------------------------- */
+
+/**
+ * Pushes the stored appearance settings onto <html>.
+ *
+ * Theme and accent are attributes rather than inline styles so the CSS keeps
+ * every value in one place; the type scale is a single multiplier, which
+ * keeps headings and body text in proportion instead of letting one grow
+ * into the other.
+ */
+function applyAppearance() {
+  var root = document.documentElement;
+  var theme = S.get('settings.theme', 'dark');
+  var accent = S.get('settings.accent', 'red');
+  var scale = parseFloat(S.get('settings.textScale', 1)) || 1;
+
+  if (theme === 'system') {
+    var dark = !window.matchMedia || window.matchMedia('(prefers-color-scheme: dark)').matches;
+    root.setAttribute('data-theme', dark ? 'dark' : 'light');
+  } else {
+    root.setAttribute('data-theme', theme);
+  }
+  if (accent === 'red') root.removeAttribute('data-accent');
+  else root.setAttribute('data-accent', accent);
+  root.style.setProperty('--scale', String(scale));
+
+  // Keep the system chrome in step with the surface behind it.
+  var meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) {
+    meta.setAttribute('content',
+      root.getAttribute('data-theme') === 'light' ? '#f4f5f9' : '#0e0e18');
+  }
+}
+
+var ACCENTS = [
+  { k: 'red', hex: '#e94560' },
+  { k: 'amber', hex: '#f5a623' },
+  { k: 'green', hex: '#00b368' },
+  { k: 'blue', hex: '#3d8bfd' },
+  { k: 'purple', hex: '#a259ff' }
+];
+
+function AppearanceCard() {
+  var theme = S.get('settings.theme', 'dark');
+  var accent = S.get('settings.accent', 'red');
+  var scale = parseFloat(S.get('settings.textScale', 1)) || 1;
+
+  function set(key, value) {
+    S.set('settings.' + key, value);
+    applyAppearance();
+    refresh();
+  }
+
+  function segment(current, options, key) {
+    var btns = [];
+    for (var i = 0; i < options.length; i++) {
+      (function (opt) {
+        btns.push(h('button', {
+          key: 'sg' + key + opt.v,
+          className: 'seg-btn' + (current === opt.v ? ' on' : ''),
+          onClick: function () { set(key, opt.v); }
+        }, opt.label));
+      })(options[i]);
+    }
+    return h('div', { className: 'seg' }, btns);
+  }
+
+  var swatches = [];
+  for (var a = 0; a < ACCENTS.length; a++) {
+    (function (c) {
+      swatches.push(h('button', {
+        key: 'ac' + c.k,
+        className: 'swatch' + (accent === c.k ? ' on' : ''),
+        style: { background: c.hex },
+        'aria-label': c.k,
+        onClick: function () { set('accent', c.k); }
+      }));
+    })(ACCENTS[a]);
+  }
+
+  return h(Card, { flat: true },
+    h(SettingRow, { label: t('theme') }),
+    segment(theme, [
+      { v: 'dark', label: t('theme_dark') },
+      { v: 'light', label: t('theme_light') },
+      { v: 'system', label: t('theme_system') }
+    ], 'theme'),
+
+    h('div', { style: { height: 'var(--s4)' } }),
+    h(SettingRow, { label: t('accent') }),
+    h('div', { className: 'swatch-row' }, swatches),
+
+    h('div', { style: { height: 'var(--s4)' } }),
+    h(SettingRow, { label: t('text_size') }),
+    segment(scale, [
+      { v: 0.92, label: t('size_s') },
+      { v: 1, label: t('size_m') },
+      { v: 1.12, label: t('size_l') },
+      { v: 1.25, label: t('size_xl') }
+    ], 'textScale'));
+}
+
+/**
+ * Ramadan mode.
+ *
+ * The window stops being a setting and becomes the sun: iftar at maghrib,
+ * suhoor closing at fajr, recomputed daily for the user's coordinates.
+ */
+function RamadanCard() {
+  var on = S.get('settings.ramadan', false);
+  var win = on ? ramadanWindow() : null;
+
+  function set(key, value) {
+    S.set('settings.' + key, value);
+    syncReminders();
+    refresh();
+  }
+
+  var convBtns = [];
+  for (var k in SUN_CONVENTIONS) {
+    if (!Object.prototype.hasOwnProperty.call(SUN_CONVENTIONS, k)) continue;
+    (function (key) {
+      convBtns.push(h('button', {
+        key: 'cv' + key,
+        className: 'goal-btn' + (S.get('settings.sunConvention', 'egypt') === key ? ' active' : ''),
+        onClick: function () { set('sunConvention', key); }
+      }, isRTL() ? SUN_CONVENTIONS[key].ar : SUN_CONVENTIONS[key].en));
+    })(k);
+  }
+
+  return h(Card, { flat: true },
+    h(SettingRow, { label: t('ramadan_enable'), hint: t('ramadan_hint') },
+      h(Switch, { on: on, onChange: function () { set('ramadan', !on); } })),
+
+    on ? h('div', null,
+      win
+        ? h('div', null,
+            h('div', { className: 'ram-strip', style: { marginTop: 'var(--s3)' } },
+              h('div', { className: 'ram-cell' },
+                h('div', { className: 'ram-time' }, win.maghrib),
+                h('div', { className: 'ram-label' }, t('maghrib'))),
+              h('div', { className: 'ram-cell' },
+                h('div', { className: 'ram-time' }, win.fajr),
+                h('div', { className: 'ram-label' }, t('fajr'))),
+              h('div', { className: 'ram-cell' },
+                h('div', { className: 'ram-time' }, num(win.fastHours)),
+                h('div', { className: 'ram-label' }, t('fast_length')))),
+            h('div', { className: 'info-box', style: { marginTop: 0 } }, t('ramadan_note')))
+        : h('div', { className: 'alert-box' }, t('ramadan_no_location')),
+
+      h(SettingRow, { label: t('latitude') },
+        h(NumField, {
+          value: S.get('settings.lat', DEFAULT_COORDS.lat), step: 0.0001,
+          onCommit: function (v) { set('lat', v); }
+        })),
+      h(SettingRow, { label: t('longitude') },
+        h(NumField, {
+          value: S.get('settings.lon', DEFAULT_COORDS.lon), step: 0.0001,
+          onCommit: function (v) { set('lon', v); }
+        })),
+      h(SettingRow, { label: t('use_my_location'), hint: t('use_my_location_hint') },
+        h('button', {
+          className: 'btn btn-sm btn-outline',
+          onClick: function () {
+            var loc = N.parse(N.call('lastLocation'), null);
+            if (!loc || !loc.lat) { toast(t('location_unavailable')); return; }
+            S.set('settings.lat', Math.round(loc.lat * 10000) / 10000);
+            S.set('settings.lon', Math.round(loc.lon * 10000) / 10000);
+            toast(t('saved'));
+            refresh();
+          }
+        }, t('detect'))),
+
+      h('div', { className: 'section-title' }, t('calc_method')),
+      h('div', { className: 'goal-selector' }, convBtns)
+    ) : null);
+}
 
 /** Preset schedules, with adherence measured against the days each plan asks
  *  for rather than against every day. */
@@ -2377,8 +3034,22 @@ function SettingsPage() {
           }
         }, t('confirm')))),
 
+    h('div', { className: 'section-title' }, t('appearance')),
+    h(AppearanceCard, null),
+
+    h('div', { className: 'section-title' }, t('ramadan_mode')),
+    h(RamadanCard, null),
+
     h('div', { className: 'section-title' }, t('data')),
     h(Card, { flat: true },
+      h(SettingRow, { label: t('report'), hint: t('report_hint') },
+        h('button', {
+          className: 'btn btn-sm btn-primary',
+          onClick: function () {
+            if (N.ok()) N.call('share', t('report'), monthlyReport(30));
+            else toast(t('no_native'));
+          }
+        }, t('share_report'))),
       h(SettingRow, { label: t('export_data') },
         h('button', {
           className: 'btn btn-sm btn-primary',
@@ -3192,6 +3863,8 @@ window.__onBack = function () {
 
 (function boot() {
   S.load();
+  // Before the first render, so the app never flashes the wrong theme.
+  applyAppearance();
 
   // Reconcile: the service is the source of truth for whether we are fasting.
   N.call('setLang', S.get('profile.lang', 'ar'));

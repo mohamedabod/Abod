@@ -20,7 +20,7 @@ import java.io.OutputStreamWriter;
  */
 public class JsBridge implements NativeListener {
 
-    public static final String VERSION = "6.2";
+    public static final String VERSION = "7.0";
 
     private final MainActivity activity;
     private final WebView web;
@@ -233,6 +233,12 @@ public class JsBridge implements NativeListener {
         String path = saveExport("route-" + System.currentTimeMillis() + ".gpx", gpx);
         share(name, gpx);
         return path;
+    }
+
+    /** A cached position, used to place prayer times. @return {lat,lon} or {}. */
+    @JavascriptInterface
+    public String lastLocation() {
+        return core.route().lastLocationJson();
     }
 
     /** Opens the track's starting point in whatever maps app is installed. */
