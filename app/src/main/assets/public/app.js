@@ -52,6 +52,8 @@ window.__onNative = function (type, data) {
     HEALTH.lastResult = applyHealthSync(data);
     HEALTH.lastResult.empty = healthPayloadEmpty(data);
     recomputeStats();
+    // A sync can deliver a month of sleep at once, completing several medals.
+    checkMedals();
     if (HEALTH.lastResult.error) {
       toast(t('hc_error') + ': ' + HEALTH.lastResult.error);
     } else if (HEALTH.lastResult.empty) {
@@ -138,12 +140,10 @@ function syncReminders() {
     water: r.water !== false,
     motivation: r.motivation !== false,
     window: r.window !== false,
-    checkin: r.checkin !== false,
     supplement: !!r.supplement,
     nudge: !!r.nudge,
     windowStart: win.start,
     windowEnd: win.end,
-    checkinTime: r.checkinTime || '20:00',
     supplementTime: r.supplementTime || '18:00',
     nudgeTime: r.nudgeTime || '22:00',
     bestFastMs: stats.longest || 0,
@@ -196,7 +196,7 @@ function syncInsights() {
   var second = target.grams >= 100 ? Math.round(target.grams * 0.4) : 0;
   var wantProtein = second > 0 && r.protein !== false;
   N.call('setInsight', 'protein', wantProtein, win.start,
-    wantProtein ? (isRTL() ? '🍗 جرعة البروتين التانية' : '🍗 Second protein dose')
+    wantProtein ? (isRTL() ? 'جرعة البروتين التانية' : 'Second protein dose')
       : '',
     wantProtein
       ? (isRTL()
@@ -288,6 +288,7 @@ function stopFast() {
 
   S.set('currentFast', m(S.defaults().currentFast, { goal: goal }));
   recomputeStats();
+  checkMedals();
   N.syncFast();
   syncReminders();
   N.call('vibrate', 60);
@@ -511,7 +512,19 @@ var ICONS = {
   moonStars: ['M20.8 13a8.8 8.8 0 1 1-9.8-9.8A6.9 6.9 0 0 0 20.8 13Z', 'M18 3v3', 'M16.5 4.5h3'],
   repeat: ['M17 2.5 20.5 6 17 9.5', 'M3.5 11V9a3 3 0 0 1 3-3h14', 'M7 21.5 3.5 18 7 14.5',
     'M20.5 13v2a3 3 0 0 1-3 3h-14'],
-  star: ['M12 2.8l2.9 5.9 6.5.9-4.7 4.6 1.1 6.5-5.8-3-5.8 3 1.1-6.5L2.6 9.6l6.5-.9L12 2.8Z']
+  star: ['M12 2.8l2.9 5.9 6.5.9-4.7 4.6 1.1 6.5-5.8-3-5.8 3 1.1-6.5L2.6 9.6l6.5-.9L12 2.8Z'],
+  walk: ['M13.5 5.5a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z', 'M11 22l2-6-2.5-2.5L9 9l4-1.5 3 2.5 2.5 1',
+    'M9.5 15.5 7 22', 'M10 9.5 6.5 11'],
+  cycle: ['M5.5 20.5a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z', 'M18.5 20.5a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z',
+    'M15 5.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3Z', 'M5.5 16.5 9 11l3 2.5 2-3.5 4.5 6.5', 'M9 11l3-3.5 3 2.5'],
+  run: ['M15.5 5.5a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z', 'M9 22l3-5.5-3-3 1-4.5 4-1.5 3 3 3 .5',
+    'M8 12.5 4.5 14', 'M12 16.5 16 19'],
+  swim: ['M2.5 18.5c1.6 0 1.6 1.4 3.2 1.4s1.6-1.4 3.2-1.4 1.6 1.4 3.2 1.4 1.6-1.4 3.2-1.4 1.6 1.4 3.2 1.4',
+    'M17 8.5a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z', 'M6 15.5 11 11l-3-2.5 4-2.5 3 2'],
+  trendDown: ['M3 7.5 10 14.5l4-4 7 7', 'M21 12v5.5h-5.5'],
+  leaf: ['M4 20.5C3 12 8 4.5 20 3.5c1 11-6.5 16-13 15.5', 'M4 20.5 11.5 12'],
+  coffee: ['M3.5 8.5h13v6a5 5 0 0 1-5 5h-3a5 5 0 0 1-5-5v-6Z',
+    'M16.5 10.5h2a2.5 2.5 0 0 1 0 5h-2', 'M6 2.5v3', 'M10 2.5v3', 'M14 2.5v3']
 };
 
 function Icon(props) {
@@ -583,22 +596,6 @@ function TextField(props) {
 }
 
 /** 1-5 selector used by the daily check-in. */
-function Scale(props) {
-  var btns = [];
-  for (var i = 1; i <= 5; i++) {
-    (function (v) {
-      btns.push(h('button', {
-        key: 'sc' + props.name + v,
-        className: 'scale-btn' + (props.value === v ? ' active' : ''),
-        onClick: function () { props.onChange(v); }
-      }, props.icons ? props.icons[v - 1] : num(v)));
-    })(i);
-  }
-  return h('div', { className: 'scale-row' },
-    h('div', { className: 'scale-label' }, props.label),
-    h('div', { className: 'scale-btns' }, btns));
-}
-
 /* ---------------------------------------------------------------------
  * Charts
  *
@@ -1958,14 +1955,14 @@ function LiquidsPage() {
   var okRows = [];
   for (var i = 0; i < LIQUIDS_OK.length; i++) {
     okRows.push(h('div', { key: 'lq' + i, className: 'liquid-item' },
-      h('span', { className: 'liquid-emoji' }, LIQUIDS_OK[i].emoji),
+      h('span', { className: 'liquid-ico' }, h(Icon, { name: LIQUIDS_OK[i].icon, size: 17 })),
       h('span', { style: { fontSize: '13.5px' } }, t(LIQUIDS_OK[i].key))));
   }
 
   var noRows = [];
   for (var j = 0; j < LIQUIDS_NO.length; j++) {
     noRows.push(h('div', { key: 'lx' + j, className: 'liquid-item forbidden' },
-      h('span', { className: 'liquid-emoji' }, LIQUIDS_NO[j].emoji),
+      h('span', { className: 'liquid-ico' }, h(Icon, { name: LIQUIDS_NO[j].icon, size: 17 })),
       h('span', { style: { fontSize: '13.5px' } }, isRTL() ? LIQUIDS_NO[j].ar : LIQUIDS_NO[j].en)));
   }
 
@@ -2070,7 +2067,7 @@ function WeekCompareCard() {
       ? h('div', { className: 'insight-card ' + top.tone,
                    style: { marginTop: 'var(--s3)', marginBottom: 0 } },
           h('div', { className: 'insight-head' },
-            h('span', { className: 'insight-icon' }, top.icon),
+            h('span', { className: 'insight-icon' }, h(Icon, { name: top.icon, size: 16 })),
             h('span', { className: 'insight-title' }, t('wk_one_change'))),
           h('div', { className: 'insight-text' }, top.title + ' — ' + top.text))
       : null);
@@ -2190,6 +2187,19 @@ function ProgressPage() {
           label: t('completion_rate'), tone: 'green'
         }),
         h(Stat, { value: stats.longest ? fmtShort(stats.longest) : '-', label: t('longest_fast'), tone: 'gold' }))),
+
+    h('button', {
+      className: 'nav-row', style: { borderRadius: 'var(--r-lg)', marginBottom: 'var(--s2)' },
+      onClick: function () { _setView('medals'); }
+    },
+      h('span', { className: 'nav-ico' }, h(Icon, { name: 'trophy', size: 19 })),
+      h('span', { className: 'nav-main' },
+        h('span', { className: 'nav-title' }, t('medals')),
+        h('span', { className: 'nav-hint' },
+          num(evaluateMedals().earned) + ' / ' + num(MEDALS.length) + ' ' + t('medals_earned'))),
+      h('span', { className: 'nav-chev' }, h(Icon, { name: 'back', size: 17 }))),
+
+    h(ChallengeCard, null),
 
     h(WeekCompareCard, null),
 
@@ -2474,7 +2484,7 @@ function WorkoutCard() {
         }
       }
       rows.push(h('div', { key: 'wk' + w.id, className: 'row' },
-        h('span', { style: { fontSize: '19px' } }, wt.emoji),
+        h(Icon, { name: wt.icon, size: 19 }),
         h('div', { className: 'row-main' },
           h('div', { className: 'row-title' },
             (isRTL() ? wt.ar : wt.en)
@@ -2536,7 +2546,7 @@ function WorkoutModal(props) {
         key: 'wt' + wt.k,
         className: 'goal-btn' + (type === wt.k ? ' active' : ''),
         onClick: function () { setType(wt.k); }
-      }, wt.emoji + ' ' + (isRTL() ? wt.ar : wt.en)));
+      }, h(Icon, { name: wt.icon, size: 15 }), (isRTL() ? wt.ar : wt.en)));
     })(WORKOUT_TYPES[i]);
   }
 
@@ -2578,8 +2588,7 @@ function WorkoutModal(props) {
 function CoachPage() {
   var cf = S.get('currentFast', {});
   var hours = fastElapsed(cf) / 3600000;
-  var checkin = latestCheckin();
-  var cards = coachAdvice(hours, checkin, !!cf.active);
+  var cards = coachAdvice(hours, !!cf.active);
   var tips = randomTips(4);
 
   var adviceCards = [];
@@ -2627,7 +2636,7 @@ function CoachPage() {
   for (var f = 0; f < follows.length; f++) {
     followCards.push(h('div', { key: 'fu' + follows[f].id, className: 'insight-card good' },
       h('div', { className: 'insight-head' },
-        h('span', { className: 'insight-icon' }, '✅'),
+        h('span', { className: 'insight-icon' }, h(Icon, { name: 'check', size: 16 })),
         h('span', { className: 'insight-title' }, follows[f].title)),
       h('div', { className: 'insight-text' }, follows[f].text)));
   }
@@ -2636,7 +2645,7 @@ function CoachPage() {
     (function (c, idx) {
       insightCards.push(h('div', { key: 'ix' + idx, className: 'insight-card ' + c.tone },
         h('div', { className: 'insight-head' },
-          h('span', { className: 'insight-icon' }, c.icon),
+          h('span', { className: 'insight-icon' }, h(Icon, { name: c.icon, size: 16 })),
           h('span', { className: 'insight-title' }, c.title),
           h('span', { className: 'prio prio-' + c.priority }, t('prio_' + c.priority))),
         h('div', { className: 'insight-text' }, c.text)));
@@ -2645,7 +2654,6 @@ function CoachPage() {
 
   return h('div', null,
     h(RecoveryCard, null),
-    h(CheckInCard, null),
 
     analysisCards.length
       ? h('div', null,
@@ -2674,7 +2682,7 @@ function CoachPage() {
       : h('div', { className: 'tip-card' }, h('div', { className: 'tip-text' }, t('expert_empty'))),
 
     h('div', { className: 'section-title' },
-      t('coach_title') + (checkin ? ' — ' + t('personalized') : '')),
+      t('coach_title')),
     adviceCards,
 
     h('div', { className: 'section-title' }, t('refeeding')),
@@ -2803,6 +2811,184 @@ function ExercisesView(props) {
         h('div', { className: 'tip-text' }, routine.note)),
       days,
       h('div', { className: 'alert-box' }, t('exercise_disclaimer'))));
+}
+
+/**
+ * A medal, drawn rather than illustrated: a ring, a laurel and the tier
+ * colour. Locked medals keep the shape and lose the colour, so the shelf
+ * reads as "not yet" rather than as an empty box.
+ */
+function Medal(props) {
+  var tier = MEDAL_TIERS[props.tier] || MEDAL_TIERS.bronze;
+  var colour = props.locked ? 'var(--text-3)' : tier;
+  return h('svg', {
+    className: 'medal' + (props.locked ? ' locked' : '') + (props.fresh ? ' fresh' : ''),
+    viewBox: '0 0 48 48', 'aria-hidden': 'true'
+  },
+    h('circle', {
+      cx: 24, cy: 21, r: 13, fill: 'none', stroke: colour, strokeWidth: 3,
+      opacity: props.locked ? 0.35 : 1
+    }),
+    h('circle', {
+      cx: 24, cy: 21, r: 7.5, fill: colour, opacity: props.locked ? 0.18 : 0.9
+    }),
+    h('path', {
+      d: 'M16 32 L12 45 L24 39 L36 45 L32 32',
+      fill: 'none', stroke: colour, strokeWidth: 3,
+      strokeLinejoin: 'round', strokeLinecap: 'round',
+      opacity: props.locked ? 0.3 : 1
+    }));
+}
+
+/**
+ * The moment a medal is earned.
+ *
+ * The one place in the app where motion is celebratory rather than
+ * functional, and it is still transform and opacity only: rays scale out
+ * from behind the medal, nothing loops, and it leaves once it has said what
+ * it came to say.
+ */
+function MedalCelebration(props) {
+  var rays = [];
+  for (var i = 0; i < 10; i++) {
+    rays.push(h('span', {
+      key: 'ray' + i, className: 'ray',
+      // The angle travels as a custom property; the keyframes own transform.
+      style: { '--a': (i * 36) + 'deg', animationDelay: (i * 18) + 'ms' }
+    }));
+  }
+  return h('div', { className: 'modal-overlay celebrate', onClick: props.onClose },
+    h('div', { className: 'modal celebrate-box', onClick: function (e) { e.stopPropagation(); } },
+      h('div', { className: 'burst' }, rays,
+        h(Medal, { tier: props.medal.tier, fresh: true })),
+      h('div', { className: 'celebrate-kicker' }, t('medal_earned')),
+      h('h3', null, isRTL() ? props.medal.ar : props.medal.en),
+      h('div', { className: 'tip-text', style: { textAlign: 'center' } },
+        isRTL() ? props.medal.ar_d : props.medal.en_d),
+      h('div', { className: 'modal-btns' },
+        h('button', { className: 'btn btn-primary btn-sm', onClick: props.onClose }, t('nice')))));
+}
+
+/** The shelf: what has been earned, and how close the rest are. */
+function MedalsView(props) {
+  var res = evaluateMedals();
+  var groups = [
+    { k: 'consistency', label: t('grp_consistency') },
+    { k: 'milestone', label: t('grp_milestone') },
+    { k: 'nutrition', label: t('grp_nutrition') },
+    { k: 'training', label: t('grp_training') },
+    { k: 'recovery', label: t('grp_recovery') }
+  ];
+
+  var out = [];
+  for (var g = 0; g < groups.length; g++) {
+    (function (grp) {
+      var rows = [];
+      for (var i = 0; i < res.list.length; i++) {
+        if (res.list[i].medal.group !== grp.k) continue;
+        (function (item) {
+          rows.push(h('div', {
+            key: 'm' + item.medal.k,
+            className: 'medal-row' + (item.done ? '' : ' locked')
+          },
+            h(Medal, { tier: item.medal.tier, locked: !item.done }),
+            h('div', { className: 'medal-main' },
+              h('div', { className: 'medal-name' }, isRTL() ? item.medal.ar : item.medal.en),
+              h('div', { className: 'medal-desc' }, isRTL() ? item.medal.ar_d : item.medal.en_d),
+              item.done
+                ? h('div', { className: 'medal-date' }, fmtDate(item.at))
+                : h('div', { className: 'medal-prog' },
+                    h('div', { className: 'medal-bar' },
+                      h('div', { className: 'medal-fill', style: { width: item.pct + '%' } })),
+                    h('span', { className: 'num-ltr' },
+                      num(item.have) + ' / ' + num(item.need))))));
+        })(res.list[i]);
+      }
+      if (rows.length) {
+        out.push(h('div', { key: 'g' + grp.k },
+          h('div', { className: 'section-title' }, grp.label), rows));
+      }
+    })(groups[g]);
+  }
+
+  return h('div', { className: 'subview' },
+    h('div', { className: 'subview-hdr' },
+      h('button', { className: 'back-btn', onClick: props.onClose },
+        h(Icon, { name: 'back', size: 22 })),
+      h('span', { className: 'subview-title' }, t('medals'))),
+    h('div', { className: 'subview-body' },
+      h('div', { className: 'medal-count' },
+        h('span', { className: 'medal-count-n' }, num(res.earned)),
+        h('span', null, ' / ' + num(MEDALS.length) + '  ' + t('medals_earned'))),
+      out));
+}
+
+/**
+ * The active challenge, or the ones on offer.
+ *
+ * Personal and time-boxed on purpose, never a leaderboard: ranking people by
+ * hours fasted would turn the one number that should not be competed on into
+ * a competition.
+ */
+function ChallengeCard() {
+  var active = activeChallenge();
+  var ar = isRTL();
+
+  if (active) {
+    var def = active.def;
+    return h(Card, { title: t('challenge'), icon: 'trophy' },
+      h('div', { className: 'ch-name' }, ar ? def.ar : def.en),
+      h('div', { className: 'water-bar', style: { margin: 'var(--s3) 0 6px' } },
+        h('div', {
+          className: 'water-fill',
+          style: {
+            width: active.pct + '%',
+            background: active.done
+              ? 'linear-gradient(90deg,var(--green),var(--cyan))'
+              : 'linear-gradient(90deg,var(--primary),var(--gold))'
+          }
+        })),
+      h('div', { className: 'ch-meta' },
+        h('span', { className: 'num-ltr' }, num(active.have) + ' / ' + num(active.need)),
+        h('span', null, active.done
+          ? t('challenge_done')
+          : active.expired ? t('challenge_expired')
+          : num(active.daysLeft) + ' ' + t('days_left'))),
+      active.done || active.expired
+        ? h('div', { className: 'btn-group' },
+            h('button', {
+              className: 'btn btn-sm ' + (active.done ? 'btn-green' : 'btn-outline'),
+              onClick: function () {
+                endChallenge();
+                toast(active.done ? t('challenge_done') : t('challenge_cleared'));
+                refresh();
+              }
+            }, active.done ? t('collect') : t('challenge_restart')))
+        : h('div', { className: 'btn-group' },
+            h('button', {
+              className: 'btn btn-sm btn-ghost',
+              onClick: function () { endChallenge(); refresh(); }
+            }, t('challenge_quit'))));
+  }
+
+  var opts = [];
+  for (var i = 0; i < CHALLENGES.length; i++) {
+    (function (c) {
+      opts.push(h('button', {
+        key: 'ch' + c.k, className: 'ch-option',
+        onClick: function () { startChallenge(c.k); toast(t('challenge_started')); refresh(); }
+      },
+        h('span', { className: 'ch-main' },
+          h('span', { className: 'ch-title' }, ar ? c.ar : c.en),
+          h('span', { className: 'ch-sub' }, ar ? c.ar_d : c.en_d),
+          h('span', { className: 'chip' }, num(c.days) + ' ' + t('day'))),
+        h('span', { className: 'nav-chev' }, h(Icon, { name: 'back', size: 16 }))));
+    })(CHALLENGES[i]);
+  }
+
+  return h(Card, { title: t('challenge'), icon: 'trophy' },
+    h('div', { className: 'tip-text' }, t('challenge_hint')),
+    h('div', { className: 'ch-list' }, opts));
 }
 
 /* ---------------------------------------------------------------------
@@ -3044,6 +3230,33 @@ function PlanCard() {
 var _setSettingsSub = null;
 var _curSettingsSub = null;
 
+/** Queue of medals earned but not yet shown, drained one card at a time. */
+var _medalQueue = [];
+var _setMedal = null;
+
+/**
+ * Checks for newly earned medals and queues the celebration.
+ *
+ * Called after anything that could complete one rather than on a timer, and
+ * it is safe to call often: evaluateMedals() records the unlock, so a medal
+ * is only ever "fresh" once.
+ */
+function checkMedals() {
+  var fresh;
+  try { fresh = evaluateMedals().fresh; } catch (e) { return; }
+  if (!fresh.length) return;
+  _medalQueue = _medalQueue.concat(fresh);
+  if (_setMedal) _setMedal(_medalQueue[0]);
+  // Native gets the first one; a burst of notifications for a burst of
+  // medals would be worse than one.
+  if (N.ok()) {
+    var m2 = fresh[0];
+    N.call('celebrate',
+      t('medal_earned'),
+      (isRTL() ? m2.ar : m2.en) + ' — ' + (isRTL() ? m2.ar_d : m2.en_d));
+  }
+}
+
 function SettingsPage() {
   var s1 = useState(false); var showImport = s1[0], setShowImport = s1[1];
   var s2 = useState(''); var importText = s2[0], setImportText = s2[1];
@@ -3204,7 +3417,6 @@ function SettingsPage() {
       h(ReminderToggle, { k: 'water', label: t('rem_water'), hint: t('rem_water_hint') }),
       h(ReminderToggle, { k: 'motivation', label: t('rem_motivation'), hint: t('rem_motivation_hint') }),
       h(ReminderToggle, { k: 'window', label: t('rem_window'), hint: t('rem_window_hint') }),
-      h(ReminderToggle, { k: 'checkin', label: t('rem_checkin'), timeKey: 'checkinTime' }),
       h(ReminderToggle, { k: 'supplement', label: t('rem_supplement'), timeKey: 'supplementTime' }),
       h(ReminderToggle, { k: 'nudge', label: t('rem_nudge'), hint: t('rem_nudge_hint'), timeKey: 'nudgeTime' }),
       h(ReminderToggle, { k: 'insight', label: t('insight_time'), hint: t('insight_time_hint'),
@@ -3214,7 +3426,7 @@ function SettingsPage() {
         h('button', {
           className: 'btn btn-sm btn-outline',
           onClick: function () {
-            N.call('testReminder', 'checkin');
+            N.call('testReminder', 'window_open');
             toast(t('rem_sent'));
           }
         }, t('confirm')))));
@@ -3381,7 +3593,7 @@ function SettingsPage() {
             className: 'btn btn-primary btn-block btn-sm',
             onClick: function () {
               var added = S.mergeJson(importText);
-              if (added < 0) { toast('JSON ✗'); return; }
+              if (added < 0) { toast(t('import_bad')); return; }
               setShowImport(false);
               recomputeStats();
               N.syncFast();
@@ -3398,7 +3610,7 @@ function SettingsPage() {
                 N.syncFast();
                 toast(t('saved'));
               } else {
-                toast('JSON ✗');
+                toast(t('import_bad'));
               }
               refresh();
             }
@@ -3759,39 +3971,6 @@ function SensorInventoryCard() {
  * Daily check-in (feeds the coach)
  * ------------------------------------------------------------------- */
 
-var MOOD_ICONS = ['😖', '😕', '😐', '🙂', '😄'];
-var LEVEL_ICONS = ['1', '2', '3', '4', '5'];
-
-function CheckInCard() {
-  var last = latestCheckin();
-  var s1 = useState(last ? last.mood : 3); var mood = s1[0], setMood = s1[1];
-  var s2 = useState(last ? last.energy : 3); var energy = s2[0], setEnergy = s2[1];
-  var s3 = useState(last ? last.hunger : 3); var hunger = s3[0], setHunger = s3[1];
-
-  function save() {
-    var list = S.get('checkins', []);
-    list.push({ ts: Date.now(), mood: mood, energy: energy, hunger: hunger });
-    if (list.length > 400) list = list.slice(list.length - 400);
-    S.set('checkins', list);
-    toast(t('checkin_done'));
-    refresh();
-  }
-
-  var trend = checkinTrend(7);
-
-  return h(Card, { title: t('checkin'), icon: 'heart' },
-    h(Scale, { name: 'mood', label: t('mood'), value: mood, icons: MOOD_ICONS, onChange: setMood }),
-    h(Scale, { name: 'energy', label: t('energy'), value: energy, icons: LEVEL_ICONS, onChange: setEnergy }),
-    h(Scale, { name: 'hunger', label: t('hunger'), value: hunger, icons: LEVEL_ICONS, onChange: setHunger }),
-    h('div', { className: 'btn-group', style: { marginTop: '4px' } },
-      h('button', { className: 'btn btn-sm btn-primary', onClick: save }, t('checkin_save'))),
-    trend ? h('div', { className: 'chip-row' },
-      h('span', { className: 'chip' }, '😊 ' + num(trend.mood.toFixed(1))),
-      h('span', { className: 'chip' }, h(Icon,{name:'activity',size:13}), num(trend.energy.toFixed(1))),
-      h('span', { className: 'chip' }, h(Icon,{name:'meals',size:13}), num(trend.hunger.toFixed(1))),
-      h('span', { className: 'chip' }, num(trend.count) + ' × ' + t('checkin'))) : null);
-}
-
 /* ---------------------------------------------------------------------
  * Manual meal entry with a photo
  * ------------------------------------------------------------------- */
@@ -4041,6 +4220,8 @@ function App() {
   var v = useState(0); _bump = v[1];
   var tb = useState('home'); var tab = tb[0]; _setTab = tb[1];
   var vw = useState(null); var view = vw[0]; _setView = vw[1];
+  var md = useState(null); var medal = md[0], setMedal = md[1];
+  _setMedal = setMedal;
   var dt = useState(null); var detail = dt[0]; _setDetail = dt[1];
   _curTab = tab;
   _curView = view;
@@ -4120,6 +4301,18 @@ function App() {
       ? h(ExercisesView, { onClose: function () { _setView(null); } })
       : null,
 
+    view === 'medals'
+      ? h(MedalsView, { onClose: function () { _setView(null); } })
+      : null,
+
+    medal ? h(MedalCelebration, {
+      medal: medal,
+      onClose: function () {
+        _medalQueue.shift();
+        setMedal(_medalQueue.length ? _medalQueue[0] : null);
+      }
+    }) : null,
+
     detail
       ? h(MetricDetail, { metric: detail, onClose: function () { _setDetail(null); } })
       : null,
@@ -4181,6 +4374,7 @@ window.__onBack = function () {
   INVENTORY = N.inventory();
   N.call('healthRefresh');
   recomputeStats();
+  checkMedals();
   syncReminders();
   S._onSave = scheduleInsightSync;
   syncInsights();

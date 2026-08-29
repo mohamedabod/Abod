@@ -6,7 +6,7 @@
  * no destructuring, no classes, no async/await. See README.
  * ===================================================================== */
 
-var APP_VERSION = '8.0';
+var APP_VERSION = '8.1';
 var STORE_KEY = 'sayem_v4';
 var LEGACY_KEY = 'sayem_v3';
 
@@ -68,8 +68,9 @@ var S = {
       insightLog: [],
       plannedBreaks: [],
       favourites: [],
+      medals: {},
+      challenge: null,
       customFoods: [],
-      checkins: [],
       routes: [],
       workouts: [],
       bodyLog: [],
@@ -112,9 +113,9 @@ var S = {
         caffeineCutoffH: 8,
         stimulantCutoffH: 8,
         reminders: {
-          water: true, motivation: true, window: true, checkin: true,
+          water: true, motivation: true, window: true,
           supplement: false, nudge: false,
-          checkinTime: '20:00', supplementTime: '18:00', nudgeTime: '22:00'
+          supplementTime: '18:00', nudgeTime: '22:00'
         }
       }
     };
@@ -200,8 +201,8 @@ var S = {
     if (!d.insightLog) d.insightLog = [];
     if (!d.plannedBreaks) d.plannedBreaks = [];
     if (!d.favourites) d.favourites = [];
+    if (!d.medals) d.medals = {};
     if (!d.customFoods) d.customFoods = [];
-    if (!d.checkins) d.checkins = [];
     if (!d.routes) d.routes = [];
     if (!d.workouts) d.workouts = [];
     if (!d.bodyLog) d.bodyLog = [];
@@ -301,9 +302,19 @@ var S = {
 
     added += mergeList(d.history, incoming.history, 'id');
     added += mergeList(d.insightLog, incoming.insightLog, 'ts');
+    // Earned is earned: an import can add medals but never revoke one, and the
+    // earlier of two unlock times wins.
+    if (incoming.medals) {
+      for (var mk in incoming.medals) {
+        if (!Object.prototype.hasOwnProperty.call(incoming.medals, mk)) continue;
+        if (!d.medals[mk] || incoming.medals[mk] < d.medals[mk]) {
+          if (!d.medals[mk]) added++;
+          d.medals[mk] = incoming.medals[mk];
+        }
+      }
+    }
     added += mergeList(d.meals, incoming.meals, 'id');
     added += mergeList(d.customFoods, incoming.customFoods, 'k');
-    added += mergeList(d.checkins, incoming.checkins, 'ts');
     added += mergeList(d.routes, incoming.routes, 'id');
     added += mergeList(d.workouts, incoming.workouts, 'id');
     added += mergeList(d.bodyLog, incoming.bodyLog, 'ts');
@@ -332,7 +343,6 @@ var S = {
 
     sortByTime(d.history, 'start');
     sortByTime(d.meals, 'ts');
-    sortByTime(d.checkins, 'ts');
     sortByTime(d.workouts, 'ts');
     sortByTime(d.bodyLog, 'ts');
     sortByTime(d.profile.weightLog, 'ts');
@@ -474,6 +484,14 @@ var LANG = {
     common_mistake: 'الغلطة الشائعة',
     exercise_disclaimer: 'لو عندك إصابة أو ألم في الظهر أو الركبة، اسأل دكتور أو أخصائي علاج طبيعي قبل ما تبدأ. الألم الحاد أثناء الحركة معناه توقف، مش كمّل.',
     open_exercises: 'شوف التمارين',
+    import_bad: 'الملف مش JSON صالح',
+    medals: 'الميداليات', medals_earned: 'ميدالية', medal_earned: 'ميدالية جديدة', nice: 'تمام',
+    grp_consistency: 'الاستمرارية', grp_milestone: 'معالم', grp_nutrition: 'التغذية',
+    grp_training: 'التدريب', grp_recovery: 'الاستشفاء',
+    challenge: 'التحدي', challenge_hint: 'تحدي شخصي بينك وبين نفسك، بمدة محددة. مفيش ترتيب ولا مقارنة بحد.',
+    challenge_started: 'التحدي ابتدا', challenge_done: 'خلصته', challenge_expired: 'الوقت خلص',
+    challenge_quit: 'إلغاء التحدي', challenge_restart: 'جرّب تاني', challenge_cleared: 'اتشال',
+    days_left: 'يوم فاضل', collect: 'استلم',
     gram_unit: 'جم',
     reached_state: 'وصلت لهدفك',
     change_goal: 'تغيير الهدف', remaining_short: 'باقي',
@@ -557,15 +575,7 @@ var LANG = {
     manual_meal: 'إضافة وجبة يدوي', meal_name: 'اسم الوجبة', take_photo: 'كاميرا', from_gallery: 'من المعرض', remove_photo: 'شيل الصورة',
     save_to_db: 'احفظها في قائمة الأكل', photo_failed: 'مافيش صورة اتحفظت',
 
-    checkin: 'حالتك النهاردة', checkin_save: 'سجّل حالتك',
-    mood: 'المزاج', energy: 'الطاقة', hunger: 'الجوع', high: 'عالي',
-    checkin_done: 'اتسجلت — المدرب هيظبط نصايحه على كده',
-    personalized: 'مخصص لحالتك',
-    coach_hunger_high: 'الجوع عالي',
-    coach_energy_low: 'طاقتك منخفضة',
-    coach_mood_low: 'مزاجك مش تمام',
-    coach_all_good: 'حالتك كويسة',
-
+    high: 'عالي',
     body_comp: 'تركيب الجسم', add_scan: 'أضف قياس', body_history: 'سجل القياسات',
     no_scans: 'مفيش قياسات — ضيف قياس InBody أو ميزان ذكي',
     fat_pct: 'نسبة الدهون %', fat_kg: 'كتلة الدهون (كجم)',
@@ -624,7 +634,7 @@ var LANG = {
     reminders: 'التنبيهات', rem_water: 'تذكير بالمياه', rem_water_hint: 'كل ساعتين أثناء الصيام',
     rem_motivation: 'رسايل تحفيز', rem_motivation_hint: 'عند ٢٥٪ و٥٠٪ و٧٥٪ من الهدف، ولما تكسر رقمك',
     rem_window: 'نافذة الأكل', rem_window_hint: 'لما تفتح، وقبل ما تقفل بنص ساعة',
-    rem_checkin: 'تذكير بتسجيل حالتك', rem_supplement: 'تذكير بالمكمل',
+    rem_supplement: 'تذكير بالمكمل',
     rem_nudge: 'نبّهني لو مبدأتش صيام', rem_nudge_hint: 'لو الوقت عدّى ولسه مبدأتش',
     rem_test: 'جرّب التنبيه', rem_sent: 'اتبعت — بُص فوق',
     rem_need_perm: 'إذن الإشعارات مقفول — التنبيهات مش هتظهر',
@@ -750,6 +760,14 @@ var LANG = {
     common_mistake: 'Common mistake',
     exercise_disclaimer: 'If you have an injury or back or knee pain, check with a doctor or physiotherapist before starting. Sharp pain during a movement means stop, not push through.',
     open_exercises: 'See the exercises',
+    import_bad: 'Not valid JSON',
+    medals: 'Medals', medals_earned: 'earned', medal_earned: 'Medal earned', nice: 'Good',
+    grp_consistency: 'Consistency', grp_milestone: 'Milestones', grp_nutrition: 'Nutrition',
+    grp_training: 'Training', grp_recovery: 'Recovery',
+    challenge: 'Challenge', challenge_hint: 'A personal, time-boxed commitment. No leaderboard, no comparison with anyone.',
+    challenge_started: 'Challenge started', challenge_done: 'Completed', challenge_expired: 'Time is up',
+    challenge_quit: 'Cancel challenge', challenge_restart: 'Try again', challenge_cleared: 'Cleared',
+    days_left: 'days left', collect: 'Collect',
     gram_unit: 'g',
     reached_state: 'Goal reached',
     change_goal: 'Change goal', remaining_short: 'left',
@@ -833,15 +851,7 @@ var LANG = {
     manual_meal: 'Add meal manually', meal_name: 'Meal name', take_photo: 'Camera', from_gallery: 'Gallery', remove_photo: 'Remove photo',
     save_to_db: 'Save to my food list', photo_failed: 'No photo was saved',
 
-    checkin: 'How you feel today', checkin_save: 'Save check-in',
-    mood: 'Mood', energy: 'Energy', hunger: 'Hunger', high: 'High',
-    checkin_done: 'Saved — the coach will adapt to this',
-    personalized: 'Personalised',
-    coach_hunger_high: 'Hunger is high',
-    coach_energy_low: 'Energy is low',
-    coach_mood_low: 'Mood is low',
-    coach_all_good: 'You are in good shape',
-
+    high: 'High',
     body_comp: 'Body composition', add_scan: 'Add scan', body_history: 'Scan history',
     no_scans: 'No scans yet — add an InBody or smart-scale reading',
     fat_pct: 'Body fat %', fat_kg: 'Fat mass (kg)',
@@ -900,7 +910,7 @@ var LANG = {
     reminders: 'Reminders', rem_water: 'Water reminder', rem_water_hint: 'Every 2 hours while fasting',
     rem_motivation: 'Encouragement', rem_motivation_hint: 'At 25%, 50%, 75% of the goal, and on a new record',
     rem_window: 'Eating window', rem_window_hint: 'When it opens, and 30 minutes before it closes',
-    rem_checkin: 'Check-in reminder', rem_supplement: 'Supplement reminder',
+    rem_supplement: 'Supplement reminder',
     rem_nudge: 'Nudge if no fast started', rem_nudge_hint: 'When the time passes and nothing is running',
     rem_test: 'Send a test', rem_sent: 'Sent — check your notifications',
     rem_need_perm: 'Notification permission is off — reminders will not appear',
@@ -1222,12 +1232,12 @@ function normaliseBody(entry) {
  * ------------------------------------------------------------------- */
 
 var WORKOUT_TYPES = [
-  { k: 'walk', emoji: '🚶', ar: 'مشي', en: 'Walk' },
-  { k: 'cycle', emoji: '🚴', ar: 'عجلة', en: 'Cycling' },
-  { k: 'run', emoji: '🏃', ar: 'جري', en: 'Run' },
-  { k: 'gym', emoji: '🏋️', ar: 'مقاومة', en: 'Resistance' },
-  { k: 'swim', emoji: '🏊', ar: 'سباحة', en: 'Swim' },
-  { k: 'other', emoji: '⚡', ar: 'غير ذلك', en: 'Other' }
+  { k: 'walk', icon: 'walk', ar: 'مشي', en: 'Walk' },
+  { k: 'cycle', icon: 'cycle', ar: 'عجلة', en: 'Cycling' },
+  { k: 'run', icon: 'run', ar: 'جري', en: 'Run' },
+  { k: 'gym', icon: 'dumbbell', ar: 'مقاومة', en: 'Resistance' },
+  { k: 'swim', icon: 'swim', ar: 'سباحة', en: 'Swim' },
+  { k: 'other', icon: 'sparkles', ar: 'غير ذلك', en: 'Other' }
 ];
 
 function workoutType(k) {
@@ -1456,23 +1466,23 @@ function searchFood(q) {
  * ------------------------------------------------------------------- */
 
 var LIQUIDS_OK = [
-  { emoji: '💧', key: 'drink_water' },
-  { emoji: '🌿', key: 'aniseed_lemon' },
-  { emoji: '🍵', key: 'mint_tea' },
-  { emoji: '🌺', key: 'hibiscus' },
-  { emoji: '🥄', key: 'cinnamon_caraway' },
-  { emoji: '☕', key: 'plain_coffee' },
-  { emoji: '🍃', key: 'plain_green_tea' },
-  { emoji: '🫧', key: 'club_soda' }
+  { icon: 'droplet', key: 'drink_water' },
+  { icon: 'leaf', key: 'aniseed_lemon' },
+  { icon: 'leaf', key: 'mint_tea' },
+  { icon: 'leaf', key: 'hibiscus' },
+  { icon: 'flame', key: 'cinnamon_caraway' },
+  { icon: 'coffee', key: 'plain_coffee' },
+  { icon: 'leaf', key: 'plain_green_tea' },
+  { icon: 'droplet', key: 'club_soda' }
 ];
 
 var LIQUIDS_NO = [
-  { emoji: '🍯', ar: 'عسل', en: 'Honey' },
-  { emoji: '🧂', ar: 'سكر ومحليات صناعية', en: 'Sugar & artificial sweeteners' },
-  { emoji: '🥛', ar: 'لبن / كريمة', en: 'Milk / cream' },
-  { emoji: '🧃', ar: 'عصائر', en: 'Juices' },
-  { emoji: '🥤', ar: 'مشروبات غازية', en: 'Soft drinks' },
-  { emoji: '🍺', ar: 'أي شيء به سعرات', en: 'Anything with calories' }
+  { icon: 'ban', ar: 'عسل', en: 'Honey' },
+  { icon: 'ban', ar: 'سكر ومحليات صناعية', en: 'Sugar & artificial sweeteners' },
+  { icon: 'ban', ar: 'لبن / كريمة', en: 'Milk / cream' },
+  { icon: 'ban', ar: 'عصائر', en: 'Juices' },
+  { icon: 'ban', ar: 'مشروبات غازية', en: 'Soft drinks' },
+  { icon: 'ban', ar: 'أي شيء به سعرات', en: 'Anything with calories' }
 ];
 
 /* ---------------------------------------------------------------------
@@ -1810,7 +1820,7 @@ function expertInsights() {
 
   /* --- 1. Cardio-only while losing weight: the muscle problem ---------- */
   if (load.total >= 2 && (lastGym === null || lastGym > 10)) {
-    push('resistance', 1, 'warn', '🏋️',
+    push('resistance', 1, 'warn', 'dumbbell',
       ar ? 'كل تمارينك كارديو — ده بياكل من عضلك' : 'All cardio, no resistance',
       ar
         ? 'آخر ١٤ يوم فيهم ' + load.total + ' تمرين، ومفيش ولا واحد مقاومة. '
@@ -1832,7 +1842,7 @@ function expertInsights() {
 
   /* --- 2. Rate of loss ------------------------------------------------- */
   if (trend && trend.pctPerWeek < -1.0) {
-    push('loss_rate', 1, 'warn', '⚖️',
+    push('loss_rate', 1, 'warn', 'scale',
       ar ? 'بتنزل بسرعة أكتر من اللازم' : 'Losing weight too fast',
       ar
         ? 'خط الاتجاه (متوسط ٧ أيام) نازل ' + Math.abs(trend.kgPerWeek).toFixed(2)
@@ -1846,7 +1856,7 @@ function expertInsights() {
           + 'Past 1% a week, a large share of that is muscle and water rather than fat. '
           + 'Slow it to 0.5-1% by eating more inside your window, not by shortening the fast.');
   } else if (trend && trend.pctPerWeek > 0.4) {
-    push('gaining', 2, 'exercise', '⚖️',
+    push('gaining', 2, 'exercise', 'scale',
       ar ? 'الوزن بيزيد' : 'Weight is climbing',
       ar
         ? 'خط الاتجاه طالع ' + trend.kgPerWeek.toFixed(2) + ' كجم في الأسبوع رغم الصيام. '
@@ -1864,7 +1874,7 @@ function expertInsights() {
     for (var i = 0; i < days.length; i++) sum += days[i].cal;
     var avg = sum / days.length;
     if (avg < bmr.value * 1.05) {
-      push('calorie_floor', 1, 'warn', '🔻',
+      push('calorie_floor', 1, 'warn', 'trendDown',
         ar ? 'أكلك تحت أيض الراحة' : 'Intake is below your resting burn',
         ar
           ? 'متوسط أكلك ' + Math.round(avg) + ' سعرة في اليوم على ' + days.length + ' أيام '
@@ -1883,7 +1893,7 @@ function expertInsights() {
 
   /* --- 4. Protein in one sitting --------------------------------------- */
   if (target.grams >= 100) {
-    push('protein_split', 2, 'good', '🍗',
+    push('protein_split', 2, 'good', 'meals',
       ar ? 'قسّم البروتين على جرعتين' : 'Split the protein in two',
       ar
         ? 'هدفك ' + target.grams + ' جم بروتين، ونافذتك ساعات قليلة. الجسم بيستفيد '
@@ -1899,7 +1909,7 @@ function expertInsights() {
   /* --- 5. Intensity distribution --------------------------------------- */
   if (load.avgPct !== null && load.total >= 3) {
     if (load.hard >= load.total * 0.6) {
-      push('intensity', 2, 'exercise', '🚴',
+      push('intensity', 2, 'exercise', 'cycle',
         ar ? 'كل تمارينك عنيفة' : 'Everything is a hard session',
         ar
           ? load.hard + ' من ' + load.total + ' تمارينك في المنطقة العنيفة '
@@ -1917,7 +1927,7 @@ function expertInsights() {
 
   /* --- 6. Recovery: late training, short sleep, stimulants ------------- */
   if (load.late >= 2 && sleepH !== null && sleepH < 7) {
-    push('late_sleep', 1, 'warn', '🌙',
+    push('late_sleep', 1, 'warn', 'moon',
       ar ? 'بتتمرن بالليل وبتنام قليل' : 'Late training on short sleep',
       ar
         ? 'متوسط نومك ' + sleepH.toFixed(1) + ' ساعة، و' + load.late + ' تمرين بدأوا بعد '
@@ -1931,7 +1941,7 @@ function expertInsights() {
           + 'you wake hungrier and find the fast harder. If evening training is fixed, move '
           + 'the hard sessions earlier and leave the night for walking.');
   } else if (sleepH !== null && sleepH < 6.5) {
-    push('short_sleep', 2, 'warn', '🌙',
+    push('short_sleep', 2, 'warn', 'moon',
       ar ? 'النوم قليل' : 'Sleep is short',
       ar
         ? 'متوسط ' + sleepH.toFixed(1) + ' ساعة. تحت ٧ ساعات، الجسم بيميل يخسر عضل بدل '
@@ -1951,7 +1961,7 @@ function expertInsights() {
     if (carbs >= 35 && prot < 10) sugary++;
   }
   if (sugary >= 2) {
-    push('refeed_order', 2, 'warn', '🍰',
+    push('refeed_order', 2, 'warn', 'meals',
       ar ? 'ترتيب الأكل بعد الصيام' : 'The order you break the fast in',
       ar
         ? 'سجّلت ' + sugary + ' صنف عالي الكارب وقليل البروتين آخر أسبوعين. بعد ٢٠ ساعة '
@@ -1970,7 +1980,7 @@ function expertInsights() {
     var hoursNow = fastElapsed(cf) / 3600000;
     var el = electrolytesToday();
     if (hoursNow >= 16 && (el.sodium || 0) < ELECTROLYTE_TARGETS.sodium * 0.4) {
-      push('sodium', 1, 'warn', '🧂',
+      push('sodium', 1, 'warn', 'flame',
         ar ? 'الصوديوم ناقص وإنت في ساعة ' + Math.floor(hoursNow) : 'Sodium is low at hour ' + Math.floor(hoursNow),
         ar
           ? 'مسجّل ' + (el.sodium || 0) + ' مجم صوديوم النهاردة. أثناء الصيام الإنسولين '
@@ -1985,7 +1995,7 @@ function expertInsights() {
 
   /* --- 9. Fibre and micronutrients on OMAD ----------------------------- */
   if (S.get('settings.plan', 'custom') === 'omad' || S.get('settings.defaultGoal', 20) >= 20) {
-    push('fibre', 3, 'good', '🥗',
+    push('fibre', 3, 'good', 'leaf',
       ar ? 'الخضار مش رفاهية في وجبة واحدة' : 'Vegetables are not optional on one meal',
       ar
         ? 'وجبة واحدة معناها فرصة واحدة للألياف والميكرو. استهدف نص الطبق خضار متنوعة '
@@ -2004,93 +2014,38 @@ function expertInsights() {
  * Adaptive coaching — phase + how the user actually feels
  * ------------------------------------------------------------------- */
 
-/** Most recent check-in, or null when none was logged in the last 12h. */
-function latestCheckin() {
-  var list = S.get('checkins', []);
-  if (!list.length) return null;
-  var last = list[list.length - 1];
-  if (Date.now() - last.ts > 12 * 3600000) return null;
-  return last;
-}
-
 /**
- * Builds the coach card list from the fasting phase AND the last check-in.
- * The psychological state changes the advice, not just the hour count: the
- * same 20th hour needs different words when energy is 1 versus 5.
+ * Coach cards for the current phase.
+ *
+ * This used to take a self-reported mood, energy and hunger reading and
+ * branch on it. That input is gone: a 1-5 slider is a worse signal than the
+ * measurements the app now holds, and it was being answered after eating —
+ * when energy is high and hunger low for reasons that say nothing about the
+ * fast. Resting-heart-rate baseline, sleep and training load carry the same
+ * job and are measured rather than guessed.
  */
-function coachAdvice(hours, checkin, fasting) {
+function coachAdvice(hours, fasting) {
   var ar = isRTL();
   var idx = phaseIndexFor(hours);
   var out = [];
 
   out.push({
     tone: 'good',
-    icon: '🧬',
+    icon: 'sparkles',
     title: t('analysis') + ' — ' + (ar ? COACH_AR : COACH_EN)[idx].title,
     text: (ar ? COACH_AR : COACH_EN)[idx].text
   });
 
   out.push({
     tone: 'exercise',
-    icon: '🏃',
+    icon: 'run',
     title: t('exercise_rec'),
     text: (ar ? EXERCISE_AR : EXERCISE_EN)[idx]
   });
 
-  if (!checkin) return out.concat(routineAdvice(hours, fasting));
-
-  var mood = checkin.mood || 3;
-  var energy = checkin.energy || 3;
-  var hunger = checkin.hunger || 3;
-
-  // Hunger — the wave, and what actually blunts it at this phase.
-  if (hunger >= 4) {
-    out.push({
-      tone: 'warn', icon: '🍽️', title: t('coach_hunger_high'),
-      text: ar
-        ? (hours < 12
-            ? 'الجوع في أول ١٢ ساعة أغلبه عادة مش حاجة فعلية. اشرب ٥٠٠ مل مياه برشة ملح، واتحرك ١٠ دقايق — الموجة بتعدّي في ٢٠ دقيقة.'
-            : 'إنت في الكيتوزية والجوع المفروض يقل. لو زاد فجأة بعد ' + Math.floor(hours) + ' ساعة، ده غالباً نقص أملاح مش جوع. صوديوم + بوتاسيوم + مغنيسيوم.')
-        : (hours < 12
-            ? 'Hunger in the first 12h is mostly habit, not need. Drink 500ml with a pinch of salt and move for 10 minutes — the wave passes in about 20.'
-            : 'You are in ketosis and hunger should be fading. A sudden spike at hour ' + Math.floor(hours) + ' usually means electrolytes, not food. Sodium, potassium, magnesium.')
-    });
-  }
-
-  // Energy — the fork between "push on" and "this is your body saying stop".
-  if (energy <= 2) {
-    out.push({
-      tone: hours >= 24 ? 'warn' : 'exercise', icon: '🔋', title: t('coach_energy_low'),
-      text: ar
-        ? (hours >= 24
-            ? 'طاقة منخفضة بعد ٢٤ ساعة تستاهل انتباه. الأول: أملاح ومياه ونوم. لو مع الإرهاق فيه دوخة عند الوقوف أو خفقان أو برودة أطراف — دي علامة توقف، افطر بمرق دافئ.'
-            : 'طاقة منخفضة بدري في الصيام طبيعية وإنت لسه بتتحول لحرق الدهون. قلّل المجهود النهاردة، وخلي حركتك مشي بس، ونام بدري.')
-        : (hours >= 24
-            ? 'Low energy past 24h deserves attention. First: electrolytes, water, sleep. If it comes with dizziness on standing, palpitations or cold hands, that is a stop signal — break the fast with warm broth.'
-            : 'Low energy early in a fast is normal while you switch to fat burning. Cut the effort today, keep movement to walking, and sleep early.')
-    });
-  } else if (energy >= 4 && hours >= 18) {
-    out.push({
-      tone: 'good', icon: '⚡', title: t('coach_all_good'),
-      text: ar
-        ? 'طاقتك عالية بعد ' + Math.floor(hours) + ' ساعة — ده النورإبينفرين والكيتونات شغالين. استغل الوقت ده في شغل ذهني مركّز، بس متستغلوش في تمرين تقيل.'
-        : 'High energy at hour ' + Math.floor(hours) + ' is norepinephrine and ketones doing their job. Spend it on focused mental work, not on a heavy workout.'
-    });
-  }
-
-  // Mood — irritability during a fast is physiological, and it is worth saying so.
-  if (mood <= 2) {
-    out.push({
-      tone: 'warn', icon: '🧠', title: t('coach_mood_low'),
-      text: ar
-        ? 'العصبية وضيق المزاج أثناء الصيام حاجة فسيولوجية: سكر الدم بينزل والكورتيزول بيطلع. مش ضعف إرادة. جرّب ٥ دقايق تنفس بطيء، اخرج لضوء الشمس، وأجّل أي قرار أو نقاش متوتر لبعد الإفطار. ولو المزاج بينزل كل مرة تصوم فيها — ده سبب حقيقي تراجع بيه خطة الصيام مع دكتور.'
-        : 'Irritability while fasting is physiological: blood glucose drops and cortisol rises. It is not weak will. Try five minutes of slow breathing, get into daylight, and postpone any tense decision or argument until after you eat. If your mood drops every single fast, that is a real reason to review the plan with a doctor.'
-    });
-  }
-
   if (fasting && hours >= 48) {
     out.push({
-      tone: 'warn', icon: '⚠️', title: '48h+',
+      tone: 'warn', icon: 'shield', title: '48h+',
       text: t('long_fast_warn')
     });
   }
@@ -2172,7 +2127,7 @@ function routineAdvice(hours, fasting) {
   for (var s = 0; s < sups.length; s++) {
     if (dosesToday(sups[s]) > 1) {
       out.push({
-        tone: 'warn', icon: '💊', title: ar ? 'جرعة مكررة النهاردة' : 'Doubled dose today',
+        tone: 'warn', icon: 'pill', title: ar ? 'جرعة مكررة النهاردة' : 'Doubled dose today',
         text: ar
           ? 'مسجّل أكتر من جرعة من "' + sups[s].name + '" النهاردة. لو ده متعدد فيتامينات، '
             + 'الفيتامينات الذائبة في الدهون (A/D/E) بتتراكم ومبتتخلصش زي فيتامين C. '
@@ -2191,7 +2146,7 @@ function routineAdvice(hours, fasting) {
   var pastCutoff = nowMin > cut.cutoffMin && nowMin < cut.cutoffMin + 600;
   out.push({
     tone: pastCutoff ? 'warn' : 'good',
-    icon: '☕',
+    icon: 'coffee',
     title: ar ? 'الكافيين والنوم' : 'Caffeine and sleep',
     text: ar
       ? 'هدفك تصحى ' + S.get('settings.wakeTime', '09:00') + '، يعني نومك المفروض يبدأ حوالي '
@@ -2215,7 +2170,7 @@ function routineAdvice(hours, fasting) {
     var endMin = we.h * 60 + we.mn;
     if (nowMin >= startMin && nowMin <= endMin && hours >= 16) {
       out.push({
-        tone: 'good', icon: '🍽️', title: ar ? 'نافذة الأكل بتاعتك' : 'Your eating window',
+        tone: 'good', icon: 'meals', title: ar ? 'نافذة الأكل بتاعتك' : 'Your eating window',
         text: ar
           ? 'إنت جوه نافذة الأكل (' + win.start + ' - ' + win.end + ') وكملت '
             + Math.floor(hours) + ' ساعة. '
@@ -2228,25 +2183,6 @@ function routineAdvice(hours, fasting) {
   }
 
   return out;
-}
-
-/** Rolling averages of the last N check-ins, for the trend row. */
-function checkinTrend(n) {
-  var list = S.get('checkins', []);
-  var take = list.slice(Math.max(0, list.length - (n || 7)));
-  if (!take.length) return null;
-  var mood = 0, energy = 0, hunger = 0;
-  for (var i = 0; i < take.length; i++) {
-    mood += take[i].mood || 3;
-    energy += take[i].energy || 3;
-    hunger += take[i].hunger || 3;
-  }
-  return {
-    count: take.length,
-    mood: mood / take.length,
-    energy: energy / take.length,
-    hunger: hunger / take.length
-  };
 }
 
 /* ---------------------------------------------------------------------
@@ -3617,41 +3553,6 @@ function personalAnalysis() {
          : 'Add your age in the profile — one field, and every intensity figure becomes real.');
   }
 
-  /* --- 8. Check-ins logged at the wrong moment ------------------------ */
-  var checkins = S.get('checkins', []);
-  if (checkins.length) {
-    var afterEating = 0;
-    for (var k2 = 0; k2 < checkins.length; k2++) {
-      for (var h2 = 0; h2 < hist.length; h2++) {
-        if (!hist[h2].end) continue;
-        var d2 = (checkins[k2].ts - hist[h2].end) / 3600000;
-        if (d2 >= 0 && d2 <= 3) { afterEating++; break; }
-      }
-    }
-    if (afterEating === checkins.length && checkins.length >= 1) {
-      add('checkin_timing', 'info',
-        ar ? 'بتسجّل حالتك بعد ما تفطر — ودي أقل لحظة مفيدة' : 'You check in after eating, the least useful moment',
-        ar
-          ? (checkins.length === 1
-              ? 'تسجيل حالتك الوحيد اتعمل خلال ٣ ساعات من الفطار. '
-              : 'كل تسجيلات حالتك (' + checkins.length + ') اتعملت خلال ٣ ساعات من الفطار. ')
-            + 'وطبيعي تكون الطاقة عالية والجوع منخفض في اللحظة دي — إنت لسه أكلت.\n\n'
-            + 'المعلومة الحقيقية في الساعة ١٦ لـ٢٠، لما الجليكوجين بيخلص والجسم بيقلب '
-            + 'على الدهون. اللي بيحصل هناك — صداع، تركيز، مزاج، برودة — هو اللي بيقول '
-            + 'إن الصيام ده مناسب لك ولا لأ، وهو اللي بيخلي نصايح المدرب مبنية على حالتك '
-            + 'إنت مش على متوسط الناس.'
-          : 'All ' + checkins.length + ' of your check-ins were logged within three hours of '
-            + 'breaking a fast. Energy high and hunger low at that moment is expected — you had '
-            + 'just eaten.\n\n'
-            + 'The information is at hours 16 to 20, as glycogen runs down and the body turns to '
-            + 'fat. What happens there — headache, focus, mood, feeling cold — is what tells us '
-            + 'whether this protocol suits you, and it is what lets the coach speak to your state '
-            + 'rather than to an average.',
-        ar ? 'سجّل حالتك مرة وإنت في الساعة ١٦-٢٠، مش بعد الأكل.'
-           : 'Log one check-in between hours 16 and 20, not after eating.');
-    }
-  }
-
   var rank = { high: 0, medium: 1, info: 2 };
   out.sort(function (a, b) { return rank[a.severity] - rank[b.severity]; });
   return out;
@@ -3789,6 +3690,310 @@ function monthlyReport(days) {
     : 'Generated by ' + t('app_name') + '. Metabolic figures are estimates, not a medical diagnosis.') + '_');
 
   return L.join('\n');
+}
+
+/* ---------------------------------------------------------------------
+ * Medals
+ *
+ * A deliberate design constraint runs through this list: nothing rewards a
+ * longer fast than the last one. In a fasting app an escalating ladder of
+ * duration badges is an instruction to push past what is safe for the sake of
+ * the badge, and the person most likely to chase it is the one who should
+ * least be doing so. Duration milestones therefore stop at 36 hours and do
+ * not repeat.
+ *
+ * What is rewarded instead is the behaviour that actually moves the numbers:
+ * turning up repeatedly, eating enough protein, lifting something, sleeping,
+ * and logging honestly.
+ * ------------------------------------------------------------------- */
+
+/**
+ * One pass over the data, shared by every medal check, so opening the medals
+ * screen is a single read rather than thirty.
+ */
+function medalContext() {
+  var now = Date.now();
+  var hist = S.get('history', []);
+  var workouts = S.get('workouts', []);
+  var days = S.get('healthDays', []);
+  var i;
+
+  var longest = 0;
+  for (i = 0; i < hist.length; i++) {
+    if ((hist[i].duration || 0) > longest) longest = hist[i].duration;
+  }
+
+  var resistance = 0, easy = 0;
+  for (i = 0; i < workouts.length; i++) {
+    if (workouts[i].type === 'gym') resistance++;
+    var z = hrZone(workouts[i].maxHr);
+    if (z && (z.level === 'easy' || z.level === 'moderate')) easy++;
+  }
+
+  var goodSleep = 0;
+  for (i = 0; i < days.length; i++) {
+    if ((days[i].sleepMs || 0) >= 7 * 3600000) goodSleep++;
+  }
+
+  // Days where logged protein actually cleared the target.
+  var target = proteinTarget().grams;
+  var byDay = {};
+  var meals = S.get('meals', []);
+  for (i = 0; i < meals.length; i++) {
+    var k = dayKey(meals[i].ts);
+    byDay[k] = (byDay[k] || 0) + (meals[i].p || 0) * (meals[i].portions || 1);
+  }
+  var proteinDays = 0;
+  for (var dk in byDay) {
+    if (!Object.prototype.hasOwnProperty.call(byDay, dk)) continue;
+    if (target > 0 && byDay[dk] >= target) proteinDays++;
+  }
+
+  return {
+    now: now,
+    fasts: hist.length,
+    longestH: longest / 3600000,
+    streak: S.get('stats.currentStreak', 0),
+    bestStreak: S.get('stats.bestStreak', 0),
+    loggedDays: completeCalorieDays(365).length,
+    proteinDays: proteinDays,
+    resistance: resistance,
+    easy: easy,
+    goodSleep: goodSleep,
+    weighIns: S.get('profile.weightLog', []).length,
+    reports: S.get('stats.reportsShared', 0)
+  };
+}
+
+/**
+ * Medals. `need` is the threshold and `have` reads the context, so the UI can
+ * show partial progress instead of a locked box with no idea how close it is.
+ */
+var MEDALS = [
+  // --- turning up, repeatedly ---------------------------------------------
+  { k: 'streak3',   tier: 'bronze', group: 'consistency', need: 3,
+    have: function (c) { return c.bestStreak; },
+    ar: 'ثلاث أيام ورا بعض', en: 'Three days running',
+    ar_d: 'البداية دايماً أصعب حاجة.', en_d: 'Starting is always the hard part.' },
+  { k: 'streak7',   tier: 'silver', group: 'consistency', need: 7,
+    have: function (c) { return c.bestStreak; },
+    ar: 'أسبوع كامل', en: 'A full week',
+    ar_d: 'أسبوع متواصل — الجسم بدأ يتعوّد.', en_d: 'Seven straight days; the body has begun to adapt.' },
+  { k: 'streak30',  tier: 'gold',   group: 'consistency', need: 30,
+    have: function (c) { return c.bestStreak; },
+    ar: 'شهر', en: 'A month',
+    ar_d: 'شهر متواصل. ده مبقاش تجربة، ده بقى روتين.',
+    en_d: 'A month unbroken. This stopped being an experiment and became a routine.' },
+  { k: 'fasts50',   tier: 'silver', group: 'consistency', need: 50,
+    have: function (c) { return c.fasts; },
+    ar: '٥٠ صيام', en: '50 fasts',
+    ar_d: 'خمسين مرة قررت وكمّلت.', en_d: 'Fifty times you decided and followed through.' },
+
+  // --- duration, capped on purpose ----------------------------------------
+  { k: 'first16',   tier: 'bronze', group: 'milestone', need: 16,
+    have: function (c) { return c.longestH; },
+    ar: 'أول ١٦ ساعة', en: 'First 16 hours',
+    ar_d: 'الجليكوجين خلص والجسم بدأ يقلب على الدهون.',
+    en_d: 'Glycogen ran down and the body turned to fat.' },
+  { k: 'first20',   tier: 'silver', group: 'milestone', need: 20,
+    have: function (c) { return c.longestH; },
+    ar: 'أول ٢٠ ساعة', en: 'First 20 hours',
+    ar_d: 'الكيتوزية بجد، مش على الورق.', en_d: 'Ketosis for real, not on paper.' },
+  { k: 'first24',   tier: 'gold',   group: 'milestone', need: 24,
+    have: function (c) { return c.longestH; },
+    ar: 'أول ٢٤ ساعة', en: 'First 24 hours',
+    ar_d: 'يوم كامل. وهنا بنقف عن مكافأة المدة — أطول مش أحسن تلقائياً، '
+      + 'واللي بعد كده قرار بينك وبين جسمك مش بينك وبين ميدالية.',
+    en_d: 'A full day. Duration medals stop here on purpose: longer is not automatically '
+      + 'better, and anything beyond this is between you and your body, not you and a badge.' },
+
+  // --- eating like someone who lifts --------------------------------------
+  { k: 'protein7',  tier: 'silver', group: 'nutrition', need: 7,
+    have: function (c) { return c.proteinDays; },
+    ar: 'سبع أيام بروتين كامل', en: 'Seven days on protein',
+    ar_d: 'ده الرقم اللي بيحدد إن النازل دهون ولا عضل.',
+    en_d: 'This is the number that decides whether what you lose is fat or muscle.' },
+  { k: 'logged14',  tier: 'silver', group: 'nutrition', need: 14,
+    have: function (c) { return c.loggedDays; },
+    ar: 'أسبوعين تسجيل صادق', en: 'A fortnight logged honestly',
+    ar_d: 'من غير أرقام أكل، كل نصيحة عن السعرات تخمين. إنت شلت التخمين.',
+    en_d: 'Without intake numbers every calorie recommendation is a guess. You removed the guess.' },
+
+  // --- the gap the coach keeps naming --------------------------------------
+  { k: 'lift1',     tier: 'bronze', group: 'training', need: 1,
+    have: function (c) { return c.resistance; },
+    ar: 'أول تمرين مقاومة', en: 'First resistance session',
+    ar_d: 'أهم تمرين في التطبيق كله — ده اللي بيحمي عضلك وإنت في عجز.',
+    en_d: 'The single most valuable session here: this is what protects muscle in a deficit.' },
+  { k: 'lift8',     tier: 'silver', group: 'training', need: 8,
+    have: function (c) { return c.resistance; },
+    ar: 'تمانية تمارين مقاومة', en: 'Eight resistance sessions',
+    ar_d: 'شهر بمعدل تمرينين في الأسبوع.', en_d: 'A month at two sessions a week.' },
+  { k: 'lift24',    tier: 'gold',   group: 'training', need: 24,
+    have: function (c) { return c.resistance; },
+    ar: '٢٤ تمرين مقاومة', en: '24 resistance sessions',
+    ar_d: 'دي مش تجربة، ده بقى جزء من حياتك.', en_d: 'No longer a trial; part of your life.' },
+  { k: 'easy10',    tier: 'bronze', group: 'training', need: 10,
+    have: function (c) { return c.easy; },
+    ar: 'عشر جلسات هادية', en: 'Ten easy sessions',
+    ar_d: 'الشغل الهادي هو اللي بيبني القاعدة الهوائية، مش العنيف.',
+    en_d: 'The easy volume builds the aerobic base, not the hard days.' },
+
+  // --- recovery, which is where the deficit is won or lost -----------------
+  { k: 'sleep7',    tier: 'silver', group: 'recovery', need: 7,
+    have: function (c) { return c.goodSleep; },
+    ar: 'سبع ليالي نوم كفاية', en: 'Seven nights of real sleep',
+    ar_d: 'تحت ٧ ساعات، العجز بيميل ياخد من العضل. النوم جزء من الخطة.',
+    en_d: 'Under seven hours a deficit tilts toward muscle. Sleep is part of the plan.' },
+  { k: 'weigh30',   tier: 'bronze', group: 'recovery', need: 30,
+    have: function (c) { return c.weighIns; },
+    ar: '٣٠ قراءة وزن', en: '30 weigh-ins',
+    ar_d: 'قراءات كفاية عشان خط الاتجاه يبقى ليه معنى.',
+    en_d: 'Enough readings for the trend line to mean something.' }
+];
+
+var MEDAL_TIERS = { bronze: '#c08457', silver: '#b8c0cc', gold: '#f5a623' };
+
+/**
+ * Every medal with its progress, and the ones newly earned by this call.
+ * Unlock times are persisted so a medal cannot un-earn itself later — a
+ * thirty-day streak you once held stays held even after you break it.
+ *
+ * @return {{list:Array, earned:number, fresh:Array}}
+ */
+function evaluateMedals() {
+  var c = medalContext();
+  var won = S.get('medals', {});
+  var fresh = [];
+  var list = [];
+  var changed = false;
+
+  for (var i = 0; i < MEDALS.length; i++) {
+    var m2 = MEDALS[i];
+    var have = m2.have(c) || 0;
+    var done = have >= m2.need;
+    if (done && !won[m2.k]) {
+      won[m2.k] = Date.now();
+      fresh.push(m2);
+      changed = true;
+    }
+    list.push({
+      medal: m2,
+      // Duration medals compare fractional hours; a progress label reading
+      // "23.333333333333332/24" is a leaked float, not information.
+      have: Math.round(Math.min(have, m2.need) * 10) / 10,
+      need: m2.need,
+      pct: Math.min(100, Math.round(have / m2.need * 100)),
+      at: won[m2.k] || 0,
+      done: !!won[m2.k]
+    });
+  }
+  if (changed) S.set('medals', won);
+
+  var earned = 0;
+  for (var j = 0; j < list.length; j++) if (list[j].done) earned++;
+  return { list: list, earned: earned, fresh: fresh };
+}
+
+/* ---------------------------------------------------------------------
+ * Challenges
+ *
+ * Personal and time-boxed, never social. A leaderboard would have this user
+ * competing on hours fasted, which is the one number that should not be
+ * competed on; a two-week commitment he made to himself is motivation
+ * without that pressure.
+ * ------------------------------------------------------------------- */
+
+var CHALLENGES = [
+  { k: 'lift2x2', days: 14, need: 4, medal: 'lift8',
+    ar: 'أربع تمارين مقاومة في أسبوعين', en: 'Four resistance sessions in a fortnight',
+    ar_d: 'تمرينين في الأسبوع. ده اللي التحليل بيطلبه منك من أسابيع.',
+    en_d: 'Two a week — exactly what the analysis has been asking for.',
+    count: function (since) {
+      var w = S.get('workouts', []), n = 0;
+      for (var i = 0; i < w.length; i++) if (w[i].ts >= since && w[i].type === 'gym') n++;
+      return n;
+    } },
+  { k: 'log7', days: 7, need: 7, medal: 'logged14',
+    ar: 'سبع أيام تسجّل فيها سعراتك', en: 'Seven days with calories logged',
+    ar_d: 'أسبوع واحد بصدق يكفي عشان تعرف الفجوة فين.',
+    en_d: 'One honest week is enough to find the gap.',
+    count: function (since) {
+      var days = completeCalorieDays(Math.ceil((Date.now() - since) / 86400000) + 1);
+      return days.length;
+    } },
+  { k: 'protein10', days: 14, need: 10, medal: 'protein7',
+    ar: 'عشر أيام توصل هدف البروتين', en: 'Ten days hitting your protein target',
+    ar_d: 'الرقم اللي بيحمي عضلك وإنت بتنزل.',
+    en_d: 'The number that protects muscle while the weight comes off.',
+    count: function (since) {
+      var target = proteinTarget().grams;
+      if (!target) return 0;
+      var meals = S.get('meals', []), byDay = {};
+      for (var i = 0; i < meals.length; i++) {
+        if (meals[i].ts < since) continue;
+        var k = dayKey(meals[i].ts);
+        byDay[k] = (byDay[k] || 0) + (meals[i].p || 0) * (meals[i].portions || 1);
+      }
+      var n = 0;
+      for (var d in byDay) {
+        if (Object.prototype.hasOwnProperty.call(byDay, d) && byDay[d] >= target) n++;
+      }
+      return n;
+    } },
+  { k: 'sleep10', days: 14, need: 10, medal: 'sleep7',
+    ar: 'عشر ليالي نوم ٧ ساعات', en: 'Ten nights of seven hours',
+    ar_d: 'النوم هو اللي بيقرر إن النازل دهون ولا عضل، أكتر من التمرين نفسه.',
+    en_d: 'Sleep decides whether the loss is fat or muscle, more than training does.',
+    count: function (since) {
+      var days = S.get('healthDays', []), n = 0;
+      for (var i = 0; i < days.length; i++) {
+        var ts = Date.parse(days[i].date);
+        if (isNaN(ts) || ts < since) continue;
+        if ((days[i].sleepMs || 0) >= 7 * 3600000) n++;
+      }
+      return n;
+    } }
+];
+
+function challengeByKey(k) {
+  for (var i = 0; i < CHALLENGES.length; i++) if (CHALLENGES[i].k === k) return CHALLENGES[i];
+  return null;
+}
+
+/**
+ * The challenge currently running, with progress and time left.
+ * @return {{def:Object, have:number, need:number, pct:number,
+ *           daysLeft:number, done:boolean, expired:boolean}|null}
+ */
+function activeChallenge() {
+  var a = S.get('challenge', null);
+  if (!a || !a.k) return null;
+  var def = challengeByKey(a.k);
+  if (!def) return null;
+
+  var ends = a.startedAt + def.days * 86400000;
+  var have = def.count(a.startedAt);
+  return {
+    def: def,
+    have: Math.min(have, def.need),
+    need: def.need,
+    pct: Math.min(100, Math.round(have / def.need * 100)),
+    daysLeft: Math.max(0, Math.ceil((ends - Date.now()) / 86400000)),
+    done: have >= def.need,
+    expired: Date.now() > ends && have < def.need,
+    startedAt: a.startedAt
+  };
+}
+
+function startChallenge(k) {
+  if (!challengeByKey(k)) return false;
+  S.set('challenge', { k: k, startedAt: Date.now() });
+  return true;
+}
+
+function endChallenge() {
+  S.set('challenge', null);
 }
 
 /* ---------------------------------------------------------------------

@@ -480,7 +480,8 @@ select.setting-input{width:136px;text-align:start}
   background:var(--surface-2);border-radius:var(--r);margin-bottom:6px;
   border:1px solid var(--line-soft);font-size:var(--fs-sm)}
 .liquid-item.forbidden{border-color:rgba(255,77,94,.28);opacity:.72}
-.liquid-emoji{font-size:18px}
+.liquid-ico{display:flex;color:var(--green);flex:none}
+.liquid-item.forbidden .liquid-ico{color:var(--danger)}
 .water-bar{height:10px;border-radius:var(--r-pill);background:var(--surface-3);overflow:hidden;
   margin:var(--s3) 0 6px}
 /* A progress fill is the one place width is worth animating: it is a single
@@ -524,19 +525,6 @@ select.setting-input{width:136px;text-align:start}
 .empty{text-align:center;color:var(--text-3);font-size:var(--fs-sm);padding:var(--s6) var(--s3);
   line-height:1.8}
 
-/* ---------- check-in ---------- */
-.scale-row{margin-bottom:var(--s4)}
-.scale-label{font-size:var(--fs-sm);color:var(--text-2);margin-bottom:var(--s2);font-weight:600}
-.scale-btns{display:flex;gap:6px}
-.scale-btn{flex:1;padding:0;min-height:46px;display:flex;align-items:center;
-  justify-content:center;border:1px solid var(--line);border-radius:var(--r);
-  background:var(--surface-2);color:var(--text-2);font-size:17px;cursor:pointer;
-  line-height:1.2;font-weight:600;
-  transition:border-color var(--t2) var(--ease),color var(--t2) var(--ease),
-  background-color var(--t2) var(--ease)}
-.scale-btn.active{border-color:var(--primary);background:var(--primary-dim);color:var(--text);
-  transform:translateY(-2px)}
-
 /* ---------- sub view ---------- */
 .subview{position:fixed;inset:0;background:var(--bg);z-index:60;display:flex;flex-direction:column;
   animation:slideUp var(--t2) var(--ease)}
@@ -551,6 +539,68 @@ select.setting-input{width:136px;text-align:start}
 [dir="rtl"] .back-btn .ic{transform:scaleX(-1)}
 
 .protein-target{font-size:var(--fs-sm);color:var(--text-2);font-weight:600}
+
+/* ---------- medals & challenges ---------- */
+.medal{width:44px;height:44px;flex:none}
+.medal.locked{opacity:.75}
+.medal-count{display:flex;align-items:baseline;gap:6px;justify-content:center;
+  padding:var(--s3) 0 var(--s4);color:var(--text-3);font-size:var(--fs-sm)}
+.medal-count-n{font-size:var(--fs-2xl);font-weight:700;color:var(--text);
+  font-variant-numeric:tabular-nums}
+.medal-row{display:flex;gap:var(--s3);align-items:flex-start;padding:var(--s3) var(--s4);
+  background:var(--surface);border:1px solid var(--line-soft);border-radius:var(--r-lg);
+  margin-bottom:var(--s2)}
+.medal-row.locked{background:var(--surface-2);border-style:dashed}
+.medal-main{flex:1;min-width:0}
+.medal-name{font-size:var(--fs-md);font-weight:700}
+.medal-row.locked .medal-name{color:var(--text-2)}
+.medal-desc{font-size:var(--fs-xs);color:var(--text-3);line-height:1.6;margin-top:2px}
+.medal-date{font-size:var(--fs-xs);color:var(--green);font-weight:700;margin-top:5px}
+.medal-prog{display:flex;align-items:center;gap:8px;margin-top:7px;
+  font-size:var(--fs-xs);color:var(--text-3);font-variant-numeric:tabular-nums}
+.medal-bar{flex:1;height:5px;border-radius:var(--r-pill);background:var(--surface-3);
+  overflow:hidden}
+.medal-fill{height:100%;border-radius:var(--r-pill);background:var(--primary);
+  transition:width var(--t3) var(--ease)}
+
+/* The celebration. Rays scale out from behind the medal and stop; the medal
+   itself lands with a single overshoot. Transform and opacity only, nothing
+   loops, and reduced-motion collapses all of it. */
+.celebrate-box{text-align:center}
+.burst{position:relative;width:120px;height:120px;margin:0 auto var(--s2);
+  display:flex;align-items:center;justify-content:center}
+.burst .medal{width:74px;height:74px;position:relative;z-index:2;
+  animation:medalIn calc(520ms * var(--motion)) var(--ease) both}
+@keyframes medalIn{
+  0%{opacity:0;transform:scale(.4) rotate(-24deg)}
+  60%{opacity:1;transform:scale(1.14) rotate(4deg)}
+  100%{opacity:1;transform:none}}
+/* Each ray carries its angle as --a, because the keyframes replace transform
+   wholesale — an inline rotation would simply be overwritten. Origin at the
+   top edge so rotate-then-translate throws it outward along its own axis. */
+.ray{position:absolute;top:50%;inset-inline-start:50%;width:3px;height:26px;
+  margin-inline-start:-1.5px;border-radius:2px;background:var(--gold);opacity:0;
+  transform-origin:50% 0;
+  animation:rayOut calc(620ms * var(--motion)) var(--ease) both}
+@keyframes rayOut{
+  0%{opacity:0;transform:rotate(var(--a,0deg)) translateY(6px) scaleY(.25)}
+  45%{opacity:.9}
+  100%{opacity:0;transform:rotate(var(--a,0deg)) translateY(48px) scaleY(1)}}
+.celebrate-kicker{font-size:var(--fs-xs);font-weight:700;letter-spacing:1.4px;
+  text-transform:uppercase;color:var(--gold);margin-bottom:4px}
+
+.ch-name{font-size:var(--fs-md);font-weight:700;line-height:1.6}
+.ch-meta{display:flex;justify-content:space-between;font-size:var(--fs-xs);
+  color:var(--text-3);font-weight:600;font-variant-numeric:tabular-nums}
+.ch-list{margin-top:var(--s3);display:flex;flex-direction:column;gap:var(--s2)}
+.ch-option{display:flex;align-items:center;gap:var(--s3);width:100%;min-height:44px;
+  padding:var(--s3);background:var(--surface-2);border:1px solid var(--line-soft);
+  border-radius:var(--r);cursor:pointer;text-align:start;
+  transition:background-color var(--t1) var(--ease)}
+.ch-option:active{background:var(--surface-3)}
+.ch-main{flex:1;min-width:0;display:flex;flex-direction:column;align-items:flex-start;gap:4px}
+.ch-title{font-size:var(--fs-sm);font-weight:700;color:var(--text);line-height:1.5}
+.ch-sub{font-size:var(--fs-xs);color:var(--text-3);line-height:1.6}
 
 /* ---------- exercise demonstrations ----------
    One rigged figure, animated per movement. Each group rotates about its own

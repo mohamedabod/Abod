@@ -20,7 +20,7 @@ import java.io.OutputStreamWriter;
  */
 public class JsBridge implements NativeListener {
 
-    public static final String VERSION = "8.0";
+    public static final String VERSION = "8.1";
 
     private final MainActivity activity;
     private final WebView web;
@@ -104,12 +104,10 @@ public class JsBridge implements NativeListener {
             e.putBoolean(Reminders.P_WATER, o.optBoolean("water", true));
             e.putBoolean(Reminders.P_MOTIVATION, o.optBoolean("motivation", true));
             e.putBoolean(Reminders.P_WINDOW, o.optBoolean("window", true));
-            e.putBoolean(Reminders.P_CHECKIN, o.optBoolean("checkin", true));
             e.putBoolean(Reminders.P_SUPPLEMENT, o.optBoolean("supplement", false));
             e.putBoolean(Reminders.P_NUDGE, o.optBoolean("nudge", false));
             e.putString(Reminders.P_WINDOW_START, o.optString("windowStart", "17:00"));
             e.putString(Reminders.P_WINDOW_END, o.optString("windowEnd", "21:00"));
-            e.putString(Reminders.P_CHECKIN_TIME, o.optString("checkinTime", "20:00"));
             e.putString(Reminders.P_SUPPLEMENT_TIME, o.optString("supplementTime", "18:00"));
             e.putString(Reminders.P_NUDGE_TIME, o.optString("nudgeTime", "22:00"));
             e.putLong(Reminders.P_BEST_FAST, (long) o.optDouble("bestFastMs", 0));
@@ -132,10 +130,17 @@ public class JsBridge implements NativeListener {
         Reminders.scheduleAll(core.context());
     }
 
+    /** Announces a medal the JS side has just awarded. */
+    @JavascriptInterface
+    public void celebrate(String title, String text) {
+        if (title == null || text == null) return;
+        FastingService.celebrate(core.context(), title, text);
+    }
+
     /** Fires one reminder immediately so the user can see what it looks like. */
     @JavascriptInterface
     public void testReminder(String kind) {
-        Reminders.fire(core.context(), kind == null ? Reminders.K_CHECKIN : kind);
+        Reminders.fire(core.context(), kind == null ? Reminders.K_WINDOW_OPEN : kind);
     }
 
     // ---------------- Band ----------------

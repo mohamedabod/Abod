@@ -27,7 +27,6 @@ public final class Reminders {
 
     public static final String K_WINDOW_OPEN = "window_open";
     public static final String K_WINDOW_CLOSE = "window_close";
-    public static final String K_CHECKIN = "checkin";
     public static final String K_SUPPLEMENT = "supplement";
     public static final String K_START_NUDGE = "start_nudge";
     /** Coaching text composed in JS, where the data lives, delivered here. */
@@ -38,12 +37,10 @@ public final class Reminders {
     public static final String P_WATER = "rem_water";
     public static final String P_MOTIVATION = "rem_motivation";
     public static final String P_WINDOW = "rem_window";
-    public static final String P_CHECKIN = "rem_checkin";
     public static final String P_SUPPLEMENT = "rem_supplement";
     public static final String P_NUDGE = "rem_nudge";
     public static final String P_WINDOW_START = "rem_window_start";
     public static final String P_WINDOW_END = "rem_window_end";
-    public static final String P_CHECKIN_TIME = "rem_checkin_time";
     public static final String P_SUPPLEMENT_TIME = "rem_supplement_time";
     public static final String P_NUDGE_TIME = "rem_nudge_time";
     public static final String P_BEST_FAST = "best_fast_ms";
@@ -73,8 +70,6 @@ public final class Reminders {
         // Half an hour before the window shuts, not at the moment it does.
         daily(ctx, K_WINDOW_CLOSE, p.getBoolean(P_WINDOW, true),
                 p.getString(P_WINDOW_END, "21:00"), -30);
-        daily(ctx, K_CHECKIN, p.getBoolean(P_CHECKIN, true),
-                p.getString(P_CHECKIN_TIME, "20:00"), 0);
         daily(ctx, K_SUPPLEMENT, p.getBoolean(P_SUPPLEMENT, false),
                 p.getString(P_SUPPLEMENT_TIME, "18:00"), 0);
         daily(ctx, K_START_NUDGE, p.getBoolean(P_NUDGE, false),
@@ -173,12 +168,6 @@ public final class Reminders {
                     ar ? "نص ساعة وتقفل النافذة" : "Window closes in 30 minutes",
                     ar ? "لو خلصت أكل، ابدأ الصيام دلوقتي عشان تلحق هدفك بكرة."
                             : "If you are done eating, start the fast now to hit tomorrow's goal.");
-
-        } else if (K_CHECKIN.equals(kind)) {
-            notify(ctx, 4212,
-                    ar ? "إزاي حاسس النهاردة؟" : "How do you feel today?",
-                    ar ? "سجّل مزاجك وطاقتك وجوعك — المدرب بيظبط نصايحه على كده."
-                            : "Log your mood, energy and hunger — the coach adapts to it.");
 
         } else if (K_SUPPLEMENT.equals(kind)) {
             notify(ctx, 4213,

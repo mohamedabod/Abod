@@ -186,7 +186,21 @@ public class FastingService extends Service {
         b.setContentIntent(pi);
         b.setOngoing(true);
         b.setOnlyAlertOnce(true);
-        if (Build.VERSION.SDK_INT >= 24) b.setShowWhen(false);
+
+        // A live chronometer, so the shade ticks by itself between our
+        // updates. Android redraws it every second at no cost to us, which is
+        // the only honest way a notification "animates": the alternative is
+        // waking the service once a second to rewrite a string.
+        if (Build.VERSION.SDK_INT >= 24 && !core.isPaused()) {
+            b.setUsesChronometer(true);
+            b.setWhen(System.currentTimeMillis() - ms);
+            b.setShowWhen(true);
+        } else if (Build.VERSION.SDK_INT >= 24) {
+            // Paused: a running clock would be a lie.
+            b.setUsesChronometer(false);
+            b.setShowWhen(false);
+        }
+
         if (goal > 0) {
             int pct = (int) Math.floor(hours / goal * 100.0);
             if (pct > 100) pct = 100;
@@ -221,6 +235,36 @@ public class FastingService extends Service {
         b.setOngoing(true);
         b.setOnlyAlertOnce(true);
         return b.build();
+    }
+
+    /**
+     * A medal, announced. Uses the alerts channel but a higher priority and a
+     * big style, because unlike a water reminder this is worth looking up for
+     * — and unlike a water reminder it happens a handful of times a year.
+     */
+    static void celebrate(Context ctx, String title, String text) {
+        Intent open = new Intent(ctx, MainActivity.class);
+        open.setFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+        PendingIntent pi = PendingIntent.getActivity(ctx, 4230, open, piFlags(false));
+
+        Notification.Builder b;
+        if (Build.VERSION.SDK_INT >= 26) {
+            b = new Notification.Builder(ctx, CH_ALERTS);
+        } else {
+            b = new Notification.Builder(ctx);
+            b.setPriority(Notification.PRIORITY_HIGH);
+        }
+        b.setContentTitle(title);
+        b.setContentText(text);
+        b.setStyle(new Notification.BigTextStyle().bigText(text));
+        b.setSmallIcon(R.mipmap.ic_launcher);
+        b.setContentIntent(pi);
+        b.setAutoCancel(true);
+        if (Build.VERSION.SDK_INT >= 21) b.setDefaults(Notification.DEFAULT_ALL);
+
+        NotificationManager nm =
+                (NotificationManager) ctx.getSystemService(Context.NOTIFICATION_SERVICE);
+        if (nm != null) nm.notify(4230, b.build());
     }
 
     private void alert(String title, String text, int id) {
