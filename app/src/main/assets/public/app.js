@@ -880,6 +880,7 @@ function PhaseTimeline(props) {
 function HomePage() {
   var st = useState(false); var showStart = st[0], setShowStart = st[1];
   var se = useState(false); var showEdit = se[0], setShowEdit = se[1];
+  var sg = useState(false); var showGoal = sg[0], setShowGoal = sg[1];
   var cf = S.get('currentFast', {});
   var ms = fastElapsed(cf);
   var hours = ms / 3600000;
@@ -900,6 +901,12 @@ function HomePage() {
     })(GOAL_OPTIONS[i]);
   }
 
+  // One filled button per state, and only where a primary action honestly
+  // exists. Mid-fast, before the goal, there is nothing the user should be
+  // urged to press — the ring is the content, so both controls stay quiet and
+  // nothing competes with it. The moment the goal lands, finishing becomes
+  // the natural next step and earns the fill.
+  var reached = cf.active && hours >= goal;
   var controls;
   if (!cf.active) {
     controls = h('div', { className: 'btn-group' },
@@ -908,18 +915,30 @@ function HomePage() {
       h('button', { className: 'btn btn-outline', onClick: function () { setShowStart(true); } },
         h(Icon,{name:'clock',size:17}), t('set_start_time')));
   } else if (cf.pausedAt) {
-    // Ending a fast is how a fast is meant to finish, not a destructive act.
-    // It was red only because red was the loudest colour in the palette.
+    // Paused is a stalled state; getting going again is the way out of it.
     controls = h('div', { className: 'btn-group' },
-      h('button', { className: 'btn btn-green', onClick: resumeFast }, h(Icon,{name:'play',size:17}), t('resume')),
-      h('button', { className: 'btn btn-outline', onClick: stopFast }, h(Icon,{name:'stop',size:17}), t('stop')));
+      h('button', { className: 'btn btn-primary', onClick: resumeFast },
+        h(Icon,{name:'play',size:17}), t('resume')),
+      h('button', { className: 'btn btn-outline', onClick: stopFast },
+        h(Icon,{name:'stop',size:17}), t('stop')));
   } else {
     controls = h('div', { className: 'btn-group' },
-      h('button', { className: 'btn btn-gold', onClick: pauseFast }, h(Icon,{name:'pause',size:17}), t('pause')),
-      h('button', { className: 'btn btn-outline', onClick: stopFast }, h(Icon,{name:'stop',size:17}), t('stop')));
+      h('button', {
+        className: 'btn ' + (reached ? 'btn-primary' : 'btn-outline'),
+        onClick: stopFast
+      }, h(Icon,{name:'stop',size:17}), t('stop')),
+      h('button', { className: 'btn btn-outline', onClick: pauseFast },
+        h(Icon,{name:'pause',size:17}), t('pause')));
   }
 
-  var stateLabel = !cf.active ? t('idle_state') : (cf.pausedAt ? t('paused_state') : t('running_state'));
+  // Reaching the goal is the one moment on this screen worth announcing; it
+  // is also what promotes "end" to the primary action, so the label and the
+  // button change together rather than the button changing on its own.
+  var stateLabel = !cf.active
+    ? t('idle_state')
+    : cf.pausedAt ? t('paused_state')
+    : reached ? t('reached_state')
+    : t('running_state');
 
   return h('div', null,
     h('div', { className: 'hero anim' },
@@ -930,7 +949,7 @@ function HomePage() {
           : h('div', { className: 'timer-goal' }, t('start_prompt')),
         h('div', { className: 'timer-goal' },
           t('fasting_goal') + ': ' + num(goal) + ' ' + t('hours')),
-        h('div', { className: 'timer-state' }, stateLabel)),
+        h('div', { className: 'timer-state' + (reached ? ' reached' : '') }, stateLabel)),
 
       h('div', { className: 'phase-name', style: { color: phase.color } }, phaseName(phase)),
       h('div', { className: 'phase-desc' }, phaseDesc(phase)),
@@ -939,15 +958,26 @@ function HomePage() {
         : null,
 
       h(PhaseTimeline, { hours: hours }),
-      h('div', { className: 'goal-strip' },
-        h('div', { className: 'goal-selector' }, goalBtns)),
+
+      // Picking a goal belongs to the moment before a fast starts. Leaving the
+      // row live mid-fast meant one stray tap silently rewrote the percentage
+      // and the phase countdown for a fast already 14 hours old. Changing it
+      // is still possible while fasting — it just has to be meant.
+      !cf.active
+        ? h('div', { className: 'goal-strip' },
+            h('div', { className: 'goal-selector' }, goalBtns))
+        : null,
       controls,
 
       cf.active ? h('div', { className: 'btn-group', style: { marginTop: '10px' } },
         h('button', {
           className: 'btn btn-sm btn-ghost',
           onClick: function () { setShowEdit(true); }
-        }, h(Icon, { name: 'clock', size: 15 }), t('edit_start'))) : null,
+        }, h(Icon, { name: 'clock', size: 15 }), t('edit_start')),
+        h('button', {
+          className: 'btn btn-sm btn-ghost',
+          onClick: function () { setShowGoal(true); }
+        }, h(Icon, { name: 'timer', size: 15 }), t('change_goal'))) : null,
 
       cf.active && hours >= 48
         ? h('div', { className: 'alert-box' }, t('long_fast_warn'))
@@ -966,7 +996,55 @@ function HomePage() {
       title: t('edit_start'),
       onClose: function () { setShowEdit(false); },
       onPick: function (ts) { setShowEdit(false); adjustFastStart(ts); }
+    }) : null,
+
+    showGoal ? h(GoalModal, {
+      goal: goal,
+      hours: hours,
+      onClose: function () { setShowGoal(false); },
+      onPick: function (g) { setShowGoal(false); setGoal(g); }
     }) : null);
+}
+
+/**
+ * Changing the goal of a fast already under way.
+ *
+ * Shown rather than inlined because the consequence is not obvious: the
+ * percentage, the projected finish and the next-phase countdown are all
+ * recomputed against the new number, on a fast that may be most of a day
+ * old. The sheet states what the change would do before it is made.
+ */
+function GoalModal(props) {
+  var st = useState(props.goal); var pick = st[0], setPick = st[1];
+
+  var btns = [];
+  for (var i = 0; i < GOAL_OPTIONS.length; i++) {
+    (function (g) {
+      btns.push(h('button', {
+        key: 'gm' + g,
+        className: 'goal-btn' + (pick === g ? ' active' : ''),
+        onClick: function () { setPick(g); }
+      }, num(g) + (isRTL() ? 'س' : 'h')));
+    })(GOAL_OPTIONS[i]);
+  }
+
+  var pct = Math.min(100, Math.round(props.hours / pick * 100));
+  var left = (pick - props.hours) * 3600000;
+
+  return h('div', { className: 'modal-overlay', onClick: props.onClose },
+    h('div', { className: 'modal', onClick: function (e) { e.stopPropagation(); } },
+      h('h3', null, t('change_goal')),
+      h('div', { className: 'goal-selector wrap' }, btns),
+      h('div', { className: 'info-box', style: { textAlign: 'center' } },
+        left > 0
+          ? num(pct) + '% ' + t('of_goal') + ' · ' + t('remaining_short') + ' ' + fmtShort(left)
+          : num(pct) + '% ' + t('of_goal') + ' · ' + t('goal_reached')),
+      h('div', { className: 'modal-btns' },
+        h('button', {
+          className: 'btn btn-primary btn-sm',
+          onClick: function () { props.onPick(pick); }
+        }, t('save')),
+        h('button', { className: 'btn btn-outline btn-sm', onClick: props.onClose }, t('cancel')))));
 }
 
 /* ---------------------------------------------------------------------

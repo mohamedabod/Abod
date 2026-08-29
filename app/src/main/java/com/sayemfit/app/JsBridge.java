@@ -20,7 +20,7 @@ import java.io.OutputStreamWriter;
  */
 public class JsBridge implements NativeListener {
 
-    public static final String VERSION = "7.2";
+    public static final String VERSION = "7.3";
 
     private final MainActivity activity;
     private final WebView web;

@@ -147,6 +147,7 @@ button,input,select,textarea{font-family:inherit;font-size:inherit;color:inherit
 .timer-pct{font-size:var(--fs-md);font-weight:700;color:var(--gold)}
 .timer-state{font-size:10px;color:var(--text-3);letter-spacing:1.6px;text-transform:uppercase;
   font-weight:600;margin-top:var(--s1)}
+.timer-state.reached{color:var(--green);font-weight:700}
 
 .phase-name{text-align:center;font-size:var(--fs-xl);font-weight:700;margin-top:var(--s3);
   letter-spacing:-.3px}
@@ -206,6 +207,11 @@ button,input,select,textarea{font-family:inherit;font-size:inherit;color:inherit
   background:linear-gradient(to left,var(--surface),transparent)}
 [dir="rtl"] .goal-strip::before{background:linear-gradient(to left,var(--surface),transparent)}
 [dir="rtl"] .goal-strip::after{background:linear-gradient(to right,var(--surface),transparent)}
+/* In a sheet there is vertical room, so the options wrap instead of
+   scrolling. Nothing is half-cut at an edge, which matters more here: this
+   is the only way to change the goal once a fast is running. */
+.goal-selector.wrap{flex-wrap:wrap;overflow:visible;justify-content:center}
+
 .goal-btn{flex:0 0 auto}
 .goal-btn{padding:0 16px;min-height:44px;display:inline-flex;align-items:center;
   border:1px solid var(--line);border-radius:var(--r-pill);
