@@ -20,7 +20,7 @@ import java.io.OutputStreamWriter;
  */
 public class JsBridge implements NativeListener {
 
-    public static final String VERSION = "8.1";
+    public static final String VERSION = "8.2";
 
     private final MainActivity activity;
     private final WebView web;
@@ -112,6 +112,12 @@ public class JsBridge implements NativeListener {
             e.putString(Reminders.P_NUDGE_TIME, o.optString("nudgeTime", "22:00"));
             e.putLong(Reminders.P_BEST_FAST, (long) o.optDouble("bestFastMs", 0));
             e.putInt("streak", o.optInt("streak", 0));
+            // The scheduler recomputes the Ramadan window itself, so it needs
+            // the inputs rather than the answer.
+            e.putBoolean(Reminders.P_RAMADAN, o.optBoolean("ramadan", false));
+            e.putFloat(Reminders.P_LAT, (float) o.optDouble("lat", 31.2001));
+            e.putFloat(Reminders.P_LON, (float) o.optDouble("lon", 29.9187));
+            e.putString(Reminders.P_SUN_CONV, o.optString("sunConvention", "egypt"));
             e.apply();
         } catch (org.json.JSONException ignored) {
             return;

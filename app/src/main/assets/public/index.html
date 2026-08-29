@@ -108,7 +108,7 @@ button,input,select,textarea{font-family:inherit;font-size:inherit;color:inherit
 @keyframes fadeIn{from{opacity:0}to{opacity:1}}
 @keyframes pop{from{opacity:0;transform:scale(.94)}to{opacity:1;transform:none}}
 @keyframes slideUp{from{transform:translateY(18px);opacity:0}to{transform:none;opacity:1}}
-.anim{animation:rise var(--t2) var(--ease) both}
+.anim{animation:rise var(--t2) var(--ease) backwards}
 .anim-1{animation-delay:.03s}.anim-2{animation-delay:.07s}.anim-3{animation-delay:.11s}
 .anim-4{animation-delay:.15s}.anim-5{animation-delay:.19s}
 
@@ -118,13 +118,23 @@ button,input,select,textarea{font-family:inherit;font-size:inherit;color:inherit
    whole set collapses to nothing under prefers-reduced-motion. */
 
 /* Switching tabs: content arrives from slightly below, which reads as "this
-   replaced that" rather than a hard cut. */
+   replaced that" rather than a hard cut.
+
+   fill-mode is `backwards`, never `both` or `forwards`, and that is load
+   bearing. A filled-forwards animation whose last keyframe is
+   `transform: none` computes to matrix(1,0,0,1,0,0) — an identity matrix,
+   but a matrix all the same, and any transform makes the element a
+   containing block for `position: fixed` descendants. With `both`, every
+   modal and sub-screen rendered inside a tab stopped being fixed to the
+   viewport and collapsed to zero height inside the scrolling tab body.
+   `backwards` applies the from-state before the run and leaves nothing
+   behind after it. */
 @keyframes tabIn{from{opacity:0;transform:translate3d(0,8px,0)}to{opacity:1;transform:none}}
-.tab-anim{animation:tabIn var(--t2) var(--ease) both}
+.tab-anim{animation:tabIn var(--t2) var(--ease) backwards}
 
 /* Cards stagger in behind it. Six steps is enough to read as a sequence; past
    that the last card arrives late enough to feel broken. */
-.stagger > *{animation:tabIn var(--t2) var(--ease) both}
+.stagger > *{animation:tabIn var(--t2) var(--ease) backwards}
 .stagger > *:nth-child(1){animation-delay:calc(20ms * var(--motion))}
 .stagger > *:nth-child(2){animation-delay:calc(45ms * var(--motion))}
 .stagger > *:nth-child(3){animation-delay:calc(70ms * var(--motion))}
@@ -370,7 +380,7 @@ select.setting-input{width:136px;text-align:start}
 /* The armed state of a destructive row action. Sized to sit in the same
    44px slot the icon vacated so the row does not jump when it appears. */
 .confirm-pill{min-height:44px;padding:0 14px;font-size:var(--fs-xs);white-space:nowrap;
-  animation:confirmIn var(--t1) var(--ease) both}
+  animation:confirmIn var(--t1) var(--ease) backwards}
 @keyframes confirmIn{from{opacity:0;transform:scale(.86)}to{opacity:1;transform:none}}
 
 /* ---------- personal analysis ---------- */
@@ -692,7 +702,7 @@ select.setting-input{width:136px;text-align:start}
 .ex-main{flex:1;min-width:0;display:flex;flex-direction:column;align-items:flex-start;gap:4px}
 .ex-name{font-size:var(--fs-md);font-weight:700;color:var(--text)}
 .ex-muscles{font-size:var(--fs-xs);color:var(--text-3)}
-.ex-body{padding:0 var(--s4) var(--s4);animation:tabIn var(--t2) var(--ease) both}
+.ex-body{padding:0 var(--s4) var(--s4);animation:tabIn var(--t2) var(--ease) backwards}
 .ex-cues{padding-inline-start:var(--s5);margin:0}
 .ex-cues li{font-size:var(--fs-sm);color:var(--text-2);line-height:1.85;margin-bottom:5px}
 

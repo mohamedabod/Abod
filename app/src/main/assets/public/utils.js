@@ -6,7 +6,7 @@
  * no destructuring, no classes, no async/await. See README.
  * ===================================================================== */
 
-var APP_VERSION = '8.1';
+var APP_VERSION = '8.2';
 var STORE_KEY = 'sayem_v4';
 var LEGACY_KEY = 'sayem_v3';
 
@@ -496,6 +496,7 @@ var LANG = {
     reached_state: 'وصلت لهدفك',
     change_goal: 'تغيير الهدف', remaining_short: 'باقي',
     confirm_delete: 'متأكد؟',
+    pf_overlaps: 'بيتعارض مع صيام مسجّل:', pf_overlaps_running: 'بيتعارض مع الصيام الشغّال دلوقتي',
     pf_add: 'أضف صيام سابق', pf_edit: 'تعديل الصيام', pf_from: 'من', pf_to: 'إلى',
     pf_manual: 'يدوي', pf_bad_date: 'تاريخ أو وقت غير صالح',
     pf_end_before_start: 'وقت النهاية لازم يكون بعد البداية',
@@ -772,6 +773,7 @@ var LANG = {
     reached_state: 'Goal reached',
     change_goal: 'Change goal', remaining_short: 'left',
     confirm_delete: 'Sure?',
+    pf_overlaps: 'Overlaps a logged fast:', pf_overlaps_running: 'Overlaps the fast running now',
     pf_add: 'Log a past fast', pf_edit: 'Edit fast', pf_from: 'From', pf_to: 'To',
     pf_manual: 'Manual', pf_bad_date: 'Invalid date or time',
     pf_end_before_start: 'The end must come after the start',
@@ -1064,7 +1066,8 @@ function fmtDate(ts) {
 
 function calcBMI(kg, cm) {
   var m2 = (cm / 100) * (cm / 100);
-  return m2 <= 0 ? 0 : kg / m2;
+  // Null, not 0: a BMI of zero is a number the UI will happily print.
+  return (m2 <= 0 || !kg) ? null : kg / m2;
 }
 
 function bmiLabel(bmi) {
@@ -1110,17 +1113,29 @@ function calcBMRLean(leanKg) {
  *
  * @return {{kg: number, source: string}|null}
  */
+/** Plausible bounds for a body scan, applied whichever route it arrived by.
+ *  The entry form clamps these already; Health Connect and a merged export do
+ *  not, and one bad reading otherwise propagates into the resting-burn
+ *  estimate, the protein target and every calorie warning built on them. */
+var BODY_LIMITS = { kg: [25, 350], fatPct: [3, 70], muscleKg: [10, 120], waterPct: [20, 80] };
+
+function inBounds(field, v) {
+  var r = BODY_LIMITS[field];
+  if (!r) return typeof v === 'number' && !isNaN(v);
+  return typeof v === 'number' && !isNaN(v) && v >= r[0] && v <= r[1];
+}
+
 function fatFreeMass() {
   var byFat = latestBodyWith('fatKg');
-  if (byFat && byFat.kg && byFat.fatKg) {
+  if (byFat && inBounds('kg', byFat.kg) && byFat.fatKg > 0 && byFat.fatKg < byFat.kg) {
     return { kg: Math.round((byFat.kg - byFat.fatKg) * 10) / 10, source: 'fat_mass' };
   }
   var byPct = latestBodyWith('fatPct');
-  if (byPct && byPct.kg && byPct.fatPct) {
+  if (byPct && inBounds('kg', byPct.kg) && inBounds('fatPct', byPct.fatPct)) {
     return { kg: Math.round(byPct.kg * (1 - byPct.fatPct / 100) * 10) / 10, source: 'fat_pct' };
   }
   var byMuscle = latestBodyWith('muscleKg');
-  if (byMuscle && byMuscle.muscleKg) {
+  if (byMuscle && inBounds('muscleKg', byMuscle.muscleKg)) {
     return { kg: byMuscle.muscleKg, source: 'muscle' };
   }
   return null;
@@ -1223,7 +1238,8 @@ function normaliseBody(entry) {
   var e = m({}, entry);
   if (e.kg && e.fatPct && !e.fatKg) e.fatKg = Math.round(e.kg * e.fatPct / 10) / 10;
   if (e.kg && e.fatKg && !e.fatPct) e.fatPct = Math.round(e.fatKg / e.kg * 1000) / 10;
-  if (e.kg && e.height) e.bmi = Math.round(calcBMI(e.kg, e.height) * 10) / 10;
+  var bmiRaw = calcBMI(e.kg, e.height);
+  if (bmiRaw !== null) e.bmi = Math.round(bmiRaw * 10) / 10;
   return e;
 }
 
@@ -1517,14 +1533,50 @@ function computeStreak(history) {
   return streak;
 }
 
+/**
+ * History as non-overlapping intervals, oldest first.
+ *
+ * The entry form now refuses to create an overlap, but an imported export or
+ * a merged history from another phone can still contain one, and the totals
+ * used to simply add them: a 19-hour day with a 10-hour entry inside it
+ * reported 29 fasted hours out of a possible 24. Every aggregate reads
+ * through here so a duplicate inflates nothing.
+ */
+function mergedFastIntervals() {
+  var hist = S.get('history', []);
+  var spans = [];
+  for (var i = 0; i < hist.length; i++) {
+    var a = hist[i].start;
+    var b = hist[i].end || (a && hist[i].duration ? a + hist[i].duration : null);
+    if (!a || !b || b <= a) continue;
+    spans.push([a, b]);
+  }
+  spans.sort(function (x, y) { return x[0] - y[0]; });
+
+  var out = [];
+  for (var j = 0; j < spans.length; j++) {
+    var last = out[out.length - 1];
+    if (last && spans[j][0] < last[1]) {
+      if (spans[j][1] > last[1]) last[1] = spans[j][1];
+    } else {
+      out.push([spans[j][0], spans[j][1]]);
+    }
+  }
+  return out;
+}
+
 function recomputeStats() {
   var hist = S.get('history', []);
-  var totalMs = 0, completed = 0, longest = 0;
+  var completed = 0, longest = 0;
   for (var i = 0; i < hist.length; i++) {
-    totalMs += hist[i].duration || 0;
     if (hist[i].completed) completed++;
     if ((hist[i].duration || 0) > longest) longest = hist[i].duration;
   }
+  // Elapsed time actually spent fasting, counted once even where two records
+  // cover the same hours.
+  var merged = mergedFastIntervals();
+  var totalMs = 0;
+  for (var j = 0; j < merged.length; j++) totalMs += merged[j][1] - merged[j][0];
   var streak = computeStreak(hist);
   var best = Math.max(S.get('stats.bestStreak', 0), streak);
   var stats = {
@@ -2205,12 +2257,13 @@ function lastDays(n) {
 
 /** Fasted hours credited to the day each fast ended on. */
 function seriesFastHours(n) {
-  var hist = S.get('history', []);
+  // Merged, so a duplicated record cannot push a day past 24 hours.
+  var merged = mergedFastIntervals();
   var byDay = {};
   var i;
-  for (i = 0; i < hist.length; i++) {
-    var k = dayKey(hist[i].end || hist[i].start);
-    byDay[k] = (byDay[k] || 0) + (hist[i].duration || 0) / 3600000;
+  for (i = 0; i < merged.length; i++) {
+    var k = dayKey(merged[i][1]);
+    byDay[k] = (byDay[k] || 0) + (merged[i][1] - merged[i][0]) / 3600000;
   }
   var days = lastDays(n), values = [], labels = [];
   for (i = 0; i < days.length; i++) {
@@ -3217,7 +3270,8 @@ function exportText() {
   L.push(t('name') + ': ' + (d.profile.name || '-'));
   L.push(t('weight') + ': ' + d.profile.weight);
   L.push(t('height') + ': ' + d.profile.height);
-  L.push(t('bmi') + ': ' + calcBMI(d.profile.weight, d.profile.height).toFixed(1));
+  var bmi = calcBMI(d.profile.weight, d.profile.height);
+  L.push(t('bmi') + ': ' + (bmi === null ? '-' : bmi.toFixed(1)));
   var tdee = bestTDEE(d.profile);
   L.push(t('tdee') + ': ' + (tdee.value === null ? '-' : tdee.value));
   var body = latestBody();
@@ -3261,6 +3315,32 @@ function exportText() {
  * Each section states what was observed, what it implies, and what to do.
  * Sections stay silent unless the record actually supports them.
  * ------------------------------------------------------------------- */
+
+/**
+ * A logged fast that overlaps the given range, or null.
+ *
+ * Nothing stopped a retroactive entry from covering hours already recorded,
+ * and the totals simply added them: one 19-hour day plus a 10-hour entry
+ * inside it reported 29 fasted hours out of 24. That flows into the streak,
+ * the weekly chart, the comparison and the medals.
+ *
+ * @param exceptId the entry being edited, which cannot overlap itself
+ */
+function overlappingFast(start, end, exceptId) {
+  var hist = S.get('history', []);
+  for (var i = 0; i < hist.length; i++) {
+    var e = hist[i];
+    if (exceptId && e.id === exceptId) continue;
+    var a = e.start, b = e.end || e.start;
+    if (!a || !b) continue;
+    if (start < b && end > a) return e;
+  }
+  var cf = S.get('currentFast', {});
+  if (cf.active && cf.startTime && end > cf.startTime) {
+    return { id: 'current', start: cf.startTime, end: Date.now(), running: true };
+  }
+  return null;
+}
 
 /** Gap in hours between consecutive fasts, oldest first. */
 function fastGaps() {
@@ -3593,9 +3673,8 @@ function monthlyReport(days) {
   var tdee = bestTDEE(profile);
   line(ar ? 'الوزن' : 'Weight', profile.weight ? profile.weight + ' kg' : null);
   line(ar ? 'الطول' : 'Height', profile.height ? profile.height + ' cm' : null);
-  if (profile.weight && profile.height) {
-    line('BMI', calcBMI(profile.weight, profile.height).toFixed(1));
-  }
+  var bmiVal = calcBMI(profile.weight, profile.height);
+  if (bmiVal !== null) line('BMI', bmiVal.toFixed(1));
   if (body && body.fatPct) line(ar ? 'نسبة الدهون' : 'Body fat', body.fatPct + '%');
   if (ffm) line(ar ? 'الكتلة الخالية من الدهون' : 'Fat-free mass', ffm.kg + ' kg');
   if (bmr.value) line(ar ? 'أيض الراحة (تقديري)' : 'Resting metabolic rate (est.)', bmr.value + ' kcal');
@@ -4257,9 +4336,8 @@ function reportHtml(days) {
   var tdee = bestTDEE(profile);
   row(ar ? 'الوزن (كجم)' : 'Weight (kg)', profile.weight || null);
   row(ar ? 'الطول (سم)' : 'Height (cm)', profile.height || null);
-  if (profile.weight && profile.height) {
-    row('BMI', calcBMI(profile.weight, profile.height).toFixed(1));
-  }
+  var bmiVal = calcBMI(profile.weight, profile.height);
+  if (bmiVal !== null) row('BMI', bmiVal.toFixed(1));
   if (body && body.fatPct) row(ar ? 'نسبة الدهون' : 'Body fat', body.fatPct + '%');
   if (ffm) row(ar ? 'الكتلة الخالية من الدهون (كجم)' : 'Fat-free mass (kg)', ffm.kg);
   if (bmr.value) row(ar ? 'أيض الراحة التقديري (سعرة)' : 'Resting burn, est. (kcal)', bmr.value);

@@ -44,6 +44,12 @@ public final class Reminders {
     public static final String P_SUPPLEMENT_TIME = "rem_supplement_time";
     public static final String P_NUDGE_TIME = "rem_nudge_time";
     public static final String P_BEST_FAST = "best_fast_ms";
+    // Ramadan: the window is recomputed here each time an alarm is armed,
+    // because the sun moves and a stored time does not.
+    public static final String P_RAMADAN = "rem_ramadan";
+    public static final String P_LAT = "rem_lat";
+    public static final String P_LON = "rem_lon";
+    public static final String P_SUN_CONV = "rem_sun_conv";
 
     /** Water nudges while fasting. */
     public static final long WATER_INTERVAL_MS = 2 * 3600000L;
@@ -65,11 +71,24 @@ public final class Reminders {
         core.init(ctx);
         SharedPreferences p = core.prefs();
 
-        daily(ctx, K_WINDOW_OPEN, p.getBoolean(P_WINDOW, true),
-                p.getString(P_WINDOW_START, "17:00"), 0);
+        // In Ramadan the window is maghrib to fajr and moves every day, so it
+        // is computed now rather than replayed from whatever JS last stored.
+        String open = p.getString(P_WINDOW_START, "17:00");
+        String close = p.getString(P_WINDOW_END, "21:00");
+        if (p.getBoolean(P_RAMADAN, false)) {
+            long now = System.currentTimeMillis();
+            String conv = p.getString(P_SUN_CONV, "egypt");
+            double lat = p.getFloat(P_LAT, 31.2001f);
+            double lon = p.getFloat(P_LON, 29.9187f);
+            String maghrib = SunTimes.format(now, lat, lon, conv, false);
+            String fajr = SunTimes.format(now + 86400000L, lat, lon, conv, true);
+            if (maghrib != null) open = maghrib;
+            if (fajr != null) close = fajr;
+        }
+
+        daily(ctx, K_WINDOW_OPEN, p.getBoolean(P_WINDOW, true), open, 0);
         // Half an hour before the window shuts, not at the moment it does.
-        daily(ctx, K_WINDOW_CLOSE, p.getBoolean(P_WINDOW, true),
-                p.getString(P_WINDOW_END, "21:00"), -30);
+        daily(ctx, K_WINDOW_CLOSE, p.getBoolean(P_WINDOW, true), close, -30);
         daily(ctx, K_SUPPLEMENT, p.getBoolean(P_SUPPLEMENT, false),
                 p.getString(P_SUPPLEMENT_TIME, "18:00"), 0);
         daily(ctx, K_START_NUDGE, p.getBoolean(P_NUDGE, false),
@@ -82,7 +101,7 @@ public final class Reminders {
         // Ninety minutes into the window: late enough that the first plate is
         // done, early enough that a second dose is not a midnight snack.
         daily(ctx, K_INSIGHT_PROTEIN, p.getBoolean("ins_protein_on", true),
-                p.getString("ins_protein_time", p.getString(P_WINDOW_START, "17:00")), 90);
+                p.getString("ins_protein_time", open), 90);
     }
 
     /** Stores one insight's text; scheduleAll arms the alarm for it. */
@@ -126,8 +145,16 @@ public final class Reminders {
         if (c.getTimeInMillis() <= System.currentTimeMillis()) {
             c.add(Calendar.DAY_OF_YEAR, 1);
         }
-        am.setInexactRepeating(AlarmManager.RTC_WAKEUP, c.getTimeInMillis(),
-                AlarmManager.INTERVAL_DAY, pi);
+        // One shot, re-armed after each firing, rather than a repeating alarm.
+        //
+        // INTERVAL_DAY is exactly 24 hours of elapsed time, not "the same time
+        // tomorrow". Egypt observes daylight saving, so a repeating alarm set
+        // once drifted an hour at every changeover and stayed wrong until
+        // something rescheduled it — which only happened on boot or when a
+        // setting changed. Re-arming through Calendar re-reads the wall clock,
+        // so the hour survives the change; and it is what lets Ramadan work at
+        // all, since the window moves a little every day.
+        am.set(AlarmManager.RTC_WAKEUP, c.getTimeInMillis(), pi);
     }
 
     static int[] parseTime(String hhmm) {
@@ -150,6 +177,9 @@ public final class Reminders {
     public static void fire(Context ctx, String kind) {
         AppCore core = AppCore.get();
         core.init(ctx);
+        // Alarms are one-shot, so tomorrow's has to be booked now. Done first
+        // so an exception in the notification below cannot end the schedule.
+        scheduleAll(ctx);
         boolean ar = core.isArabic();
         SharedPreferences p = core.prefs();
         boolean fasting = core.isFasting();

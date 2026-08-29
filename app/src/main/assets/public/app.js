@@ -147,7 +147,13 @@ function syncReminders() {
     supplementTime: r.supplementTime || '18:00',
     nudgeTime: r.nudgeTime || '22:00',
     bestFastMs: stats.longest || 0,
-    streak: stats.currentStreak || 0
+    streak: stats.currentStreak || 0,
+    // Native recomputes the Ramadan window when it arms each alarm, so it
+    // gets the coordinates rather than today's answer.
+    ramadan: !!S.get('settings.ramadan', false),
+    lat: parseFloat(S.get('settings.lat', DEFAULT_COORDS.lat)) || DEFAULT_COORDS.lat,
+    lon: parseFloat(S.get('settings.lon', DEFAULT_COORDS.lon)) || DEFAULT_COORDS.lon,
+    sunConvention: S.get('settings.sunConvention', 'egypt')
   }));
 }
 
@@ -326,6 +332,20 @@ function setGoal(g) {
 /* ---------------------------------------------------------------------
  * Shared little components
  * ------------------------------------------------------------------- */
+
+/**
+ * Renders a full-screen overlay into <body>, wherever it is written.
+ *
+ * A modal is `position: fixed`, which only means "fixed to the viewport"
+ * while no ancestor carries a transform, filter or perspective. Anything
+ * rendered inside a tab body fails that test the moment the tab body
+ * animates, and the modal silently becomes a zero-height box inside a scroll
+ * container instead of covering the screen. Portalling to <body> means an
+ * overlay's position stops depending on which component rendered it.
+ */
+function Overlay(props) {
+  return ReactDOM.createPortal(props.children, document.body);
+}
 
 function Card(props) {
   return h('div', {
@@ -1029,7 +1049,7 @@ function GoalModal(props) {
   var pct = Math.min(100, Math.round(props.hours / pick * 100));
   var left = (pick - props.hours) * 3600000;
 
-  return h('div', { className: 'modal-overlay', onClick: props.onClose },
+  return h(Overlay, null, h('div', { className: 'modal-overlay', onClick: props.onClose },
     h('div', { className: 'modal', onClick: function (e) { e.stopPropagation(); } },
       h('h3', null, t('change_goal')),
       h('div', { className: 'goal-selector' }, btns),
@@ -1042,7 +1062,7 @@ function GoalModal(props) {
           className: 'btn btn-primary btn-sm',
           onClick: function () { props.onPick(pick); }
         }, t('save')),
-        h('button', { className: 'btn btn-outline btn-sm', onClick: props.onClose }, t('cancel')))));
+        h('button', { className: 'btn btn-outline btn-sm', onClick: props.onClose }, t('cancel'))))));
 }
 
 /* ---------------------------------------------------------------------
@@ -1391,7 +1411,7 @@ function StartTimeModal(props) {
     })(quick[i]);
   }
 
-  return h('div', { className: 'modal-overlay', onClick: props.onClose },
+  return h(Overlay, null, h('div', { className: 'modal-overlay', onClick: props.onClose },
     h('div', { className: 'modal', onClick: function (e) { e.stopPropagation(); } },
       h('h3', null, props.title || t('set_start_time')),
 
@@ -1430,7 +1450,7 @@ function StartTimeModal(props) {
           disabled: future,
           onClick: function () { props.onPick(ts); }
         }, t('confirm')),
-        h('button', { className: 'btn btn-outline btn-sm', onClick: props.onClose }, t('cancel')))));
+        h('button', { className: 'btn btn-outline btn-sm', onClick: props.onClose }, t('cancel'))))));
 }
 
 /**
@@ -1479,11 +1499,19 @@ function PastFastModal(props) {
   var dur = valid ? endTs - startTs : 0;
   var tooLong = dur > 14 * 86400000;
 
+  var clash = valid ? overlappingFast(startTs, endTs, edit ? edit.id : null) : null;
+
   var err = null;
   if (isNaN(startTs) || isNaN(endTs)) err = t('pf_bad_date');
   else if (endTs <= startTs) err = t('pf_end_before_start');
   else if (endTs > Date.now() + 60000) err = t('pf_future');
   else if (tooLong) err = t('pf_too_long');
+  else if (clash) {
+    err = clash.running
+      ? t('pf_overlaps_running')
+      : t('pf_overlaps') + ' ' + fmtDate(clash.start) + ' ' + fmtTimeOfDay(clash.start)
+        + ' → ' + fmtTimeOfDay(clash.end);
+  }
 
   function pair(label, dateVal, setDate, timeVal, setTime) {
     return h('div', { style: { marginBottom: 'var(--s3)' } },
@@ -1513,7 +1541,7 @@ function PastFastModal(props) {
     })(goals[gi]);
   }
 
-  return h('div', { className: 'modal-overlay', onClick: props.onClose },
+  return h(Overlay, null, h('div', { className: 'modal-overlay', onClick: props.onClose },
     h('div', { className: 'modal', onClick: function (ev) { ev.stopPropagation(); } },
       h('h3', null, edit ? t('pf_edit') : t('pf_add')),
 
@@ -1532,10 +1560,10 @@ function PastFastModal(props) {
       h('div', { className: 'modal-btns' },
         h('button', {
           className: 'btn btn-primary btn-sm',
-          disabled: !valid,
+          disabled: !valid || !!clash,
           onClick: function () { props.onSave(startTs, endTs, parseInt(goal, 10) || 20); }
         }, t('save')),
-        h('button', { className: 'btn btn-outline btn-sm', onClick: props.onClose }, t('cancel')))));
+        h('button', { className: 'btn btn-outline btn-sm', onClick: props.onClose }, t('cancel'))))));
 }
 
 /**
@@ -1567,7 +1595,9 @@ function savePastFast(startTs, endTs, goal, editId) {
       entry.avgHr = hist[i].avgHr || 0;
       entry.maxHr = hist[i].maxHr || 0;
       entry.steps = hist[i].steps || 0;
-      entry.manual = hist[i].manual || true;
+      // `hist[i].manual || true` is always true — it relabelled every
+      // sensor-recorded fast as manual the first time it was edited.
+      entry.manual = !!hist[i].manual;
       hist[i] = entry;
       break;
     }
@@ -1863,7 +1893,7 @@ function MealsPage() {
       }
     }) : null,
 
-    pending ? h('div', { className: 'modal-overlay', onClick: function () { setPending(null); } },
+    pending ? h(Overlay, null, h('div', { className: 'modal-overlay', onClick: function () { setPending(null); } },
       h('div', { className: 'modal', onClick: function (e) { e.stopPropagation(); } },
         h('h3', null, t('eating_while_fasting')),
         h('div', { className: 'modal-btns', style: { flexDirection: 'column' } },
@@ -1882,7 +1912,7 @@ function MealsPage() {
           h('button', {
             className: 'btn btn-outline btn-block',
             onClick: function () { setPending(null); }
-          }, t('cancel'))))) : null);
+          }, t('cancel')))))) : null);
 }
 
 /* ---------------------------------------------------------------------
@@ -2432,7 +2462,7 @@ function BodyScanModal(props) {
   var s3 = useState(''); var muscle = s3[0], setMuscle = s3[1];
   var s4 = useState(''); var water = s4[0], setWater = s4[1];
 
-  return h('div', { className: 'modal-overlay', onClick: props.onClose },
+  return h(Overlay, null, h('div', { className: 'modal-overlay', onClick: props.onClose },
     h('div', { className: 'modal', onClick: function (e) { e.stopPropagation(); } },
       h('h3', null, t('add_scan')),
       h(SettingRow, { label: t('weight') },
@@ -2459,7 +2489,7 @@ function BodyScanModal(props) {
             props.onSave(entry);
           }
         }, t('save')),
-        h('button', { className: 'btn btn-outline btn-sm', onClick: props.onClose }, t('cancel')))));
+        h('button', { className: 'btn btn-outline btn-sm', onClick: props.onClose }, t('cancel'))))));
 }
 
 /* ---------------------------------------------------------------------
@@ -2550,7 +2580,7 @@ function WorkoutModal(props) {
     })(WORKOUT_TYPES[i]);
   }
 
-  return h('div', { className: 'modal-overlay', onClick: props.onClose },
+  return h(Overlay, null, h('div', { className: 'modal-overlay', onClick: props.onClose },
     h('div', { className: 'modal', onClick: function (e) { e.stopPropagation(); } },
       h('h3', null, t('add_workout')),
       h('div', { className: 'goal-selector' }, typeBtns),
@@ -2578,7 +2608,7 @@ function WorkoutModal(props) {
             });
           }
         }, t('save')),
-        h('button', { className: 'btn btn-outline btn-sm', onClick: props.onClose }, t('cancel')))));
+        h('button', { className: 'btn btn-outline btn-sm', onClick: props.onClose }, t('cancel'))))));
 }
 
 /* ---------------------------------------------------------------------
@@ -2857,7 +2887,7 @@ function MedalCelebration(props) {
       style: { '--a': (i * 36) + 'deg', animationDelay: (i * 18) + 'ms' }
     }));
   }
-  return h('div', { className: 'modal-overlay celebrate', onClick: props.onClose },
+  return h(Overlay, null, h('div', { className: 'modal-overlay celebrate', onClick: props.onClose },
     h('div', { className: 'modal celebrate-box', onClick: function (e) { e.stopPropagation(); } },
       h('div', { className: 'burst' }, rays,
         h(Medal, { tier: props.medal.tier, fresh: true })),
@@ -2866,7 +2896,7 @@ function MedalCelebration(props) {
       h('div', { className: 'tip-text', style: { textAlign: 'center' } },
         isRTL() ? props.medal.ar_d : props.medal.en_d),
       h('div', { className: 'modal-btns' },
-        h('button', { className: 'btn btn-primary btn-sm', onClick: props.onClose }, t('nice')))));
+        h('button', { className: 'btn btn-primary btn-sm', onClick: props.onClose }, t('nice'))))));
 }
 
 /** The shelf: what has been earned, and how close the rest are. */
@@ -3572,7 +3602,7 @@ function SettingsPage() {
       if (SECTIONS[si].k === sub) { open = SECTIONS[si]; break; }
     }
     if (open) {
-      return h('div', { className: 'subview' },
+      return h(Overlay, null, h('div', { className: 'subview' },
         h('div', { className: 'subview-hdr' },
           h('button', { className: 'back-btn', onClick: function () { setSub(null); } },
             h(Icon, { name: 'back', size: 22 })),
@@ -3580,7 +3610,7 @@ function SettingsPage() {
         h('div', { className: 'subview-body' },
           open.body(),
 
-    showImport ? h('div', { className: 'modal-overlay', onClick: function () { setShowImport(false); } },
+    showImport ? h(Overlay, null, h('div', { className: 'modal-overlay', onClick: function () { setShowImport(false); } },
       h('div', { className: 'modal', onClick: function (e) { e.stopPropagation(); } },
         h('h3', null, t('import_data')),
         h('textarea', {
@@ -3619,9 +3649,9 @@ function SettingsPage() {
             className: 'btn btn-outline btn-block btn-sm',
             onClick: function () { setShowImport(false); }
           }, t('cancel'))),
-        h('div', { className: 'alert-box' }, t('import_replace_warn')))) : null,
+        h('div', { className: 'alert-box' }, t('import_replace_warn'))))) : null,
 
-    confirmReset ? h('div', { className: 'modal-overlay', onClick: function () { setConfirmReset(false); } },
+    confirmReset ? h(Overlay, null, h('div', { className: 'modal-overlay', onClick: function () { setConfirmReset(false); } },
       h('div', { className: 'modal', onClick: function (e) { e.stopPropagation(); } },
         h('h3', null, t('reset_confirm')),
         h('div', { className: 'modal-btns' },
@@ -3638,7 +3668,7 @@ function SettingsPage() {
           h('button', {
             className: 'btn btn-outline btn-sm',
             onClick: function () { setConfirmReset(false); }
-          }, t('cancel'))))) : null));
+          }, t('cancel')))))) : null)));
     }
   }
 
@@ -3999,13 +4029,24 @@ function ManualMealModal(props) {
   function save() {
     var trimmed = (name || '').replace(/^\s+|\s+$/g, '');
     if (!trimmed) { toast(t('meal_name')); return; }
+    // A blank field is unknown, not zero. The whole nutrition layer turns on
+    // that distinction: todayMacros counts unknowns separately and
+    // completeCalorieDays drops any day containing one. Storing 0 made a
+    // meal with no macros look like a fully logged 0 kcal day, and the coach
+    // then reported an average intake of zero and warned the user he was
+    // eating below his resting burn — from numbers he never entered.
+    // BodyScanModal and WorkoutModal already do this correctly.
+    function orNull(v) {
+      var n = parseFloat(v);
+      return isNaN(n) ? null : n;
+    }
     var food = {
       k: 'custom_' + uid(),
       ar: trimmed, en: trimmed,
-      cal: parseFloat(cal) || 0,
-      p: parseFloat(prot) || 0,
-      c: parseFloat(carb) || 0,
-      f: parseFloat(fat) || 0,
+      cal: orNull(cal),
+      p: orNull(prot),
+      c: orNull(carb),
+      f: orNull(fat),
       custom: true
     };
     if (toDb) {
@@ -4017,7 +4058,7 @@ function ManualMealModal(props) {
     props.onSave(food, photo);
   }
 
-  return h('div', { className: 'modal-overlay', onClick: props.onClose },
+  return h(Overlay, null, h('div', { className: 'modal-overlay', onClick: props.onClose },
     h('div', { className: 'modal', onClick: function (e) { e.stopPropagation(); } },
       h('h3', null, t('manual_meal')),
       h(TextField, {
@@ -4055,7 +4096,7 @@ function ManualMealModal(props) {
         }, t('remove_photo'))) : null,
       h('div', { className: 'modal-btns' },
         h('button', { className: 'btn btn-primary btn-sm', onClick: save }, t('save')),
-        h('button', { className: 'btn btn-outline btn-sm', onClick: props.onClose }, t('cancel')))));
+        h('button', { className: 'btn btn-outline btn-sm', onClick: props.onClose }, t('cancel'))))));
 }
 
 /* ---------------------------------------------------------------------
