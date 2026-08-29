@@ -395,6 +395,39 @@ function ReminderToggle(props) {
     h(Switch, { on: on, onChange: function () { set(props.k, !on); } }));
 }
 
+/**
+ * A destructive row action that will not fire on the first tap.
+ *
+ * A modal for deleting one logged meal is more ceremony than the act
+ * deserves, but an immediate delete sitting behind a small target is how
+ * records quietly disappear. Arming costs an extra tap only to the person
+ * who meant it, and the button disarms itself so a stray tap cannot leave a
+ * primed delete waiting in a list.
+ */
+function DeleteButton(props) {
+  var st = useState(false); var armed = st[0], setArmed = st[1];
+
+  useEffect(function () {
+    if (!armed) return;
+    var id = setTimeout(function () { setArmed(false); }, 3000);
+    return function () { clearTimeout(id); };
+  }, [armed]);
+
+  if (!armed) {
+    return h('button', {
+      className: 'icon-btn danger',
+      'aria-label': props.label || t('delete'),
+      onClick: function () { setArmed(true); }
+    }, h(Icon, { name: 'trash', size: 17 }));
+  }
+
+  return h('button', {
+    className: 'btn btn-sm btn-danger confirm-pill',
+    'aria-label': props.label || t('delete'),
+    onClick: function () { setArmed(false); props.onConfirm(); }
+  }, t('confirm_delete'));
+}
+
 function SettingRow(props) {
   return h('div', { className: 'row' },
     h('div', { className: 'row-main' },
@@ -1698,7 +1731,7 @@ function MealsPage() {
         h('button', { className: 'icon-btn', onClick: function () { changePortion(it.id, -0.5); } }, h(Icon,{name:'minus',size:16})),
         h('span', { className: 'row-end' }, '×' + it.portions),
         h('button', { className: 'icon-btn', onClick: function () { changePortion(it.id, 0.5); } }, h(Icon,{name:'plus',size:16})),
-        h('button', { className: 'icon-btn danger', onClick: function () { removeMeal(it.id); } }, h(Icon, { name: 'trash', size: 17 }))));
+        h(DeleteButton, { onConfirm: function () { removeMeal(it.id); } })));
     })(today[k2]);
   }
 
@@ -2057,11 +2090,7 @@ function ProgressPage() {
           'aria-label': t('edit'),
           onClick: function () { setEditing(e); }
         }, h(Icon, { name: 'edit', size: 17 })),
-        h('button', {
-          className: 'icon-btn danger',
-          'aria-label': t('delete'),
-          onClick: function () { deleteHistory(e.id); }
-        }, h(Icon, { name: 'trash', size: 17 }))));
+        h(DeleteButton, { onConfirm: function () { deleteHistory(e.id); } })));
     })(hist[k]);
   }
 
@@ -2238,9 +2267,8 @@ function BodyCompCard() {
             fmtDate(e.ts)
             + (e.muscleKg ? ' · ' + t('muscle_kg') + ' ' + num(e.muscleKg) : '')
             + (e.waterPct ? ' · ' + t('water_pct') + ' ' + num(e.waterPct) : ''))),
-        h('button', {
-          className: 'icon-btn danger',
-          onClick: function () {
+        h(DeleteButton, {
+          onConfirm: function () {
             var kept = [];
             var all = S.get('bodyLog', []);
             for (var j = 0; j < all.length; j++) if (all[j].ts !== e.ts) kept.push(all[j]);
@@ -2248,7 +2276,7 @@ function BodyCompCard() {
             toast(t('deleted'));
             refresh();
           }
-        }, h(Icon, { name: 'trash', size: 17 }))));
+        })));
     })(log[i]);
   }
 
@@ -2379,9 +2407,8 @@ function WorkoutCard() {
             + (w.maxHr ? ' · ' + num(w.maxHr) + ' ' + t('bpm') : '')
             + (z ? ' · ' + t('zone_' + z.level) : '')
             + (fasted !== null ? ' · ' + t('fasted_workout') + ' ' + num(Math.floor(fasted)) + t('hour_short') : ''))),
-        h('button', {
-          className: 'icon-btn danger',
-          onClick: function () {
+        h(DeleteButton, {
+          onConfirm: function () {
             var kept = [];
             var all = S.get('workouts', []);
             for (var x = 0; x < all.length; x++) if (all[x].id !== w.id) kept.push(all[x]);
@@ -2389,7 +2416,7 @@ function WorkoutCard() {
             toast(t('deleted'));
             refresh();
           }
-        }, h(Icon, { name: 'trash', size: 17 }))));
+        })));
     })(list[i]);
   }
 
@@ -2663,10 +2690,9 @@ function AppearanceCard() {
       swatches.push(h('button', {
         key: 'ac' + c.k,
         className: 'swatch' + (accent === c.k ? ' on' : ''),
-        style: { background: c.hex },
         'aria-label': c.k,
         onClick: function () { set('accent', c.k); }
-      }));
+      }, h('i', { style: { background: c.hex } })));
     })(ACCENTS[a]);
   }
 
@@ -3383,9 +3409,8 @@ function RouteCard() {
           h('div', { className: 'row-sub' },
             fmtDate(r.end) + ' · ' + fmtShort(r.elapsedMs)
             + ' · ' + fmtPace(r.paceSecPerKm) + ' ' + t('min_per_km'))),
-        h('button', {
-          className: 'icon-btn danger',
-          onClick: function () {
+        h(DeleteButton, {
+          onConfirm: function () {
             var kept = [];
             var all = S.get('routes', []);
             for (var j = 0; j < all.length; j++) if (all[j].id !== r.id) kept.push(all[j]);
@@ -3393,7 +3418,7 @@ function RouteCard() {
             toast(t('deleted'));
             refresh();
           }
-        }, h(Icon, { name: 'trash', size: 17 }))));
+        })));
     })(routes[i]);
   }
 

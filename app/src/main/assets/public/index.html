@@ -185,8 +185,8 @@ button,input,select,textarea{font-family:inherit;font-size:inherit;color:inherit
 .btn-danger{background:var(--danger-dim);border:1px solid var(--danger);color:var(--danger)}
 .btn-danger-solid{background:var(--danger);color:#fff}
 .btn-outline{background:var(--surface-2);border:1px solid var(--line);color:var(--text-2)}
-.btn-ghost{background:transparent;color:var(--text-2);padding:8px 12px}
-.btn-sm{padding:9px 15px;font-size:var(--fs-sm)}
+.btn-ghost{background:transparent;color:var(--text-2);padding:0 14px;min-height:44px}
+.btn-sm{padding:0 16px;min-height:44px;font-size:var(--fs-sm)}
 .btn-block{width:100%}
 .btn-group{display:flex;gap:var(--s2);justify-content:center;flex-wrap:wrap;margin-top:var(--s4)}
 
@@ -207,9 +207,11 @@ button,input,select,textarea{font-family:inherit;font-size:inherit;color:inherit
 [dir="rtl"] .goal-strip::before{background:linear-gradient(to left,var(--surface),transparent)}
 [dir="rtl"] .goal-strip::after{background:linear-gradient(to right,var(--surface),transparent)}
 .goal-btn{flex:0 0 auto}
-.goal-btn{padding:7px 14px;border:1px solid var(--line);border-radius:var(--r-pill);
+.goal-btn{padding:0 16px;min-height:44px;display:inline-flex;align-items:center;
+  border:1px solid var(--line);border-radius:var(--r-pill);
   background:var(--surface-2);color:var(--text-2);font-size:var(--fs-sm);font-weight:700;
-  cursor:pointer;transition:all .2s var(--ease)}
+  cursor:pointer;transition:border-color .2s var(--ease),color .2s var(--ease),
+  background-color .2s var(--ease)}
 .goal-btn.active{border-color:var(--primary);color:var(--primary);background:var(--primary-dim)}
 
 /* ---------- stats ---------- */
@@ -251,8 +253,13 @@ button,input,select,textarea{font-family:inherit;font-size:inherit;color:inherit
 .row-title{font-size:var(--fs-md);font-weight:600;letter-spacing:-.1px}
 .row-sub{font-size:var(--fs-xs);color:var(--text-3);margin-top:2px}
 .row-end{font-size:var(--fs-sm);color:var(--text-2);white-space:nowrap;font-weight:600}
-.icon-btn{background:none;border:none;color:var(--text-3);cursor:pointer;padding:6px;
-  display:flex;align-items:center;border-radius:var(--r-sm);transition:color .2s,background .2s}
+/* 44px is the smallest target a thumb hits reliably; the glyph stays 17px
+   and the rest is transparent padding, so the row does not grow to pay for
+   it. The negative margin claws back the extra width in dense rows. */
+.icon-btn{background:none;border:none;color:var(--text-3);cursor:pointer;padding:0;
+  display:flex;align-items:center;justify-content:center;
+  min-width:44px;min-height:44px;margin:-4px;
+  border-radius:var(--r-sm);transition:color .2s,background .2s}
 .icon-btn:active{background:var(--surface-3)}
 .icon-btn.danger{color:var(--danger)}
 
@@ -267,9 +274,12 @@ button,input,select,textarea{font-family:inherit;font-size:inherit;color:inherit
 .setting-input:focus{border-color:var(--primary)}
 select.setting-input{width:136px;text-align:start}
 
+/* The 27px track is the design; the target is not. A transparent overlay
+   extends the hit area to 44px without moving anything in the row. */
 .switch{width:46px;height:27px;border-radius:var(--r-pill);background:var(--surface-3);
   position:relative;border:1px solid var(--line);cursor:pointer;flex-shrink:0;
   transition:background .24s var(--ease),border-color .24s}
+.switch::after{content:'';position:absolute;inset:-9px -2px;border-radius:var(--r-pill)}
 .switch.on{background:var(--green);border-color:var(--green)}
 .switch-knob{position:absolute;top:3px;inset-inline-start:3px;width:19px;height:19px;
   border-radius:50%;background:#fff;transition:transform .24s var(--ease);
@@ -279,8 +289,9 @@ select.setting-input{width:136px;text-align:start}
 
 .lang-toggle{display:flex;border-radius:var(--r-pill);overflow:hidden;border:1px solid var(--line);
   background:var(--surface-2)}
-.lang-btn{padding:7px 16px;border:none;font-size:var(--fs-sm);font-weight:700;cursor:pointer;
-  background:transparent;color:var(--text-2);transition:all .2s var(--ease)}
+.lang-btn{padding:0 18px;min-height:44px;min-width:52px;border:none;font-size:var(--fs-sm);
+  font-weight:700;cursor:pointer;background:transparent;color:var(--text-2);
+  transition:background-color .2s var(--ease),color .2s var(--ease)}
 .lang-btn.active{background:var(--primary);color:#fff}
 
 .chip{display:inline-flex;align-items:center;gap:5px;padding:6px 11px;border-radius:var(--r-pill);
@@ -309,6 +320,12 @@ select.setting-input{width:136px;text-align:start}
 .tip-card.warn .tip-title{color:var(--danger)}
 .tip-card.good{border-inline-start-color:var(--green)}
 .tip-card.good .tip-title{color:var(--green)}
+/* The armed state of a destructive row action. Sized to sit in the same
+   44px slot the icon vacated so the row does not jump when it appears. */
+.confirm-pill{min-height:44px;padding:0 14px;font-size:var(--fs-xs);white-space:nowrap;
+  animation:confirmIn .18s var(--ease) both}
+@keyframes confirmIn{from{opacity:0;transform:scale(.86)}to{opacity:1;transform:none}}
+
 /* ---------- personal analysis ---------- */
 .pa-card{background:var(--surface);border:1px solid var(--line-soft);border-radius:var(--r);
   padding:15px;margin-bottom:var(--s2);border-inline-start:3px solid var(--blue)}
@@ -356,13 +373,20 @@ select.setting-input{width:136px;text-align:start}
 
 /* ---------- appearance picker ---------- */
 .swatch-row{display:flex;gap:var(--s2);flex-wrap:wrap}
-.swatch{width:34px;height:34px;border-radius:50%;border:2px solid transparent;cursor:pointer;
-  transition:transform .16s var(--ease),border-color .16s var(--ease)}
-.swatch.on{border-color:var(--text);transform:scale(1.08)}
+/* The dot reads better small, so the button is 44px and the colour is drawn
+   by an inner circle rather than by the button's own background. */
+.swatch{width:44px;height:44px;border-radius:50%;border:none;background:none;cursor:pointer;
+  padding:0;display:flex;align-items:center;justify-content:center}
+.swatch i{display:block;width:32px;height:32px;border-radius:50%;
+  box-shadow:0 0 0 0 var(--text);
+  transition:transform .16s var(--ease),box-shadow .16s var(--ease)}
+/* The selection ring sits outside the dot rather than eating into it, so
+   the chosen colour is not visually smaller than the others. */
+.swatch.on i{box-shadow:0 0 0 3px var(--text);transform:scale(.94)}
 .seg{display:flex;background:var(--surface-2);border-radius:var(--r-sm);padding:3px;gap:2px}
-.seg-btn{flex:1;padding:7px 10px;border:none;background:none;border-radius:8px;
+.seg-btn{flex:1;padding:0 10px;min-height:44px;border:none;background:none;border-radius:8px;
   font-size:var(--fs-sm);font-weight:600;color:var(--text-3);cursor:pointer;
-  transition:background .16s var(--ease),color .16s var(--ease)}
+  transition:background-color .16s var(--ease),color .16s var(--ease)}
 .seg-btn.on{background:var(--surface);color:var(--text);box-shadow:var(--shadow)}
 
 /* ---------- ramadan ---------- */
@@ -454,9 +478,12 @@ select.setting-input{width:136px;text-align:start}
 .scale-row{margin-bottom:var(--s4)}
 .scale-label{font-size:var(--fs-sm);color:var(--text-2);margin-bottom:var(--s2);font-weight:600}
 .scale-btns{display:flex;gap:6px}
-.scale-btn{flex:1;padding:10px 0;border:1px solid var(--line);border-radius:var(--r);
+.scale-btn{flex:1;padding:0;min-height:46px;display:flex;align-items:center;
+  justify-content:center;border:1px solid var(--line);border-radius:var(--r);
   background:var(--surface-2);color:var(--text-2);font-size:17px;cursor:pointer;
-  line-height:1.2;font-weight:600;transition:all .2s var(--ease)}
+  line-height:1.2;font-weight:600;
+  transition:border-color .2s var(--ease),color .2s var(--ease),
+  background-color .2s var(--ease)}
 .scale-btn.active{border-color:var(--primary);background:var(--primary-dim);color:var(--text);
   transform:translateY(-2px)}
 

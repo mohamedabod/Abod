@@ -6,7 +6,7 @@
  * no destructuring, no classes, no async/await. See README.
  * ===================================================================== */
 
-var APP_VERSION = '7.1';
+var APP_VERSION = '7.2';
 var STORE_KEY = 'sayem_v4';
 var LEGACY_KEY = 'sayem_v3';
 
@@ -458,6 +458,7 @@ var LANG = {
     trend_7: 'خط الاتجاه (٧ أيام)', kg_per_week: 'كجم/أسبوع', pct_per_week: '٪ من وزنك/أسبوع',
     over_days: 'يوم', trend_hint: 'الخط ده هو اللي بيتقاس عليه التقدم — الميزان لوحده بيتأرجح كيلو ونص في اليوم على مية وجليكوجين.',
     trend_need_more: 'محتاج أسبوعين قراءات وزن على الأقل قبل ما أقدر أقول اتجاه بثقة.',
+    confirm_delete: 'متأكد؟',
     pf_add: 'أضف صيام سابق', pf_edit: 'تعديل الصيام', pf_from: 'من', pf_to: 'إلى',
     pf_manual: 'يدوي', pf_bad_date: 'تاريخ أو وقت غير صالح',
     pf_end_before_start: 'وقت النهاية لازم يكون بعد البداية',
@@ -714,6 +715,7 @@ var LANG = {
     trend_7: '7-day trend', kg_per_week: 'kg/week', pct_per_week: '% bodyweight/week',
     over_days: 'days', trend_hint: 'This line is what progress is measured on — raw scale weight swings over a kilo a day on water and glycogen alone.',
     trend_need_more: 'At least a fortnight of weigh-ins is needed before a direction can be called.',
+    confirm_delete: 'Sure?',
     pf_add: 'Log a past fast', pf_edit: 'Edit fast', pf_from: 'From', pf_to: 'To',
     pf_manual: 'Manual', pf_bad_date: 'Invalid date or time',
     pf_end_before_start: 'The end must come after the start',
