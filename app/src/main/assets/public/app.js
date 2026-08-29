@@ -582,7 +582,7 @@ function AreaChart(props) {
   var w = props.width || 320;
   var hh = props.height || 150;
   var pad = props.pad === undefined ? 10 : props.pad;
-  var colour = props.color || '#e94560';
+  var colour = props.color || 'var(--primary)';
 
   var real = [];
   var i;
@@ -681,7 +681,7 @@ function AreaChart(props) {
 function BarSeries(props) {
   var values = props.values || [];
   var labels = props.labels || [];
-  var colour = props.color || '#e94560';
+  var colour = props.color || 'var(--primary)';
   var hh = props.height || 120;
   if (!values.length) return null;
 
@@ -875,13 +875,15 @@ function HomePage() {
       h('button', { className: 'btn btn-outline', onClick: function () { setShowStart(true); } },
         h(Icon,{name:'clock',size:17}), t('set_start_time')));
   } else if (cf.pausedAt) {
+    // Ending a fast is how a fast is meant to finish, not a destructive act.
+    // It was red only because red was the loudest colour in the palette.
     controls = h('div', { className: 'btn-group' },
       h('button', { className: 'btn btn-green', onClick: resumeFast }, h(Icon,{name:'play',size:17}), t('resume')),
-      h('button', { className: 'btn btn-danger', onClick: stopFast }, h(Icon,{name:'stop',size:17}), t('stop')));
+      h('button', { className: 'btn btn-outline', onClick: stopFast }, h(Icon,{name:'stop',size:17}), t('stop')));
   } else {
     controls = h('div', { className: 'btn-group' },
       h('button', { className: 'btn btn-gold', onClick: pauseFast }, h(Icon,{name:'pause',size:17}), t('pause')),
-      h('button', { className: 'btn btn-danger', onClick: stopFast }, h(Icon,{name:'stop',size:17}), t('stop')));
+      h('button', { className: 'btn btn-outline', onClick: stopFast }, h(Icon,{name:'stop',size:17}), t('stop')));
   }
 
   var stateLabel = !cf.active ? t('idle_state') : (cf.pausedAt ? t('paused_state') : t('running_state'));
@@ -1028,7 +1030,7 @@ function Dashboard() {
 /** One metric, full screen, with the chart the tile only hints at. */
 function MetricDetail(props) {
   var k = props.metric;
-  var title = '', hero = null, unit = '', colour = '#e94560', body = null;
+  var title = '', hero = null, unit = '', colour = 'var(--primary)', body = null;
 
   function chartCard(series, colr, kind, fmt, overlay) {
     var enough = 0;
@@ -1123,7 +1125,7 @@ function MetricDetail(props) {
           h(Stat, { value: num(Math.round(mac.cal)), label: t('calories'), tone: 'gold' }),
           h(Stat, { value: num(Math.round(mac.p)) + 'g', label: t('protein'), tone: 'green' }),
           h(Stat, { value: num(Math.round(mac.c)) + 'g', label: t('carbs'), tone: 'blue' }),
-          h(Stat, { value: num(Math.round(mac.f)) + 'g', label: t('fat') }))));
+          h(Stat, { value: num(Math.round(mac.f)) + 'g', label: t('fat'), tone: 'purple' }))));
 
   } else if (k === 'water') {
     var w = S.get('water', {});
@@ -1511,7 +1513,7 @@ function ProteinCard() {
           width: pct + '%',
           background: pct >= 100
             ? 'linear-gradient(90deg,#00d97e,#00bcd4)'
-            : 'linear-gradient(90deg,#e94560,#f5a623)'
+            : 'linear-gradient(90deg,var(--primary),' + METRIC_COLORS.protein + ')'
         }
       })),
     h('div', { className: 'chip-row' },
@@ -1707,7 +1709,7 @@ function MealsPage() {
         h(Stat, { value: num(Math.round(tot.cal)), label: t('calories'), tone: 'gold' }),
         h(Stat, { value: num(Math.round(tot.p)) + 'g', label: t('protein'), tone: 'green' }),
         h(Stat, { value: num(Math.round(tot.c)) + 'g', label: t('carbs'), tone: 'blue' }),
-        h(Stat, { value: num(Math.round(tot.f)) + 'g', label: t('fat') })),
+        h(Stat, { value: num(Math.round(tot.f)) + 'g', label: t('fat'), tone: 'purple' })),
       tot.unknown ? h('div', { className: 'chip-row' },
         h('span', { className: 'chip warn' },
           num(tot.unknown) + ' × ' + t('no_macros'))) : null),
@@ -1805,7 +1807,7 @@ function ElectrolytesCard() {
   }
 
   return h(Card, { title: t('electrolytes'), icon: 'flame' },
-    bar('sodium', 'linear-gradient(90deg,#e94560,#f5a623)'),
+    bar('sodium', 'linear-gradient(90deg,' + METRIC_COLORS.hr + ',' + METRIC_COLORS.protein + ')'),
     bar('potassium', 'linear-gradient(90deg,#3d8bfd,#00bcd4)'),
     bar('magnesium', 'linear-gradient(90deg,#a259ff,#3d8bfd)'),
     h('div', { className: 'section-title', style: { marginTop: '12px' } }, t('add_source')),
@@ -1988,7 +1990,7 @@ function HrFastingCard() {
       var y = hh - pad - ((p.bpm - minBpm) / (maxBpm - minBpm)) * (hh - pad * 2);
       dots.push(h('circle', {
         key: 'hp' + idx, cx: x.toFixed(1), cy: y.toFixed(1), r: 4.5,
-        fill: '#e94560', fillOpacity: 0.85
+        fill: METRIC_COLORS.hr, fillOpacity: 0.85
       }));
     })(data.points[i], i);
   }
@@ -2596,7 +2598,7 @@ function CoachPage() {
 function applyAppearance() {
   var root = document.documentElement;
   var theme = S.get('settings.theme', 'dark');
-  var accent = S.get('settings.accent', 'red');
+  var accent = S.get('settings.accent', 'blue');
   var scale = parseFloat(S.get('settings.textScale', 1)) || 1;
 
   if (theme === 'system') {
@@ -2605,7 +2607,7 @@ function applyAppearance() {
   } else {
     root.setAttribute('data-theme', theme);
   }
-  if (accent === 'red') root.removeAttribute('data-accent');
+  if (accent === 'blue') root.removeAttribute('data-accent');
   else root.setAttribute('data-accent', accent);
   root.style.setProperty('--scale', String(scale));
 
@@ -2617,17 +2619,22 @@ function applyAppearance() {
   }
 }
 
+/**
+ * Accent choices. Red is absent by design: it is the destructive colour, and
+ * an accent sitting on the same hue teaches the user that red means "press
+ * me" — right up until the red thing they press deletes something.
+ */
 var ACCENTS = [
-  { k: 'red', hex: '#e94560' },
-  { k: 'amber', hex: '#f5a623' },
-  { k: 'green', hex: '#00b368' },
   { k: 'blue', hex: '#3d8bfd' },
+  { k: 'teal', hex: '#00b3a4' },
+  { k: 'green', hex: '#00b368' },
+  { k: 'amber', hex: '#f5a623' },
   { k: 'purple', hex: '#a259ff' }
 ];
 
 function AppearanceCard() {
   var theme = S.get('settings.theme', 'dark');
-  var accent = S.get('settings.accent', 'red');
+  var accent = S.get('settings.accent', 'blue');
   var scale = parseFloat(S.get('settings.textScale', 1)) || 1;
 
   function set(key, value) {
@@ -3142,7 +3149,7 @@ function SettingsPage() {
         h('h3', null, t('reset_confirm')),
         h('div', { className: 'modal-btns' },
           h('button', {
-            className: 'btn btn-danger btn-sm',
+            className: 'btn btn-danger-solid btn-sm',
             onClick: function () {
               S.reset();
               N.syncFast();
@@ -3363,7 +3370,7 @@ function RouteCard() {
             className: 'btn btn-sm btn-gold',
             onClick: function () { N.call('routePause'); setTimeout(pullNative, 200); refresh(); }
           }, t('route_pause')),
-      h('button', { className: 'btn btn-sm btn-danger', onClick: saveRoute }, t('route_stop')));
+      h('button', { className: 'btn btn-sm btn-outline', onClick: saveRoute }, t('route_stop')));
   }
 
   var routes = S.get('routes', []);
@@ -3805,7 +3812,7 @@ function App() {
   }
   if (BAND.status === 'connected' && BAND.hr > 0) {
     headerRight.push(h('span', { key: 'hb', className: 'hdr-chip' },
-      h(Icon, { name: 'heart', size: 13, color: '#e94560' }), num(BAND.hr)));
+      h(Icon, { name: 'heart', size: 13, color: METRIC_COLORS.hr }), num(BAND.hr)));
   }
 
   return h(React.Fragment, null,

@@ -6,7 +6,7 @@
  * no destructuring, no classes, no async/await. See README.
  * ===================================================================== */
 
-var APP_VERSION = '7.0';
+var APP_VERSION = '7.1';
 var STORE_KEY = 'sayem_v4';
 var LEGACY_KEY = 'sayem_v3';
 
@@ -211,6 +211,9 @@ var S = {
     if (!d.backup) d.backup = def.backup;
     if (!d.supplements) d.supplements = def.supplements;
     if (!d.profile.weightLog) d.profile.weightLog = [];
+    // Red was retired as an accent when it became the destructive colour;
+    // anyone carrying the old choice is moved to the new default.
+    if (d.settings && d.settings.accent === 'red') d.settings.accent = 'blue';
     return d;
   },
 
@@ -2288,11 +2291,21 @@ function meanValue(series) {
 }
 
 /** Colour per metric, used by both the tile and its detail view. */
+/**
+ * Chart and tile hues, one per metric.
+ *
+ * These are data colours: they appear inside charts and tiles, never on a
+ * control. Two of them used to break that: `fast` carried the old brand red
+ * that is no longer in the theme at all, and `hr` was byte-identical to
+ * --danger, so a heart-rate line and a delete button were literally the same
+ * colour. Heart rate keeps a red — that reading is conventional and it only
+ * ever appears in a chart — but a visibly different one.
+ */
 var METRIC_COLORS = {
-  fast: '#e94560',
+  fast: '#8b5cf6',
   steps: '#00d97e',
   sleep: '#a259ff',
-  hr: '#ff4d5e',
+  hr: '#f43f5e',
   protein: '#f5a623',
   water: '#3d8bfd',
   weight: '#00bcd4',

@@ -29,11 +29,16 @@
   /* surfaces — dark (default) */
   --bg:#0e0e18;--surface:#171728;--surface-2:#1e1e33;--surface-3:#26263f;
   --line:#282844;--line-soft:#20203a;
-  /* accent */
-  --primary:#e94560;--primary-dim:rgba(233,69,96,.14);
+  /* Accent — the one colour that means "this is interactive". It is kept
+     clear of --danger on purpose: when the two are the same red, "add a
+     meal", the selected tab and "delete everything" all look alike, and the
+     user learns that red means "press me". Red belongs to destruction only. */
+  --primary:#3d8bfd;--primary-dim:rgba(61,139,253,.14);
   --gold:#f5a623;--gold-dim:rgba(245,166,35,.13);
   --green:#00d97e;--green-dim:rgba(0,217,126,.13);
-  --blue:#3d8bfd;--purple:#a259ff;--cyan:#00bcd4;--danger:#ff4d5e;
+  --blue:#3d8bfd;--purple:#a259ff;--cyan:#00bcd4;
+  /* Destructive only. Never a filled button outside a confirmation. */
+  --danger:#ff4d5e;--danger-dim:rgba(255,77,94,.12);
   /* text */
   --text:#f2f2f7;--text-2:#9e9ebf;--text-3:#6b6b8c;
   /* type scale */
@@ -61,13 +66,17 @@ html[data-theme="light"]{
   --bg:#f4f5f9;--surface:#ffffff;--surface-2:#eef0f6;--surface-3:#e3e6ef;
   --line:#d8dce8;--line-soft:#e6e9f2;
   --text:#15161f;--text-2:#5a5f75;--text-3:#8a90a8;
+  --primary:#1f6feb;--primary-dim:rgba(31,111,235,.12);
+  --danger:#d92b3a;--danger-dim:rgba(217,43,58,.10);
   --chrome:rgba(244,245,249,.88);--chrome-2:rgba(255,255,255,.94);--scrim:rgba(30,32,50,.42);
   --shadow:0 2px 10px rgba(20,22,40,.07);
   --shadow-lg:0 12px 34px rgba(20,22,40,.14);
 }
+/* Accent options deliberately exclude red: the picker must not be able to
+   put the interactive colour back on top of the destructive one. */
+html[data-accent="teal"]{--primary:#00b3a4;--primary-dim:rgba(0,179,164,.16)}
 html[data-accent="amber"]{--primary:#f5a623;--primary-dim:rgba(245,166,35,.16)}
 html[data-accent="green"]{--primary:#00b368;--primary-dim:rgba(0,179,104,.16)}
-html[data-accent="blue"]{--primary:#3d8bfd;--primary-dim:rgba(61,139,253,.16)}
 html[data-accent="purple"]{--primary:#a259ff;--primary-dim:rgba(162,89,255,.16)}
 
 html,body{width:100%;height:100%;background:var(--bg);color:var(--text);
@@ -170,7 +179,11 @@ button,input,select,textarea{font-family:inherit;font-size:inherit;color:inherit
 .btn-primary{background:var(--primary)}
 .btn-gold{background:var(--gold);color:#20160a}
 .btn-green{background:var(--green);color:#04281a}
-.btn-danger{background:var(--danger)}
+/* Outlined, not filled: a destructive action should never be the most
+   attractive thing on screen. The solid variant exists only for the final
+   button inside a confirmation, where destroying is what was asked for. */
+.btn-danger{background:var(--danger-dim);border:1px solid var(--danger);color:var(--danger)}
+.btn-danger-solid{background:var(--danger);color:#fff}
 .btn-outline{background:var(--surface-2);border:1px solid var(--line);color:var(--text-2)}
 .btn-ghost{background:transparent;color:var(--text-2);padding:8px 12px}
 .btn-sm{padding:9px 15px;font-size:var(--fs-sm)}
@@ -204,9 +217,14 @@ button,input,select,textarea{font-family:inherit;font-size:inherit;color:inherit
 .stats-grid-4{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
 .stat-item{background:var(--surface-2);border:1px solid var(--line-soft);border-radius:var(--r);
   padding:12px 6px;text-align:center}
-.stat-val{font-size:var(--fs-xl);font-weight:700;color:var(--primary);
+/* A statistic is not a control, so the untoned default is text colour, not
+   the accent — the accent has one job and reading a number is not it. Tones
+   are for values whose colour carries meaning. */
+.stat-val{font-size:var(--fs-xl);font-weight:700;color:var(--text);
   font-variant-numeric:tabular-nums;letter-spacing:-.4px;line-height:1.25}
-.stat-val.gold{color:var(--gold)}.stat-val.green{color:var(--green)}.stat-val.blue{color:var(--blue)}
+.stat-val.gold{color:var(--gold)}.stat-val.green{color:var(--green)}
+.stat-val.blue{color:var(--blue)}.stat-val.purple{color:var(--purple)}
+.stat-val.cyan{color:var(--cyan)}
 .stat-label{font-size:9.5px;color:var(--text-3);margin-top:3px;line-height:1.35;font-weight:600}
 
 
@@ -379,10 +397,13 @@ select.setting-input{width:136px;text-align:start}
 .refeed-card{background:var(--surface);border:1px solid var(--line-soft);border-radius:var(--r);
   padding:14px;margin-bottom:var(--s2);border-inline-start:3px solid var(--green)}
 .refeed-phase{font-size:var(--fs-sm);font-weight:700;color:var(--green);margin-bottom:5px}
-.alert-box{background:rgba(255,77,94,.09);border:1px solid rgba(255,77,94,.32);border-radius:var(--r);
-  padding:12px 14px;margin-top:var(--s3);font-size:var(--fs-sm);color:#ffb3ba;line-height:1.8}
-.info-box{background:rgba(61,139,253,.09);border:1px solid rgba(61,139,253,.3);border-radius:var(--r);
-  padding:12px 14px;margin-top:var(--s3);font-size:var(--fs-sm);color:#a9cbff;line-height:1.8}
+.alert-box{background:var(--danger-dim);border:1px solid var(--danger);border-radius:var(--r);
+  padding:12px 14px;margin-top:var(--s3);font-size:var(--fs-sm);color:var(--danger);line-height:1.8}
+/* Neutral on purpose. Tying this to the accent meant that picking amber made
+   every explanatory note look like a warning; informational text does not
+   need a hue, and one fewer coloured box on screen is a gain either way. */
+.info-box{background:var(--surface-2);border:1px solid var(--line);border-radius:var(--r);
+  padding:12px 14px;margin-top:var(--s3);font-size:var(--fs-sm);color:var(--text-2);line-height:1.8}
 
 .liquid-item{display:flex;align-items:center;gap:var(--s3);padding:11px 14px;
   background:var(--surface-2);border-radius:var(--r);margin-bottom:6px;
