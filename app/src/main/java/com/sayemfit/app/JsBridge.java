@@ -20,7 +20,7 @@ import java.io.OutputStreamWriter;
  */
 public class JsBridge implements NativeListener {
 
-    public static final String VERSION = "7.3";
+    public static final String VERSION = "8.0";
 
     private final MainActivity activity;
     private final WebView web;
@@ -347,6 +347,17 @@ public class JsBridge implements NativeListener {
     public void toast(final String msg) {
         if (msg == null) return;
         web.post(new ToastTask(core.context(), msg));
+    }
+
+    /**
+     * Renders the report HTML through the system print dialog, where the user
+     * can save it as a PDF. Posted to the UI thread because a WebView may only
+     * be built there, and this arrives on a binder thread.
+     */
+    @JavascriptInterface
+    public void exportPdf(final String html, final String name) {
+        if (html == null || html.length() == 0) return;
+        web.post(new PrintTask(activity, html, name));
     }
 
     /** Writes an export into the app's own Documents dir. @return path or "". */

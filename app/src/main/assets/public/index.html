@@ -57,7 +57,23 @@
   --shadow-lg:0 10px 34px rgba(0,0,0,.45);
   --nav-h:64px;--header-h:56px;
   --safe-b:env(safe-area-inset-bottom,0px);--safe-t:env(safe-area-inset-top,0px);
-  --ease:cubic-bezier(.22,.9,.3,1)
+  --ease:cubic-bezier(.22,.9,.3,1);
+  /* Motion scale. One set of durations so nothing is timed by feel: t1 for a
+     control acknowledging a touch, t2 for something appearing, t3 for a value
+     travelling across a chart. --motion is multiplied into every duration so
+     reduced-motion can collapse the lot to zero in one place. */
+  --motion:1;
+  --t1:calc(140ms * var(--motion));
+  --t2:calc(240ms * var(--motion));
+  --t3:calc(460ms * var(--motion))
+}
+
+/* Someone who has asked the system for less motion means it. Durations go to
+   zero rather than the animations being removed, so state still lands exactly
+   where it should — it just gets there instantly. */
+@media (prefers-reduced-motion: reduce){
+  :root{--motion:0.001}
+  *,*::before,*::after{animation-iteration-count:1 !important}
 }
 /* Light: a genuine re-grounding, not the dark palette with the lightness
    inverted — borders and muted text need their own values to stay legible
@@ -92,9 +108,34 @@ button,input,select,textarea{font-family:inherit;font-size:inherit;color:inherit
 @keyframes fadeIn{from{opacity:0}to{opacity:1}}
 @keyframes pop{from{opacity:0;transform:scale(.94)}to{opacity:1;transform:none}}
 @keyframes slideUp{from{transform:translateY(18px);opacity:0}to{transform:none;opacity:1}}
-.anim{animation:rise .34s var(--ease) both}
+.anim{animation:rise var(--t2) var(--ease) both}
 .anim-1{animation-delay:.03s}.anim-2{animation-delay:.07s}.anim-3{animation-delay:.11s}
 .anim-4{animation-delay:.15s}.anim-5{animation-delay:.19s}
+
+/* Motion that carries meaning, on the two properties a compositor can handle
+   without touching layout or paint: transform and opacity. Everything below
+   runs once on entrance — nothing loops, nothing animates while idle, and the
+   whole set collapses to nothing under prefers-reduced-motion. */
+
+/* Switching tabs: content arrives from slightly below, which reads as "this
+   replaced that" rather than a hard cut. */
+@keyframes tabIn{from{opacity:0;transform:translate3d(0,8px,0)}to{opacity:1;transform:none}}
+.tab-anim{animation:tabIn var(--t2) var(--ease) both}
+
+/* Cards stagger in behind it. Six steps is enough to read as a sequence; past
+   that the last card arrives late enough to feel broken. */
+.stagger > *{animation:tabIn var(--t2) var(--ease) both}
+.stagger > *:nth-child(1){animation-delay:calc(20ms * var(--motion))}
+.stagger > *:nth-child(2){animation-delay:calc(45ms * var(--motion))}
+.stagger > *:nth-child(3){animation-delay:calc(70ms * var(--motion))}
+.stagger > *:nth-child(4){animation-delay:calc(95ms * var(--motion))}
+.stagger > *:nth-child(5){animation-delay:calc(120ms * var(--motion))}
+.stagger > *:nth-child(n+6){animation-delay:calc(140ms * var(--motion))}
+
+/* A pressed control gives way slightly. Cheap, and it is the difference
+   between a button and a picture of a button. */
+.btn:active,.nav-row:active,.goal-btn:active,.tile:active{transform:scale(.975)}
+.btn,.nav-row,.goal-btn,.tile{transition:transform var(--t1) var(--ease)}
 
 /* ---------- icons ---------- */
 .ic{display:block;flex-shrink:0}
@@ -118,10 +159,10 @@ button,input,select,textarea{font-family:inherit;font-size:inherit;color:inherit
   border-top:1px solid var(--line-soft);flex-shrink:0;z-index:10}
 .bnav-item{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;
   background:none;border:none;color:var(--text-3);font-size:9.5px;font-weight:600;cursor:pointer;
-  gap:4px;padding:6px 0;transition:color .2s var(--ease)}
+  gap:4px;padding:6px 0;transition:color var(--t2) var(--ease)}
 .bnav-item.active{color:var(--primary)}
 .bnav-ico{position:relative;display:flex;align-items:center;justify-content:center;
-  width:34px;height:26px;border-radius:var(--r-pill);transition:background .24s var(--ease)}
+  width:34px;height:26px;border-radius:var(--r-pill);transition:background-color var(--t2) var(--ease)}
 .bnav-item.active .bnav-ico{background:var(--primary-dim)}
 
 /* ---------- cards ---------- */
@@ -142,7 +183,12 @@ button,input,select,textarea{font-family:inherit;font-size:inherit;color:inherit
 .ring-center{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;
   justify-content:center;text-align:center;gap:2px}
 .timer-time{font-size:var(--fs-3xl);font-weight:700;font-variant-numeric:tabular-nums;
-  letter-spacing:-1px;line-height:1.05;font-feature-settings:'tnum'}
+  letter-spacing:-1px;line-height:1.05;font-feature-settings:'tnum';
+  display:flex;align-items:baseline;justify-content:center;gap:3px;direction:ltr}
+/* Seconds are the only thing on this screen that moves every tick. At full
+   size they pull the eye continuously to a digit that changes no decision. */
+.timer-sec{font-size:var(--fs-lg);color:var(--text-3);letter-spacing:0;font-weight:600}
+.timer-sec::before{content:':'}
 .timer-goal{font-size:var(--fs-sm);color:var(--text-2)}
 .timer-pct{font-size:var(--fs-md);font-weight:700;color:var(--gold)}
 .timer-state{font-size:10px;color:var(--text-3);letter-spacing:1.6px;text-transform:uppercase;
@@ -159,9 +205,14 @@ button,input,select,textarea{font-family:inherit;font-size:inherit;color:inherit
 .timeline{display:flex;height:8px;border-radius:var(--r-pill);overflow:hidden;
   background:var(--line);gap:2px}
 /* Where you are right now, not just which phases are behind you. */
+/* No transition. The marker is repositioned on every tick while a fast runs,
+   so a 460ms transition on a layout property never completed before the next
+   one started — it reflowed the strip continuously to animate a 3px element
+   between two positions a few pixels apart. Setting the position outright
+   costs one layout per second instead of sixty. */
 .timeline-marker{position:absolute;top:-4px;width:3px;height:16px;border-radius:2px;
-  background:#fff;box-shadow:0 0 8px rgba(255,255,255,.5);transition:inset-inline-start .5s var(--ease)}
-.timeline-seg{flex:1;background:var(--line);transition:background .45s var(--ease)}
+  background:#fff;box-shadow:0 0 8px rgba(255,255,255,.5)}
+.timeline-seg{flex:1;background:var(--line);transition:background-color var(--t3) var(--ease)}
 /* Absolutely positioned on the segment boundaries, so a label sits exactly
    where its phase begins instead of being spread evenly across the row. */
 .timeline-labels{position:relative;height:14px;font-size:9.5px;color:var(--text-3);
@@ -174,8 +225,7 @@ button,input,select,textarea{font-family:inherit;font-size:inherit;color:inherit
 /* ---------- buttons ---------- */
 .btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;
   padding:12px 20px;border:none;border-radius:var(--r-pill);font-size:var(--fs-md);
-  font-weight:700;color:#fff;cursor:pointer;transition:transform .12s var(--ease),filter .2s,opacity .2s}
-.btn:active{transform:scale(.96)}
+  font-weight:700;color:#fff;cursor:pointer;transition:transform var(--t1) var(--ease),filter .2s,opacity .2s}
 .btn:disabled{opacity:.45}
 .btn-primary{background:var(--primary)}
 .btn-gold{background:var(--gold);color:#20160a}
@@ -191,33 +241,21 @@ button,input,select,textarea{font-family:inherit;font-size:inherit;color:inherit
 .btn-block{width:100%}
 .btn-group{display:flex;gap:var(--s2);justify-content:center;flex-wrap:wrap;margin-top:var(--s4)}
 
-/* One scrollable row rather than a wrap that leaves a stranded second line.
-   "safe center" centres it when everything fits and falls back to start-aligned
-   when it overflows, so the first chip is never scrolled out of reach. */
-.goal-selector{display:flex;gap:6px;justify-content:safe center;margin:var(--s3) 0 0;
-  flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;padding:2px 0}
-.goal-selector::-webkit-scrollbar{display:none}
-/* Edge fade: a half-cut chip at the rim reads as broken without it. */
-.goal-strip{position:relative}
-.goal-strip::before,.goal-strip::after{content:'';position:absolute;top:0;bottom:0;width:26px;
-  pointer-events:none;z-index:2}
-.goal-strip::before{inset-inline-start:0;
-  background:linear-gradient(to right,var(--surface),transparent)}
-.goal-strip::after{inset-inline-end:0;
-  background:linear-gradient(to left,var(--surface),transparent)}
-[dir="rtl"] .goal-strip::before{background:linear-gradient(to left,var(--surface),transparent)}
-[dir="rtl"] .goal-strip::after{background:linear-gradient(to right,var(--surface),transparent)}
-/* In a sheet there is vertical room, so the options wrap instead of
-   scrolling. Nothing is half-cut at an edge, which matters more here: this
-   is the only way to change the goal once a fast is running. */
-.goal-selector.wrap{flex-wrap:wrap;overflow:visible;justify-content:center}
+/* Chips wrap rather than scroll.
+   They used to sit in one horizontal scroller behind an edge fade, which hid
+   110px of a 456px row inside a 346px container — a fade tells you something
+   is over there but not that it is tappable, and the first thing a user saw
+   was a half-cut chip. Wrapping costs one extra line of height and nothing is
+   ever out of reach or out of sight. */
+.goal-selector{display:flex;gap:6px;justify-content:center;margin:var(--s3) 0 0;
+  flex-wrap:wrap;padding:2px 0}
 
 .goal-btn{flex:0 0 auto}
 .goal-btn{padding:0 16px;min-height:44px;display:inline-flex;align-items:center;
   border:1px solid var(--line);border-radius:var(--r-pill);
   background:var(--surface-2);color:var(--text-2);font-size:var(--fs-sm);font-weight:700;
-  cursor:pointer;transition:border-color .2s var(--ease),color .2s var(--ease),
-  background-color .2s var(--ease)}
+  cursor:pointer;transition:border-color var(--t2) var(--ease),color var(--t2) var(--ease),
+  background-color var(--t2) var(--ease)}
 .goal-btn.active{border-color:var(--primary);color:var(--primary);background:var(--primary-dim)}
 
 /* ---------- stats ---------- */
@@ -239,8 +277,11 @@ button,input,select,textarea{font-family:inherit;font-size:inherit;color:inherit
 .bar-chart{display:flex;align-items:flex-end;gap:6px;height:100px;margin-top:var(--s2)}
 .bar-col{flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;height:100%;
   justify-content:flex-end}
+/* Height is the honest property here — the bar sits in a flex column above its
+   labels, so scaling it would not move them. It animates on data change only,
+   which is rare, not per frame. */
 .bar{width:100%;border-radius:6px 6px 3px 3px;background:var(--primary);min-height:3px;
-  transition:height .5s var(--ease)}
+  transition:height var(--t3) var(--ease)}
 .bar.dim{background:var(--surface-3);min-height:4px}
 .bar-label{font-size:9.5px;color:var(--text-3);font-weight:600}
 .bar-wrap{position:relative}
@@ -250,7 +291,7 @@ button,input,select,textarea{font-family:inherit;font-size:inherit;color:inherit
 /* ---------- rows ---------- */
 .row{display:flex;align-items:center;gap:var(--s2);padding:12px 14px;background:var(--surface-2);
   border:1px solid var(--line-soft);border-radius:var(--r);margin-bottom:6px;
-  transition:background .16s var(--ease)}
+  transition:background-color var(--t1) var(--ease)}
 .row:active{background:var(--surface-3)}
 .row-plain{display:flex;align-items:center;justify-content:space-between;padding:12px 2px;
   border-bottom:1px solid var(--line-soft)}
@@ -265,7 +306,7 @@ button,input,select,textarea{font-family:inherit;font-size:inherit;color:inherit
 .icon-btn{background:none;border:none;color:var(--text-3);cursor:pointer;padding:0;
   display:flex;align-items:center;justify-content:center;
   min-width:44px;min-height:44px;margin:-4px;
-  border-radius:var(--r-sm);transition:color .2s,background .2s}
+  border-radius:var(--r-sm);transition:color var(--t2),background-color var(--t2)}
 .icon-btn:active{background:var(--surface-3)}
 .icon-btn.danger{color:var(--danger)}
 
@@ -284,11 +325,11 @@ select.setting-input{width:136px;text-align:start}
    extends the hit area to 44px without moving anything in the row. */
 .switch{width:46px;height:27px;border-radius:var(--r-pill);background:var(--surface-3);
   position:relative;border:1px solid var(--line);cursor:pointer;flex-shrink:0;
-  transition:background .24s var(--ease),border-color .24s}
+  transition:background-color var(--t2) var(--ease),border-color var(--t2) var(--ease)}
 .switch::after{content:'';position:absolute;inset:-9px -2px;border-radius:var(--r-pill)}
 .switch.on{background:var(--green);border-color:var(--green)}
 .switch-knob{position:absolute;top:3px;inset-inline-start:3px;width:19px;height:19px;
-  border-radius:50%;background:#fff;transition:transform .24s var(--ease);
+  border-radius:50%;background:#fff;transition:transform var(--t2) var(--ease);
   box-shadow:0 1px 3px rgba(0,0,0,.4)}
 .switch.on .switch-knob{transform:translateX(19px)}
 [dir="rtl"] .switch.on .switch-knob{transform:translateX(-19px)}
@@ -297,7 +338,7 @@ select.setting-input{width:136px;text-align:start}
   background:var(--surface-2)}
 .lang-btn{padding:0 18px;min-height:44px;min-width:52px;border:none;font-size:var(--fs-sm);
   font-weight:700;cursor:pointer;background:transparent;color:var(--text-2);
-  transition:background-color .2s var(--ease),color .2s var(--ease)}
+  transition:background-color var(--t2) var(--ease),color var(--t2) var(--ease)}
 .lang-btn.active{background:var(--primary);color:#fff}
 
 .chip{display:inline-flex;align-items:center;gap:5px;padding:6px 11px;border-radius:var(--r-pill);
@@ -329,7 +370,7 @@ select.setting-input{width:136px;text-align:start}
 /* The armed state of a destructive row action. Sized to sit in the same
    44px slot the icon vacated so the row does not jump when it appears. */
 .confirm-pill{min-height:44px;padding:0 14px;font-size:var(--fs-xs);white-space:nowrap;
-  animation:confirmIn .18s var(--ease) both}
+  animation:confirmIn var(--t1) var(--ease) both}
 @keyframes confirmIn{from{opacity:0;transform:scale(.86)}to{opacity:1;transform:none}}
 
 /* ---------- personal analysis ---------- */
@@ -385,14 +426,14 @@ select.setting-input{width:136px;text-align:start}
   padding:0;display:flex;align-items:center;justify-content:center}
 .swatch i{display:block;width:32px;height:32px;border-radius:50%;
   box-shadow:0 0 0 0 var(--text);
-  transition:transform .16s var(--ease),box-shadow .16s var(--ease)}
+  transition:transform var(--t1) var(--ease),box-shadow var(--t1) var(--ease)}
 /* The selection ring sits outside the dot rather than eating into it, so
    the chosen colour is not visually smaller than the others. */
 .swatch.on i{box-shadow:0 0 0 3px var(--text);transform:scale(.94)}
 .seg{display:flex;background:var(--surface-2);border-radius:var(--r-sm);padding:3px;gap:2px}
 .seg-btn{flex:1;padding:0 10px;min-height:44px;border:none;background:none;border-radius:8px;
   font-size:var(--fs-sm);font-weight:600;color:var(--text-3);cursor:pointer;
-  transition:background-color .16s var(--ease),color .16s var(--ease)}
+  transition:background-color var(--t1) var(--ease),color var(--t1) var(--ease)}
 .seg-btn.on{background:var(--surface);color:var(--text);box-shadow:var(--shadow)}
 
 /* ---------- ramadan ---------- */
@@ -442,16 +483,19 @@ select.setting-input{width:136px;text-align:start}
 .liquid-emoji{font-size:18px}
 .water-bar{height:10px;border-radius:var(--r-pill);background:var(--surface-3);overflow:hidden;
   margin:var(--s3) 0 6px}
+/* A progress fill is the one place width is worth animating: it is a single
+   element, and scaleX would stretch the gradient with it. */
 .water-fill{height:100%;border-radius:var(--r-pill);
-  background:linear-gradient(90deg,var(--blue),var(--cyan));transition:width .5s var(--ease)}
+  background:linear-gradient(90deg,var(--blue),var(--cyan));
+  transition:width var(--t3) var(--ease)}
 
 /* ---------- modals ---------- */
 .modal-overlay{position:fixed;inset:0;background:var(--scrim);backdrop-filter:blur(6px);
   -webkit-backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;
-  z-index:100;padding:var(--s5);animation:fadeIn .2s var(--ease)}
+  z-index:100;padding:var(--s5);animation:fadeIn var(--t2) var(--ease)}
 .modal{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-lg);
   padding:var(--s5);width:100%;max-width:350px;box-shadow:var(--shadow-lg);max-height:86%;
-  overflow-y:auto;animation:pop .26s var(--ease)}
+  overflow-y:auto;animation:pop var(--t2) var(--ease)}
 .modal h3{font-size:var(--fs-lg);margin-bottom:var(--s4);text-align:center;font-weight:700}
 .modal-btns{display:flex;gap:var(--s2);margin-top:var(--s4);justify-content:center}
 /* Clock time is written HH:MM left-to-right in Arabic too, so this row is
@@ -475,7 +519,7 @@ select.setting-input{width:136px;text-align:start}
   background:var(--surface-3);border:1px solid var(--line);color:var(--text);padding:12px 18px;
   border-radius:var(--r);font-size:var(--fs-sm);font-weight:600;z-index:200;
   box-shadow:var(--shadow-lg);text-align:center;opacity:0;transform:translateY(-16px);
-  transition:opacity .26s var(--ease),transform .26s var(--ease);pointer-events:none}
+  transition:opacity var(--t2) var(--ease),transform .26s var(--ease);pointer-events:none}
 .notif.show{opacity:1;transform:none}
 .empty{text-align:center;color:var(--text-3);font-size:var(--fs-sm);padding:var(--s6) var(--s3);
   line-height:1.8}
@@ -488,14 +532,14 @@ select.setting-input{width:136px;text-align:start}
   justify-content:center;border:1px solid var(--line);border-radius:var(--r);
   background:var(--surface-2);color:var(--text-2);font-size:17px;cursor:pointer;
   line-height:1.2;font-weight:600;
-  transition:border-color .2s var(--ease),color .2s var(--ease),
-  background-color .2s var(--ease)}
+  transition:border-color var(--t2) var(--ease),color var(--t2) var(--ease),
+  background-color var(--t2) var(--ease)}
 .scale-btn.active{border-color:var(--primary);background:var(--primary-dim);color:var(--text);
   transform:translateY(-2px)}
 
 /* ---------- sub view ---------- */
 .subview{position:fixed;inset:0;background:var(--bg);z-index:60;display:flex;flex-direction:column;
-  animation:slideUp .28s var(--ease)}
+  animation:slideUp var(--t2) var(--ease)}
 .subview-hdr{height:calc(var(--header-h) + var(--safe-t));padding-top:var(--safe-t);flex-shrink:0;
   display:flex;align-items:center;gap:var(--s2);padding-inline:var(--s3);background:var(--surface);
   border-bottom:1px solid var(--line-soft)}
@@ -505,6 +549,120 @@ select.setting-input{width:136px;text-align:start}
 .back-btn{background:none;border:none;color:var(--text);cursor:pointer;padding:6px;display:flex;
   border-radius:var(--r-sm)}
 [dir="rtl"] .back-btn .ic{transform:scaleX(-1)}
+
+.protein-target{font-size:var(--fs-sm);color:var(--text-2);font-weight:600}
+
+/* ---------- exercise demonstrations ----------
+   One rigged figure, animated per movement. Each group rotates about its own
+   joint, so limbs stay attached; only transform is animated, so the whole
+   library costs the compositor a few rotations and nothing else. */
+.fig{width:64px;height:70px;flex:none;overflow:visible;
+  stroke-width:5;stroke-linecap:round;fill:none}
+.fig-head{fill:currentColor;stroke:none;color:inherit}
+.fig .fig-head{fill:var(--primary)}
+.fig-ground{stroke:var(--line);stroke-width:3}
+.fig g{transform-box:fill-box}
+
+/* Joint origins, expressed on the box of each group. */
+.fig-torso{transform-origin:50% 100%}
+.fig-arm{transform-origin:50% 0}
+.fig-forearm{transform-origin:50% 0}
+.fig-leg{transform-origin:50% 0}
+.fig-shin{transform-origin:50% 0}
+.fig-body{transform-origin:50% 100%}
+/* Horizontal movements pivot about the figure's centre, not its feet: swung
+   from the base, a 70-degree rotation throws the head clean out of the box. */
+.fig-pushup .fig-body,.fig-plank .fig-body,.fig-bridge .fig-body{transform-origin:50% 50%}
+
+/* Every movement is one loop, four seconds, ease-in-out both ways so the
+   turnaround reads as a controlled rep rather than a bounce. */
+.fig-squat .fig-body{animation:mSquatBody 4s var(--ease) infinite alternate}
+.fig-squat .fig-leg{animation:mSquatThigh 4s var(--ease) infinite alternate}
+.fig-squat .fig-shin{animation:mSquatShin 4s var(--ease) infinite alternate}
+.fig-squat .fig-arm{animation:mSquatArm 4s var(--ease) infinite alternate}
+@keyframes mSquatBody{to{transform:translateY(16px) rotate(14deg)}}
+@keyframes mSquatThigh{to{transform:rotate(-42deg)}}
+@keyframes mSquatShin{to{transform:rotate(46deg)}}
+@keyframes mSquatArm{to{transform:rotate(-72deg)}}
+
+.fig-pushup .fig-body{animation:mPushBody 3.4s var(--ease) infinite alternate}
+.fig-pushup .fig-arm{animation:mPushArm 3.4s var(--ease) infinite alternate}
+.fig-pushup .fig-forearm{animation:mPushFore 3.4s var(--ease) infinite alternate}
+@keyframes mPushBody{from{transform:rotate(-74deg) translate(24px,-4px) scale(.9)}
+  to{transform:rotate(-74deg) translate(24px,4px) scale(.9)}}
+@keyframes mPushArm{to{transform:rotate(24deg)}}
+@keyframes mPushFore{to{transform:rotate(-34deg)}}
+
+.fig-row .fig-body{transform:translateX(10px)}
+.fig-row .fig-torso{animation:mRowTorso 3.6s var(--ease) infinite}
+.fig-row .fig-arm{animation:mRowArm 3.6s var(--ease) infinite alternate}
+.fig-row .fig-forearm{animation:mRowFore 3.6s var(--ease) infinite alternate}
+@keyframes mRowTorso{0%,100%{transform:rotate(-58deg)}}
+@keyframes mRowArm{from{transform:rotate(60deg)}to{transform:rotate(6deg)}}
+@keyframes mRowFore{to{transform:rotate(-44deg)}}
+
+.fig-hinge .fig-body{transform:translateX(8px)}
+.fig-hinge .fig-torso{animation:mHinge 4s var(--ease) infinite alternate}
+.fig-hinge .fig-arm{animation:mHingeArm 4s var(--ease) infinite alternate}
+.fig-hinge .fig-leg{animation:mHingeLeg 4s var(--ease) infinite alternate}
+@keyframes mHinge{to{transform:rotate(-62deg)}}
+@keyframes mHingeArm{to{transform:rotate(58deg)}}
+@keyframes mHingeLeg{to{transform:rotate(9deg)}}
+
+.fig-press .fig-arm{animation:mPressArm 3.2s var(--ease) infinite alternate}
+.fig-press .fig-forearm{animation:mPressFore 3.2s var(--ease) infinite alternate}
+@keyframes mPressArm{from{transform:rotate(-118deg)}to{transform:rotate(-172deg)}}
+@keyframes mPressFore{from{transform:rotate(96deg)}to{transform:rotate(4deg)}}
+
+.fig-lunge .fig-body{animation:mLungeBody 4s var(--ease) infinite alternate}
+.fig-lunge .fig-leg{animation:mLungeLeg 4s var(--ease) infinite alternate}
+.fig-lunge .fig-shin{animation:mLungeShin 4s var(--ease) infinite alternate}
+@keyframes mLungeBody{to{transform:translateY(15px)}}
+@keyframes mLungeLeg{from{transform:rotate(-26deg)}to{transform:rotate(-46deg)}}
+@keyframes mLungeShin{from{transform:rotate(26deg)}to{transform:rotate(50deg)}}
+
+/* A hold, not a rep: the only movement is the breath. */
+.fig-plank .fig-body{animation:mPlank 4.4s ease-in-out infinite alternate}
+.fig-plank .fig-arm{transform:rotate(76deg)}
+@keyframes mPlank{from{transform:rotate(-78deg) translate(28px,0)}
+  to{transform:rotate(-78deg) translate(28px,0) scale(1.015)}}
+
+.fig-bridge .fig-body{transform:rotate(-88deg) translate(30px,4px)}
+.fig-bridge .fig-torso{animation:mBridge 3.6s var(--ease) infinite alternate}
+.fig-bridge .fig-leg{transform:rotate(56deg)}
+.fig-bridge .fig-shin{transform:rotate(-104deg)}
+@keyframes mBridge{to{transform:rotate(20deg)}}
+
+.ex-card{background:var(--surface);border:1px solid var(--line-soft);
+  border-radius:var(--r-lg);margin-bottom:var(--s2);overflow:hidden}
+.ex-head{display:flex;align-items:center;gap:var(--s3);width:100%;padding:var(--s3) var(--s4);
+  background:none;border:none;cursor:pointer;text-align:start;min-height:44px}
+.ex-fig{display:flex;align-items:center;justify-content:center;width:64px;height:70px;
+  background:var(--surface-2);border-radius:var(--r);flex:none;overflow:hidden}
+.ex-main{flex:1;min-width:0;display:flex;flex-direction:column;align-items:flex-start;gap:4px}
+.ex-name{font-size:var(--fs-md);font-weight:700;color:var(--text)}
+.ex-muscles{font-size:var(--fs-xs);color:var(--text-3)}
+.ex-body{padding:0 var(--s4) var(--s4);animation:tabIn var(--t2) var(--ease) both}
+.ex-cues{padding-inline-start:var(--s5);margin:0}
+.ex-cues li{font-size:var(--fs-sm);color:var(--text-2);line-height:1.85;margin-bottom:5px}
+
+/* ---------- settings index ---------- */
+.nav-list{background:var(--surface);border:1px solid var(--line-soft);border-radius:var(--r-lg);
+  overflow:hidden}
+.nav-row{display:flex;align-items:center;gap:var(--s3);width:100%;min-height:62px;
+  padding:10px var(--s4);background:none;border:none;cursor:pointer;text-align:start;
+  border-bottom:1px solid var(--line-soft);transition:background-color var(--t1) var(--ease)}
+.nav-row:last-child{border-bottom:none}
+.nav-row:active{background:var(--surface-2)}
+.nav-ico{display:flex;align-items:center;justify-content:center;width:34px;height:34px;
+  border-radius:var(--r-sm);background:var(--primary-dim);color:var(--primary);flex:none}
+.nav-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.nav-title{font-size:var(--fs-md);font-weight:700;color:var(--text)}
+.nav-hint{font-size:var(--fs-xs);color:var(--text-3);line-height:1.45}
+.nav-chev{color:var(--text-3);display:flex;flex:none}
+/* The chevron points the way the language runs. */
+.nav-chev .ic{transform:scaleX(-1)}
+[dir="rtl"] .nav-chev .ic{transform:none}
 
 /* ---------- feature bits ---------- */
 .map-box{background:var(--surface-2);border:1px solid var(--line-soft);border-radius:var(--r);
@@ -524,14 +682,17 @@ select.setting-input{width:136px;text-align:start}
 /* ---------- onboarding ---------- */
 .onb{position:fixed;inset:0;background:var(--bg);z-index:300;display:flex;flex-direction:column;
   padding:var(--s5);padding-top:calc(var(--safe-t) + var(--s6));
-  padding-bottom:calc(var(--safe-b) + var(--s5));animation:fadeIn .3s var(--ease)}
+  padding-bottom:calc(var(--safe-b) + var(--s5));animation:fadeIn var(--t2) var(--ease)}
 .onb-body{flex:1;overflow-y:auto}
 .onb-step{font-size:var(--fs-xs);color:var(--text-3);font-weight:700;letter-spacing:1.4px;
   text-transform:uppercase}
 .onb-title{font-size:var(--fs-2xl);font-weight:700;margin-top:6px;letter-spacing:-.6px;line-height:1.3}
 .onb-desc{font-size:var(--fs-md);color:var(--text-2);margin-top:var(--s3);line-height:1.85}
 .onb-dots{display:flex;gap:6px;justify-content:center;margin-bottom:var(--s4)}
-.onb-dot{width:7px;height:7px;border-radius:50%;background:var(--surface-3);transition:all .3s var(--ease)}
+/* "all" animates every property that ever changes, including layout ones
+   nobody intended; the two that matter are named instead. */
+.onb-dot{width:7px;height:7px;border-radius:50%;background:var(--surface-3);
+  transition:width var(--t2) var(--ease),background-color var(--t2) var(--ease)}
 .onb-dot.on{background:var(--primary);width:20px;border-radius:var(--r-pill)}
 .onb-hero{display:flex;align-items:center;justify-content:center;padding:var(--s6) 0}
 .onb-hero .ic{color:var(--primary);filter:drop-shadow(0 0 26px rgba(233,69,96,.35))}
@@ -545,7 +706,7 @@ select.setting-input{width:136px;text-align:start}
 .tile{background:var(--surface);border:1px solid var(--line-soft);border-radius:var(--r-lg);
   padding:13px 14px;text-align:start;cursor:pointer;position:relative;overflow:hidden;
   display:flex;flex-direction:column;gap:2px;min-height:112px;
-  transition:transform .14s var(--ease),border-color .2s}
+  transition:transform var(--t1) var(--ease),border-color .2s}
 .tile:active{transform:scale(.975);border-color:var(--line)}
 .tile-head{display:flex;align-items:center;gap:6px;color:var(--text-3);
   font-size:var(--fs-xs);font-weight:700}
@@ -566,7 +727,7 @@ select.setting-input{width:136px;text-align:start}
 
 /* ---------- detail sheet ---------- */
 .sheet{position:fixed;inset:0;background:var(--bg);z-index:70;display:flex;flex-direction:column;
-  animation:slideUp .3s var(--ease)}
+  animation:slideUp var(--t2) var(--ease)}
 .sheet-hdr{height:calc(var(--header-h) + var(--safe-t));padding-top:var(--safe-t);flex-shrink:0;
   display:flex;align-items:center;gap:var(--s2);padding-inline:var(--s3);
   background:var(--surface);border-bottom:1px solid var(--line-soft)}

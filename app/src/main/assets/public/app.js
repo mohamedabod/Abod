@@ -943,7 +943,9 @@ function HomePage() {
   return h('div', null,
     h('div', { className: 'hero anim' },
       h(Ring, { pct: pct, color: phase.color },
-        h('div', { className: 'timer-time' }, fmtClock(ms)),
+        h('div', { className: 'timer-time' },
+          clockParts(ms).hm,
+          h('span', { className: 'timer-sec' }, clockParts(ms).sec)),
         cf.active
           ? h('div', { className: 'timer-pct' }, num(pctShown) + '% ' + t('of_goal'))
           : h('div', { className: 'timer-goal' }, t('start_prompt')),
@@ -964,8 +966,7 @@ function HomePage() {
       // and the phase countdown for a fast already 14 hours old. Changing it
       // is still possible while fasting — it just has to be meant.
       !cf.active
-        ? h('div', { className: 'goal-strip' },
-            h('div', { className: 'goal-selector' }, goalBtns))
+        ? h('div', { className: 'goal-selector' }, goalBtns)
         : null,
       controls,
 
@@ -1034,7 +1035,7 @@ function GoalModal(props) {
   return h('div', { className: 'modal-overlay', onClick: props.onClose },
     h('div', { className: 'modal', onClick: function (e) { e.stopPropagation(); } },
       h('h3', null, t('change_goal')),
-      h('div', { className: 'goal-selector wrap' }, btns),
+      h('div', { className: 'goal-selector' }, btns),
       h('div', { className: 'info-box', style: { textAlign: 'center' } },
         left > 0
           ? num(pct) + '% ' + t('of_goal') + ' · ' + t('remaining_short') + ' ' + fmtShort(left)
@@ -1107,9 +1108,9 @@ function Dashboard() {
     h(MetricTile, {
       icon: 'dumbbell', label: t('protein'), color: METRIC_COLORS.protein,
       value: target.grams ? num(Math.round(macros.p)) : null,
-      unit: target.grams ? '/ ' + num(target.grams) + 'g' : null,
+      unit: target.grams ? '/ ' + num(target.grams) + ' ' + t('gram_unit') : null,
       sub: target.grams
-        ? num(Math.max(0, target.grams - Math.round(macros.p))) + 'g ' + t('protein_left')
+        ? num(Math.max(0, target.grams - Math.round(macros.p))) + ' ' + t('gram_unit') + ' ' + t('protein_left')
         : null,
       onClick: function () { open('protein'); }
     }),
@@ -1228,15 +1229,15 @@ function MetricDetail(props) {
     colour = METRIC_COLORS.protein;
     var mac = todayMacros();
     hero = num(Math.round(mac.p));
-    unit = 'g';
+    unit = t('gram_unit');
     body = h('div', null,
       h(ProteinCard, null),
       h(Card, { title: t('todays_total'), icon: 'meals' },
         h('div', { className: 'stats-grid-4' },
           h(Stat, { value: num(Math.round(mac.cal)), label: t('calories'), tone: 'gold' }),
-          h(Stat, { value: num(Math.round(mac.p)) + 'g', label: t('protein'), tone: 'green' }),
-          h(Stat, { value: num(Math.round(mac.c)) + 'g', label: t('carbs'), tone: 'blue' }),
-          h(Stat, { value: num(Math.round(mac.f)) + 'g', label: t('fat'), tone: 'purple' }))));
+          h(Stat, { value: num(Math.round(mac.p)) + t('gram_unit'), label: t('protein'), tone: 'green' }),
+          h(Stat, { value: num(Math.round(mac.c)) + t('gram_unit'), label: t('carbs'), tone: 'blue' }),
+          h(Stat, { value: num(Math.round(mac.f)) + t('gram_unit'), label: t('fat'), tone: 'purple' }))));
 
   } else if (k === 'water') {
     var w = S.get('water', {});
@@ -1614,9 +1615,9 @@ function ProteinCard() {
     h('div', { style: { display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' } },
       h('span', { style: { fontSize: '26px', fontWeight: 700 } },
         num(Math.round(tot.p)),
-        h('span', { style: { fontSize: '13px', color: '#9e9ebf' } }, ' / ' + num(target.grams) + 'g')),
+        h('span', { className: 'protein-target' }, ' / ' + num(target.grams) + ' ' + t('gram_unit'))),
       h('span', { className: 'row-end', style: { color: pct >= 100 ? '#00d97e' : '#f5a623' } },
-        pct >= 100 ? t('protein_done') : num(left) + 'g ' + t('protein_left'))),
+        pct >= 100 ? t('protein_done') : num(left) + ' ' + t('gram_unit') + ' ' + t('protein_left'))),
     h('div', { className: 'water-bar' },
       h('div', {
         className: 'water-fill',
@@ -1818,9 +1819,9 @@ function MealsPage() {
     h(Card, { title: t('todays_total'), icon: 'meals' },
       h('div', { className: 'stats-grid-4' },
         h(Stat, { value: num(Math.round(tot.cal)), label: t('calories'), tone: 'gold' }),
-        h(Stat, { value: num(Math.round(tot.p)) + 'g', label: t('protein'), tone: 'green' }),
-        h(Stat, { value: num(Math.round(tot.c)) + 'g', label: t('carbs'), tone: 'blue' }),
-        h(Stat, { value: num(Math.round(tot.f)) + 'g', label: t('fat'), tone: 'purple' })),
+        h(Stat, { value: num(Math.round(tot.p)) + t('gram_unit'), label: t('protein'), tone: 'green' }),
+        h(Stat, { value: num(Math.round(tot.c)) + t('gram_unit'), label: t('carbs'), tone: 'blue' }),
+        h(Stat, { value: num(Math.round(tot.f)) + t('gram_unit'), label: t('fat'), tone: 'purple' })),
       tot.unknown ? h('div', { className: 'chip-row' },
         h('span', { className: 'chip warn' },
           num(tot.unknown) + ' × ' + t('no_macros'))) : null),
@@ -1845,9 +1846,9 @@ function MealsPage() {
           favRows)
       : null,
 
-    h('div', { className: 'section-title' }, t('search_food')),
     h('input', {
       className: 'search-input', value: q, placeholder: t('search_food'),
+      style: { marginTop: 'var(--s4)' },
       onChange: function (e) { setQ(e.target.value); }
     }),
     h('div', { style: { height: '10px' } }),
@@ -2659,6 +2660,14 @@ function CoachPage() {
           followCards)
       : null,
 
+    h(Card, { title: t('exercises'), icon: 'dumbbell' },
+      h('div', { className: 'tip-text' }, t('exercises_hint')),
+      h('div', { className: 'btn-group' },
+        h('button', {
+          className: 'btn btn-sm btn-primary',
+          onClick: function () { _setView('exercises'); }
+        }, h(Icon, { name: 'dumbbell', size: 16 }), t('open_exercises')))),
+
     h('div', { className: 'section-title' }, t('expert_title')),
     h('div', { className: 'section-sub' }, t('expert_sub')),
     insightCards.length ? insightCards
@@ -2686,6 +2695,114 @@ function CoachPage() {
     tipCards,
 
     h('div', { className: 'alert-box' }, t('disclaimer_text')));
+}
+
+/**
+ * The demonstration figure: one rigged stick figure, animated per movement.
+ *
+ * A shared skeleton with named joints means each exercise costs a handful of
+ * CSS keyframes rather than an asset. Nothing here is a video or a GIF — this
+ * is a few hundred bytes of markup that scales to any screen, picks up the
+ * theme, and animates on the compositor.
+ *
+ * Groups rotate about their joint via transform-origin, so the parts stay
+ * connected: the shin hangs off the thigh, the forearm off the upper arm.
+ */
+function ExerciseFigure(props) {
+  var stroke = props.color || 'var(--primary)';
+  function limb(cls, x1, y1, x2, y2) {
+    return h('line', { className: cls, x1: x1, y1: y1, x2: x2, y2: y2 });
+  }
+
+  return h('svg', {
+    className: 'fig fig-' + props.move,
+    viewBox: '0 0 120 130',
+    role: 'img',
+    'aria-label': props.label || '',
+    style: { stroke: stroke }
+  },
+    // Ground line, so the movement reads against something fixed.
+    h('line', { className: 'fig-ground', x1: 8, y1: 122, x2: 112, y2: 122 }),
+    h('g', { className: 'fig-body' },
+      h('g', { className: 'fig-torso' },
+        h('circle', { className: 'fig-head', cx: 60, cy: 24, r: 9 }),
+        limb('fig-spine', 60, 33, 60, 70),
+        h('g', { className: 'fig-arm' },
+          limb('fig-upperarm', 60, 42, 60, 58),
+          h('g', { className: 'fig-forearm' },
+            limb('fig-forearm-l', 60, 58, 60, 74)))),
+      h('g', { className: 'fig-leg' },
+        limb('fig-thigh', 60, 70, 60, 96),
+        h('g', { className: 'fig-shin' },
+          limb('fig-shin-l', 60, 96, 60, 121)))));
+}
+
+/** One exercise: the figure, what it works, the cues, and the usual error. */
+function ExerciseCard(props) {
+  var ex = props.ex;
+  var ar = isRTL();
+  var st = useState(false); var open = st[0], setOpen = st[1];
+
+  var cues = [];
+  var list = ar ? ex.cues_ar : ex.cues_en;
+  for (var i = 0; i < list.length; i++) {
+    cues.push(h('li', { key: 'c' + i }, list[i]));
+  }
+
+  return h('div', { className: 'ex-card' },
+    h('button', {
+      className: 'ex-head',
+      onClick: function () { setOpen(!open); }
+    },
+      h('span', { className: 'ex-fig' },
+        h(ExerciseFigure, { move: ex.move, label: ar ? ex.ar : ex.en })),
+      h('span', { className: 'ex-main' },
+        h('span', { className: 'ex-name' }, ar ? ex.ar : ex.en),
+        h('span', { className: 'ex-muscles' }, ar ? ex.muscles_ar : ex.muscles_en),
+        h('span', { className: 'chip' },
+          t(ex.kit === 'none' ? 'kit_none' : 'kit_weight'))),
+      h('span', { className: 'nav-chev' }, h(Icon, { name: 'back', size: 16 }))),
+
+    open ? h('div', { className: 'ex-body' },
+      h('ol', { className: 'ex-cues' }, cues),
+      h('div', { className: 'alert-box', style: { marginTop: 'var(--s3)' } },
+        h('strong', null, t('common_mistake') + ': '),
+        ar ? ex.mistake_ar : ex.mistake_en)) : null);
+}
+
+/**
+ * The training screen.
+ *
+ * Reachable from the coach, because that is where the app has been telling
+ * this user for weeks that he does no resistance work. Advice that names a
+ * gap should be one tap from the thing that closes it.
+ */
+function ExercisesView(props) {
+  var routine = starterRoutine();
+  var days = [];
+  for (var d = 0; d < routine.days.length; d++) {
+    (function (day) {
+      var cards = [];
+      for (var i = 0; i < day.items.length; i++) {
+        var ex = exerciseByKey(day.items[i]);
+        if (ex) cards.push(h(ExerciseCard, { key: 'e' + ex.k, ex: ex }));
+      }
+      days.push(h('div', { key: 'd' + day.label },
+        h('div', { className: 'section-title' }, day.label),
+        cards));
+    })(routine.days[d]);
+  }
+
+  return h('div', { className: 'subview' },
+    h('div', { className: 'subview-hdr' },
+      h('button', { className: 'back-btn', onClick: props.onClose },
+        h(Icon, { name: 'back', size: 22 })),
+      h('span', { className: 'subview-title' }, t('exercises'))),
+    h('div', { className: 'subview-body' },
+      h(Card, { title: routine.title, icon: 'dumbbell' },
+        h('div', { className: 'tip-text' }, routine.note)),
+      days,
+      h('div', { className: 'alert-box' }, t('exercise_disclaimer'))));
 }
 
 /* ---------------------------------------------------------------------
@@ -2924,10 +3041,19 @@ function PlanCard() {
             : null));
 }
 
+var _setSettingsSub = null;
+var _curSettingsSub = null;
+
 function SettingsPage() {
   var s1 = useState(false); var showImport = s1[0], setShowImport = s1[1];
   var s2 = useState(''); var importText = s2[0], setImportText = s2[1];
   var s3 = useState(false); var confirmReset = s3[0], setConfirmReset = s3[1];
+  var s4 = useState(null); var sub = s4[0], setSub = s4[1];
+
+  // Published so the hardware back button pops the settings screen instead of
+  // jumping straight to the home tab.
+  _setSettingsSub = setSub;
+  _curSettingsSub = sub;
 
   var p = S.get('profile', {});
 
@@ -2969,8 +3095,13 @@ function SettingsPage() {
     })(sups[i]);
   }
 
-  return h('div', null,
-    h('div', { className: 'section-title' }, t('profile')),
+  // Twelve headings in one scroll is a warehouse, not a settings screen:
+  // changing a reminder time meant scrolling past body composition and the
+  // coordinates used to compute fajr. Related settings are grouped into
+  // eight destinations, each of which pushes its own screen.
+  var SECTIONS = [
+    { k: 'profile', icon: 'body', label: t('profile'), hint: t('set_profile_hint'), body: function () {
+      return h('div', null,
     h(Card, { flat: true },
       h(SettingRow, { label: t('name') },
         h(TextField, {
@@ -3006,9 +3137,99 @@ function SettingsPage() {
           h('button', {
             className: 'lang-btn' + (p.lang === 'en' ? ' active' : ''),
             onClick: function () { setProfile('lang', 'en'); }
-          }, 'EN')))),
-
-    h('div', { className: 'section-title' }, t('band')),
+          }, 'EN')))));
+    } },
+    { k: 'plan_window', icon: 'timer', label: t('plan_window'), hint: t('set_plan_window_hint'), body: function () {
+      return h('div', null,
+        h('div', { className: 'section-title' }, t('plan')),
+    h(PlanCard, null),
+        h('div', { className: 'section-title' }, t('eating_window')),
+    h(Card, { flat: true },
+      h(SettingRow, { label: t('window_start') },
+        h(TextField, {
+          value: S.get('settings.windowStart', '17:00'), placeholder: '17:00',
+          onCommit: function (v) { S.set('settings.windowStart', v); syncReminders(); refresh(); }
+        })),
+      h(SettingRow, { label: t('window_end') },
+        h(TextField, {
+          value: S.get('settings.windowEnd', '21:00'), placeholder: '21:00',
+          onCommit: function (v) { S.set('settings.windowEnd', v); syncReminders(); refresh(); }
+        }))),
+        h('div', { className: 'section-title' }, t('sleep')),
+    h(Card, { flat: true },
+      h(SettingRow, { label: t('wake_time') },
+        h(TextField, {
+          value: S.get('settings.wakeTime', '09:00'),
+          placeholder: '09:00',
+          onCommit: function (v) { S.set('settings.wakeTime', v); refresh(); }
+        })),
+      h(SettingRow, { label: t('sleep_target') },
+        h(NumField, {
+          value: S.get('settings.sleepTarget', 7.5), min: 4, max: 12,
+          onCommit: function (v) { S.set('settings.sleepTarget', v); refresh(); }
+        })),
+      h(SettingRow, { label: t('bedtime') },
+        h('span', { className: 'row-end' }, stimulantCutoff('caffeine').bed)),
+      h(SettingRow, { label: t('caffeine_cutoff') },
+        h('span', { className: 'row-end', style: { color: '#f5a623' } },
+          stimulantCutoff('caffeine').cutoff))),
+        h('div', { className: 'section-title' }, t('settings')),
+    h(Card, { flat: true },
+      h(SettingRow, { label: t('notifications') },
+        h(Switch, {
+          on: S.get('settings.notifyPhase', true),
+          onChange: function () {
+            var next = !S.get('settings.notifyPhase', true);
+            S.set('settings.notifyPhase', next);
+            N.call('setNotifyPhase', next);
+            refresh();
+          }
+        })),
+      h(SettingRow, { label: t('arabic_digits') },
+        h(Switch, {
+          on: S.get('settings.arabicDigits', false),
+          onChange: function () {
+            S.set('settings.arabicDigits', !S.get('settings.arabicDigits', false));
+            refresh();
+          }
+        }))));
+    } },
+    { k: 'reminders', icon: 'clock', label: t('reminders'), hint: t('set_reminders_hint'), body: function () {
+      return h('div', null,
+    h(Card, { flat: true },
+      !PERMS.notifications
+        ? h('div', { className: 'alert-box', style: { marginTop: 0, marginBottom: '10px' } },
+            t('rem_need_perm'))
+        : null,
+      h(ReminderToggle, { k: 'water', label: t('rem_water'), hint: t('rem_water_hint') }),
+      h(ReminderToggle, { k: 'motivation', label: t('rem_motivation'), hint: t('rem_motivation_hint') }),
+      h(ReminderToggle, { k: 'window', label: t('rem_window'), hint: t('rem_window_hint') }),
+      h(ReminderToggle, { k: 'checkin', label: t('rem_checkin'), timeKey: 'checkinTime' }),
+      h(ReminderToggle, { k: 'supplement', label: t('rem_supplement'), timeKey: 'supplementTime' }),
+      h(ReminderToggle, { k: 'nudge', label: t('rem_nudge'), hint: t('rem_nudge_hint'), timeKey: 'nudgeTime' }),
+      h(ReminderToggle, { k: 'insight', label: t('insight_time'), hint: t('insight_time_hint'),
+        timeKey: 'insightTime', defaultTime: '11:00' }),
+      h(ReminderToggle, { k: 'protein', label: t('rem_protein'), hint: t('rem_protein_hint') }),
+      h(SettingRow, { label: t('rem_test') },
+        h('button', {
+          className: 'btn btn-sm btn-outline',
+          onClick: function () {
+            N.call('testReminder', 'checkin');
+            toast(t('rem_sent'));
+          }
+        }, t('confirm')))));
+    } },
+    { k: 'appearance', icon: 'palette', label: t('appearance'), hint: t('set_appearance_hint'), body: function () {
+      return h('div', null,
+    h(AppearanceCard, null));
+    } },
+    { k: 'ramadan_mode', icon: 'moonStars', label: t('ramadan_mode'), hint: t('set_ramadan_mode_hint'), body: function () {
+      return h('div', null,
+    h(RamadanCard, null));
+    } },
+    { k: 'band', icon: 'bluetooth', label: t('band'), hint: t('set_band_hint'), body: function () {
+      return h('div', null,
+        h('div', { className: 'section-title' }, t('band')),
     h(Card, { flat: true },
       h(SettingRow, { label: bandStatusText(), hint: BAND.name || '' },
         h('button', {
@@ -3034,8 +3255,7 @@ function SettingsPage() {
           onClick: function () { N.call('bandDisconnect', true); setTimeout(pullNative, 300); refresh(); }
         }, t('delete'))) : null,
       h('div', { className: 'info-box' }, t('band_hint'))),
-
-    h('div', { className: 'section-title' }, t('activity')),
+        h('div', { className: 'section-title' }, t('activity')),
     h(Card, { flat: true },
       h(SettingRow, {
         label: t('steps_label'),
@@ -3060,102 +3280,29 @@ function SettingsPage() {
         h('button', {
           className: 'btn btn-sm btn-outline',
           onClick: function () { N.call('openBatterySettings'); }
-        }, t('confirm')))),
-
-    h('div', { className: 'section-title' }, t('supplements')),
-    supCards,
-
-    h('div', { className: 'section-title' }, t('settings')),
-    h(Card, { flat: true },
-      h(SettingRow, { label: t('notifications') },
-        h(Switch, {
-          on: S.get('settings.notifyPhase', true),
-          onChange: function () {
-            var next = !S.get('settings.notifyPhase', true);
-            S.set('settings.notifyPhase', next);
-            N.call('setNotifyPhase', next);
-            refresh();
-          }
-        })),
-      h(SettingRow, { label: t('arabic_digits') },
-        h(Switch, {
-          on: S.get('settings.arabicDigits', false),
-          onChange: function () {
-            S.set('settings.arabicDigits', !S.get('settings.arabicDigits', false));
-            refresh();
-          }
-        }))),
-
-    h('div', { className: 'section-title' }, t('plan')),
-    h(PlanCard, null),
-
-    h('div', { className: 'section-title' }, t('sleep')),
-    h(Card, { flat: true },
-      h(SettingRow, { label: t('wake_time') },
-        h(TextField, {
-          value: S.get('settings.wakeTime', '09:00'),
-          placeholder: '09:00',
-          onCommit: function (v) { S.set('settings.wakeTime', v); refresh(); }
-        })),
-      h(SettingRow, { label: t('sleep_target') },
-        h(NumField, {
-          value: S.get('settings.sleepTarget', 7.5), min: 4, max: 12,
-          onCommit: function (v) { S.set('settings.sleepTarget', v); refresh(); }
-        })),
-      h(SettingRow, { label: t('bedtime') },
-        h('span', { className: 'row-end' }, stimulantCutoff('caffeine').bed)),
-      h(SettingRow, { label: t('caffeine_cutoff') },
-        h('span', { className: 'row-end', style: { color: '#f5a623' } },
-          stimulantCutoff('caffeine').cutoff))),
-
-    h('div', { className: 'section-title' }, t('eating_window')),
-    h(Card, { flat: true },
-      h(SettingRow, { label: t('window_start') },
-        h(TextField, {
-          value: S.get('settings.windowStart', '17:00'), placeholder: '17:00',
-          onCommit: function (v) { S.set('settings.windowStart', v); syncReminders(); refresh(); }
-        })),
-      h(SettingRow, { label: t('window_end') },
-        h(TextField, {
-          value: S.get('settings.windowEnd', '21:00'), placeholder: '21:00',
-          onCommit: function (v) { S.set('settings.windowEnd', v); syncReminders(); refresh(); }
-        }))),
-
-    h('div', { className: 'section-title' }, t('reminders')),
-    h(Card, { flat: true },
-      !PERMS.notifications
-        ? h('div', { className: 'alert-box', style: { marginTop: 0, marginBottom: '10px' } },
-            t('rem_need_perm'))
-        : null,
-      h(ReminderToggle, { k: 'water', label: t('rem_water'), hint: t('rem_water_hint') }),
-      h(ReminderToggle, { k: 'motivation', label: t('rem_motivation'), hint: t('rem_motivation_hint') }),
-      h(ReminderToggle, { k: 'window', label: t('rem_window'), hint: t('rem_window_hint') }),
-      h(ReminderToggle, { k: 'checkin', label: t('rem_checkin'), timeKey: 'checkinTime' }),
-      h(ReminderToggle, { k: 'supplement', label: t('rem_supplement'), timeKey: 'supplementTime' }),
-      h(ReminderToggle, { k: 'nudge', label: t('rem_nudge'), hint: t('rem_nudge_hint'), timeKey: 'nudgeTime' }),
-      h(ReminderToggle, { k: 'insight', label: t('insight_time'), hint: t('insight_time_hint'),
-        timeKey: 'insightTime', defaultTime: '11:00' }),
-      h(ReminderToggle, { k: 'protein', label: t('rem_protein'), hint: t('rem_protein_hint') }),
-      h(SettingRow, { label: t('rem_test') },
-        h('button', {
-          className: 'btn btn-sm btn-outline',
-          onClick: function () {
-            N.call('testReminder', 'checkin');
-            toast(t('rem_sent'));
-          }
-        }, t('confirm')))),
-
-    h('div', { className: 'section-title' }, t('appearance')),
-    h(AppearanceCard, null),
-
-    h('div', { className: 'section-title' }, t('ramadan_mode')),
-    h(RamadanCard, null),
-
-    h('div', { className: 'section-title' }, t('data')),
+        }, t('confirm')))));
+    } },
+    { k: 'supplements', icon: 'pill', label: t('supplements'), hint: t('set_supplements_hint'), body: function () {
+      return h('div', null,
+    supCards);
+    } },
+    { k: 'data', icon: 'save', label: t('data'), hint: t('set_data_hint'), body: function () {
+      return h('div', null,
     h(Card, { flat: true },
       h(SettingRow, { label: t('report'), hint: t('report_hint') },
         h('button', {
           className: 'btn btn-sm btn-primary',
+          onClick: function () {
+            if (!N.ok()) { toast(t('no_native')); return; }
+            // Photos cross the bridge one call each, so this can take a
+            // moment on a month with a lot of logged meals.
+            toast(t('report_building'));
+            N.call('exportPdf', reportHtml(30), 'sayem-report');
+          }
+        }, t('report_pdf'))),
+      h(SettingRow, { label: t('report_text'), hint: t('report_text_hint') },
+        h('button', {
+          className: 'btn btn-sm btn-outline',
           onClick: function () {
             if (N.ok()) N.call('share', t('report'), monthlyReport(30));
             else toast(t('no_native'));
@@ -3203,9 +3350,23 @@ function SettingsPage() {
         h('button', {
           className: 'btn btn-sm btn-outline',
           onClick: function () { N.call('refreshWidget'); toast(t('saved')); }
-        }, t('confirm'))),
-      h(SettingRow, { label: t('app_version') },
-        h('span', { className: 'row-end' }, 'v' + APP_VERSION + (N.ok() ? '' : ' (web)')))),
+        }, t('confirm')))));
+    } },
+  ];
+
+  if (sub) {
+    var open = null;
+    for (var si = 0; si < SECTIONS.length; si++) {
+      if (SECTIONS[si].k === sub) { open = SECTIONS[si]; break; }
+    }
+    if (open) {
+      return h('div', { className: 'subview' },
+        h('div', { className: 'subview-hdr' },
+          h('button', { className: 'back-btn', onClick: function () { setSub(null); } },
+            h(Icon, { name: 'back', size: 22 })),
+          h('span', { className: 'subview-title' }, open.label)),
+        h('div', { className: 'subview-body' },
+          open.body(),
 
     showImport ? h('div', { className: 'modal-overlay', onClick: function () { setShowImport(false); } },
       h('div', { className: 'modal', onClick: function (e) { e.stopPropagation(); } },
@@ -3265,7 +3426,29 @@ function SettingsPage() {
           h('button', {
             className: 'btn btn-outline btn-sm',
             onClick: function () { setConfirmReset(false); }
-          }, t('cancel'))))) : null);
+          }, t('cancel'))))) : null));
+    }
+  }
+
+  var indexRows = [];
+  for (var ri = 0; ri < SECTIONS.length; ri++) {
+    (function (secDef) {
+      indexRows.push(h('button', {
+        key: 'sx' + secDef.k, className: 'nav-row',
+        onClick: function () { setSub(secDef.k); }
+      },
+        h('span', { className: 'nav-ico' }, h(Icon, { name: secDef.icon, size: 19 })),
+        h('span', { className: 'nav-main' },
+          h('span', { className: 'nav-title' }, secDef.label),
+          h('span', { className: 'nav-hint' }, secDef.hint)),
+        h('span', { className: 'nav-chev' }, h(Icon, { name: 'back', size: 17 }))));
+    })(SECTIONS[ri]);
+  }
+
+  return h('div', null,
+    h('div', { className: 'nav-list' }, indexRows),
+    h(SettingRow, { label: t('app_version') },
+      h('span', { className: 'row-end' }, 'v' + APP_VERSION + (N.ok() ? '' : ' (web)'))));
 }
 
 function takeSupplement(id) {
@@ -3922,11 +4105,19 @@ function App() {
     h('div', { className: 'hdr' },
       h('span', { className: 'hdr-title' }, t('app_name')),
       h('span', { className: 'hdr-side' }, headerRight)),
-    h('div', { className: 'content' }, body),
+    // Keyed on the tab so React remounts the subtree, which is what restarts
+    // the entrance animation; without the key it would play once and never
+    // again on subsequent tab switches.
+    h('div', { className: 'content' },
+      h('div', { key: 'tab-' + tab, className: 'tab-anim' }, body)),
     h('div', { className: 'bnav' }, navItems),
 
     view === 'activity'
       ? h(ActivityView, { onClose: function () { _setView(null); } })
+      : null,
+
+    view === 'exercises'
+      ? h(ExercisesView, { onClose: function () { _setView(null); } })
       : null,
 
     detail
@@ -3958,6 +4149,10 @@ window.__onBack = function () {
   }
   if (_setView && _curView) {
     _setView(null);
+    return;
+  }
+  if (_setSettingsSub && _curSettingsSub) {
+    _setSettingsSub(null);
     return;
   }
   if (_setTab && _curTab !== 'home') {

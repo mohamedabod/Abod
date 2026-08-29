@@ -15,8 +15,8 @@ android {
         // Health Connect's client library requires API 26.
         minSdk = 26
         targetSdk = 34
-        versionCode = 73
-        versionName = "7.3"
+        versionCode = 80
+        versionName = "8.0"
     }
 
     signingConfigs {
